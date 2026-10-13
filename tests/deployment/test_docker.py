@@ -131,7 +131,9 @@ class TestDockerFiles:
             "Dockerfile.sandbox",
         ]
         required_markers = [
-            "rustup toolchain install 1.88",
+            # Éden: 1.89, a versão mínima de rust/rust-toolchain.toml (com 1.88
+            # a imagem não montava mais).
+            "rustup toolchain install 1.89",
             "maturin build --release",
             "rust/crates/openjarvis-python/Cargo.toml",
             "/tmp/openjarvis-rust-wheel/*.whl",

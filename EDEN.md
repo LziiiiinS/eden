@@ -113,6 +113,7 @@ em cada linha.
 | `src/openjarvis/server/routes.py` | Conversa passa pela escolha de IA e pelo limite do Éden; modos do Éden na lista de modelos; erro de geração em português |
 | `src/openjarvis/server/cloud_router.py` | OpenAI e Anthropic passam pelo Éden (Responses API + limite) |
 | `deploy/docker/Dockerfile` | Rust 1.89 (a 1.88 não montava mais); SDKs da OpenAI e da Anthropic; arquivos do Éden e pasta `/dados` na imagem |
+| `deploy/docker/Dockerfile.gpu`, `Dockerfile.gpu.rocm`, `Dockerfile.sandbox`, `tests/deployment/test_docker.py` | Rust 1.89, a versão mínima de `rust/rust-toolchain.toml` |
 | `.gitignore` | Deixa o modelo `deploy/eden/.env.exemplo` ir para o GitHub (o `.env` de verdade continua fora) |
 | `tests/speech/…`, `tests/server/test_speech_routes.py`, `frontend/src/hooks/useSpeech.test.ts` | Testes das mudanças de voz |
 
