@@ -19,6 +19,7 @@ import {
   Database,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
+import { EdenSyncStatus } from './EdenSyncStatus';
 import { useAppStore } from '../../lib/store';
 
 // Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
@@ -202,6 +203,9 @@ export function Sidebar() {
           <div className="flex-1 overflow-y-auto px-2">
             <ConversationList searchQuery={searchQuery} />
           </div>
+
+          {/* Éden: situação da sincronização das conversas */}
+          <EdenSyncStatus />
 
           {/* Bottom nav */}
           <nav className="px-2 pb-3 pt-2 flex flex-col gap-0.5" style={{ borderTop: '1px solid var(--color-border)' }}>

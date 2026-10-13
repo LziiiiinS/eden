@@ -124,7 +124,9 @@ function loadSettings(): Settings {
     defaultAgent: '',
     temperature: 0.7,
     maxTokens: 4096,
-    speechEnabled: false,
+    // Éden: voz é parte central do Éden, então vem ligada. O microfone só
+    // funciona de verdade se o servidor tiver transcrição configurada.
+    speechEnabled: true,
     voiceOutputEnabled: false,
     voiceAutoplay: false,
   };

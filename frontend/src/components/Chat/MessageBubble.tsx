@@ -14,6 +14,7 @@ import { XRayFooter } from './XRayFooter';
 import { SpeakMessageButton } from './SpeakMessageButton';
 import type { ChatMessage } from '../../types';
 import { stripThinkTags } from '../../lib/message-text';
+import { EdenSyncBadge } from './EdenSyncBadge';
 
 interface Props {
   message: ChatMessage;
@@ -120,7 +121,7 @@ export function MessageBubble({ message, isLive = false }: Props) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end mb-4">
+      <div className="flex flex-col items-end mb-4">
         <div
           className="max-w-[85%] px-4 py-2.5 text-sm leading-relaxed"
           style={{
@@ -133,6 +134,8 @@ export function MessageBubble({ message, isLive = false }: Props) {
         >
           {message.content}
         </div>
+        {/* Éden: mostra se a mensagem ainda não chegou ao servidor. */}
+        <EdenSyncBadge messageId={message.id} />
       </div>
     );
   }
