@@ -46,6 +46,7 @@ export function useSpeech() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const startedAtRef = useRef<number | null>(null);
 
   // Check if speech backend is available on mount
   useEffect(() => {
@@ -75,6 +76,7 @@ export function useSpeech() {
       };
 
       recorder.start();
+      startedAtRef.current = Date.now();
       mediaRecorderRef.current = recorder;
       setState('recording');
     } catch (err) {
@@ -104,7 +106,8 @@ export function useSpeech() {
         chunksRef.current = [];
 
         try {
-          const result = await transcribeAudio(blob, audioFilenameFor(blob.type));
+          const durationMs = startedAtRef.current ? Date.now() - startedAtRef.current : undefined;
+          const result = await transcribeAudio(blob, audioFilenameFor(blob.type), durationMs);
           setState('idle');
           resolve(result.text);
         } catch (err) {

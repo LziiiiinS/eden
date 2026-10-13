@@ -25,8 +25,10 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
         sh -s -- -y --profile minimal --default-toolchain none && \
-    rustup toolchain install 1.88 --profile minimal && \
-    rustup default 1.88
+    rustup toolchain install 1.89 --profile minimal && \
+    rustup default 1.89
+# Éden: 1.89 é a versão mínima pedida em rust/rust-toolchain.toml
+# (uuid 1.27). Com 1.88 a montagem da imagem falhava.
 
 WORKDIR /app
 
@@ -37,7 +39,7 @@ WORKDIR /app
 # only application code changes.
 COPY pyproject.toml uv.lock README.md ./
 RUN pip install --no-cache-dir uv && \
-    uv export --frozen --no-dev --extra server --no-emit-project > requirements.txt && \
+    uv export --frozen --no-dev --extra server --extra inference-cloud --no-emit-project > requirements.txt && \
     uv pip install --system --no-deps -r requirements.txt && \
     uv pip install --system --no-deps "maturin>=1.12.6,<2"
 
@@ -75,6 +77,14 @@ WORKDIR /app
 RUN groupadd --system --gid 10001 openjarvis && \
     useradd --system --uid 10001 --gid openjarvis \
         --create-home --home-dir /home/openjarvis openjarvis
+
+# Éden: configuração, personalidade e script de início dentro da imagem, e a
+# pasta de dados (/dados) do usuário sem privilégios. Os SDKs da OpenAI e da
+# Anthropic entram acima (extra inference-cloud), para o servidor ligar com a
+# chave de qualquer uma das duas.
+COPY eden/ /app/eden/
+COPY deploy/eden/iniciar-no-conteiner.sh /app/deploy/eden/iniciar-no-conteiner.sh
+RUN mkdir -p /dados && chown openjarvis:openjarvis /dados
 ENV HOME=/home/openjarvis
 USER openjarvis
 

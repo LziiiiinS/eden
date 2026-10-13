@@ -59,6 +59,10 @@ export interface MessageTelemetry {
   complexity_score?: number;
   complexity_tier?: string;
   suggested_max_tokens?: number;
+  // Éden: qual IA respondeu e por quê (vem dos cabeçalhos X-Eden-*).
+  eden_mode?: 'dia' | 'missao';
+  eden_provider?: 'openai' | 'anthropic';
+  eden_reason?: string;
 }
 
 export interface TimeRange {

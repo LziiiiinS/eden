@@ -1,0 +1,103 @@
+# Éden: testes automáticos.
+#
+# Roda a cada mudança no main e em cada PR. Não usa nenhum segredo, não
+# publica nada e não acessa contas: só instala, testa e monta o app.
+# Os fluxos herdados do OpenJarvis (publicação, releases, robôs) ficam
+# desligados neste fork. Quando um passo falha, o final da saída vira
+# anotação no PR (.github/eden/anotar.sh).
+name: Éden — testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eden-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  servidor:
+    name: Servidor (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Instalar dependências
+        run: bash .github/eden/anotar.sh "Dependências" uv sync --extra dev --extra server --extra inference-cloud
+
+      - name: Montar a extensão em Rust
+        run: bash .github/eden/anotar.sh "Rust" uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
+
+      - name: Estilo do código (ruff)
+        run: |
+          bash .github/eden/anotar.sh "ruff check" uv run ruff check src/ tests/
+          bash .github/eden/anotar.sh "ruff format" uv run ruff format --check src/ tests/
+
+      - name: Testes do Éden
+        run: bash .github/eden/anotar.sh "Testes do Éden" uv run pytest tests/eden tests/speech tests/server -q --tb=short -m "not live and not cloud and not hub"
+
+      - name: Todos os testes
+        run: bash .github/eden/anotar.sh "Todos os testes" uv run pytest tests/ -n auto -q --tb=line -m "not live and not cloud and not hub"
+
+  app:
+    name: App (frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # O projeto exige o npm 11 (package.json "engines" + .npmrc engine-strict).
+      - name: Usar o npm do projeto
+        run: npm install --global npm@11.19.0
+
+      - name: Instalar dependências
+        run: bash ../.github/eden/anotar.sh "npm ci" npm ci
+      - name: Testes
+        run: bash ../.github/eden/anotar.sh "Testes do app" npm test
+      - name: Tipos (TypeScript)
+        run: bash ../.github/eden/anotar.sh "TypeScript" npx tsc --noEmit
+      - name: Montar o app
+        run: bash ../.github/eden/anotar.sh "Build" npm run build
+
+  imagem:
+    name: Imagem do servidor (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Montar a imagem (sem publicar)
+        run: bash .github/eden/anotar.sh "Docker" docker build --progress=plain -f deploy/docker/Dockerfile -t eden:teste .
+      - name: Conferir que liga
+        run: docker run --rm eden:teste --version
+      - name: Éden no contêiner (chaves de teste, sem chamar IA)
+        run: bash .github/eden/anotar.sh "Éden no contêiner" bash .github/eden/teste-conteiner.sh eden:teste
+      - name: Conferir o docker-compose do notebook
+        run: |
+          cp deploy/eden/.env.exemplo deploy/eden/.env
+          bash .github/eden/anotar.sh "Compose" docker compose -f deploy/eden/docker-compose.yml config -q

@@ -15,6 +15,7 @@ import { SpeakMessageButton } from './SpeakMessageButton';
 import type { ChatMessage } from '../../types';
 import { stripThinkTags } from '../../lib/message-text';
 import { EdenSyncBadge } from './EdenSyncBadge';
+import { EdenAiLabel } from './EdenAiLabel';
 
 interface Props {
   message: ChatMessage;
@@ -66,7 +67,7 @@ function CodeBlockPre({ children, ...props }: any) {
           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? 'Copiado' : 'Copiar'}
         </button>
       </div>
       <pre {...props} style={{ margin: 0, borderRadius: 0 }}>
@@ -180,6 +181,7 @@ export function MessageBubble({ message, isLive = false }: Props) {
 
       {/* Footer: copy + read aloud + x-ray */}
       <div className="flex items-center gap-2 mt-1.5">
+        {!isLive && <EdenAiLabel telemetry={message.telemetry} />}
         <CopyMessageButton content={cleanContent} />
         {!isUser && !isLive && (
           <SpeakMessageButton messageId={message.id} content={cleanContent} />

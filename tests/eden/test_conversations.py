@@ -107,7 +107,11 @@ def test_delete_older_than_last_edit_is_ignored(store):
 
 def test_extra_fields_round_trip(store):
     raw = _conv()
-    raw["messages"][1]["usage"] = {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+    raw["messages"][1]["usage"] = {
+        "prompt_tokens": 1,
+        "completion_tokens": 2,
+        "total_tokens": 3,
+    }
     raw["messages"][1]["unknownField"] = "não guardar"
     _save(store, raw)
     msg = store.get_conversation("c1")["messages"][1]
