@@ -3,6 +3,42 @@ import { transcribeAudio, fetchSpeechHealth } from '../lib/api';
 
 export type SpeechState = 'idle' | 'recording' | 'transcribing';
 
+// Éden: formatos que a transcrição aceita (webm, mp4/m4a, mp3, wav), em ordem
+// de preferência. O iPhone (Safari) grava em mp4; Chrome/Android, em webm.
+// Antes o app sempre enviava "recording.webm", e o servidor tratava o áudio do
+// iPhone como webm.
+const PREFERRED_RECORDING_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',
+];
+
+/** Éden: escolhe um formato de gravação que o navegador suporta e a transcrição aceita. */
+export function pickRecordingMimeType(
+  isSupported: (type: string) => boolean = (type) =>
+    typeof MediaRecorder !== 'undefined' &&
+    typeof MediaRecorder.isTypeSupported === 'function' &&
+    MediaRecorder.isTypeSupported(type),
+): string | undefined {
+  return PREFERRED_RECORDING_TYPES.find((type) => {
+    try {
+      return isSupported(type);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Éden: nome do arquivo com a extensão certa para o tipo de áudio gravado. */
+export function audioFilenameFor(mimeType: string): string {
+  const type = (mimeType || '').toLowerCase();
+  if (type.includes('mp4') || type.includes('m4a') || type.includes('aac')) return 'recording.mp4';
+  if (type.includes('mpeg') || type.includes('mp3')) return 'recording.mp3';
+  if (type.includes('wav')) return 'recording.wav';
+  if (type.includes('ogg')) return 'recording.ogg';
+  return 'recording.webm';
+}
+
 export function useSpeech() {
   const [state, setState] = useState<SpeechState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -21,8 +57,8 @@ export function useSpeech() {
   const startRecording = useCallback(async (): Promise<void> => {
     setError(null);
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Microphone not supported in this browser');
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Este navegador não permite gravar áudio.');
       return;
     }
 
@@ -30,7 +66,8 @@ export function useSpeech() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const recorder = new MediaRecorder(stream);
+      const mimeType = pickRecordingMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -41,7 +78,9 @@ export function useSpeech() {
       mediaRecorderRef.current = recorder;
       setState('recording');
     } catch (err) {
-      setError('Microphone access denied');
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setError('Não foi possível usar o microfone. Libere o acesso ao microfone nas configurações do navegador.');
       setState('idle');
     }
   }, []);
@@ -65,12 +104,12 @@ export function useSpeech() {
         chunksRef.current = [];
 
         try {
-          const result = await transcribeAudio(blob);
+          const result = await transcribeAudio(blob, audioFilenameFor(blob.type));
           setState('idle');
           resolve(result.text);
         } catch (err) {
           setState('idle');
-          const msg = err instanceof Error ? err.message : 'Transcription failed';
+          const msg = err instanceof Error ? err.message : 'Falha na transcrição do áudio.';
           setError(msg);
           reject(err);
         }

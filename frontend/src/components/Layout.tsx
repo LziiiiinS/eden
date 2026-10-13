@@ -44,7 +44,8 @@ export function Layout() {
             className="w-1.5 h-1.5 rounded-full shrink-0"
             style={{ background: 'var(--color-error)' }}
           />
-          <span>Cannot reach OpenJarvis backend</span>
+          {/* Éden: aviso com o nome do Éden, em português. */}
+          <span>Não foi possível conectar ao servidor do Éden</span>
           <button
             onClick={() => navigate('/settings')}
             className="text-sm underline cursor-pointer ml-auto shrink-0"

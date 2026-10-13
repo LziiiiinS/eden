@@ -25,9 +25,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'OpenJarvis',
-        short_name: 'Jarvis',
-        description: 'On-device AI assistant',
+        // Éden: nome e descrição do app instalável (PWA).
+        name: 'Éden',
+        short_name: 'Éden',
+        description: 'Assistente pessoal',
+        lang: 'pt-BR',
         theme_color: '#161618',
         background_color: '#161618',
         display: 'standalone',

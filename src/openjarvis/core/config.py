@@ -1619,6 +1619,9 @@ class SpeechConfig:
     language: str = ""  # Empty = auto-detect
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "float16"  # "float16", "int8", "float32"
+    # Éden: modelo da transcrição pela API da OpenAI (backend "openai").
+    # O padrão mantém o comportamento original do OpenJarvis.
+    openai_model: str = "whisper-1"
     # Text-to-speech. ``voice_id`` is interpreted by ``tts_backend`` only --
     # voice IDs are not portable between backends, so if voice output falls
     # back to a different backend that backend's own default voice is used.

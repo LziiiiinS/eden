@@ -14,6 +14,7 @@ import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
+import { LEADERBOARD_ENABLED } from './lib/supabase';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
 
@@ -118,8 +119,10 @@ export default function App() {
   }, [optInEnabled, optInDisplayName, optInAnonId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show opt-in modal on first visit
+  // Éden: só mostra o convite do ranking público quando o ranking existe.
+  // Sem a chave do ranking (padrão do Éden), o convite pedia nome e e-mail à toa.
   useEffect(() => {
-    if (!optInModalSeen) {
+    if (!optInModalSeen && LEADERBOARD_ENABLED) {
       setOptInModalOpen(true);
       markOptInModalSeen();
     }

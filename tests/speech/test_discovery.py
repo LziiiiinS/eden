@@ -102,3 +102,22 @@ def test_explicit_unhealthy_backend_is_unavailable() -> None:
         return_value=backend,
     ):
         assert get_speech_backend(config) is None
+
+
+# Éden: o backend da OpenAI recebe o modelo de transcrição da configuração.
+def test_create_openai_backend_passes_configured_model(monkeypatch) -> None:
+    from openjarvis.core.registry import SpeechRegistry
+    from openjarvis.speech._discovery import _create_backend
+    from openjarvis.speech.openai_whisper import OpenAIWhisperBackend
+
+    if not SpeechRegistry.contains("openai"):
+        SpeechRegistry.register_value("openai", OpenAIWhisperBackend)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    config = JarvisConfig()
+    config.speech.openai_model = "gpt-transcribe"
+
+    with patch("openjarvis.speech.openai_whisper.OpenAI"):
+        backend = _create_backend("openai", config)
+
+    assert backend is not None
+    assert backend._model == "gpt-transcribe"
