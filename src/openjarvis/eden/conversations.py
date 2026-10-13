@@ -187,11 +187,14 @@ class ConversationStore:
             (user_id, conv_id),
         ).fetchone()
 
-    def list_conversations(self, user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    def list_conversations(
+        self, user_id: str = DEFAULT_USER_ID
+    ) -> List[Dict[str, Any]]:
         """Todas as conversas do usuário, sem as mensagens (apagadas incluídas)."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
+                "SELECT * FROM conversations WHERE user_id = ? "
+                "ORDER BY updated_at DESC",
                 (user_id,),
             ).fetchall()
         return [self._meta(row) for row in rows]
@@ -289,7 +292,8 @@ class ConversationStore:
             # versão for igual ou mais nova que a gravada.
             self._conn.executemany(
                 "INSERT INTO messages "
-                "(user_id, conversation_id, id, role, content, timestamp, extra, version) "
+                "(user_id, conversation_id, id, role, content, timestamp, extra, "
+                "version) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (user_id, conversation_id, id) DO UPDATE SET "
                 "role = excluded.role, content = excluded.content, "

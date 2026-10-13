@@ -1,0 +1,91 @@
+# Éden: testes automáticos.
+#
+# Roda a cada mudança no main e em cada PR. Não usa nenhum segredo, não
+# publica nada e não acessa contas: só instala, testa e monta o app.
+# Os fluxos herdados do OpenJarvis (publicação, releases, robôs) ficam
+# desligados neste fork.
+name: Éden — testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eden-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  servidor:
+    name: Servidor (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Instalar dependências
+        run: uv sync --extra dev --extra server --extra inference-cloud
+
+      - name: Montar a extensão em Rust
+        run: uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
+
+      - name: Estilo do código (ruff)
+        run: |
+          uv run ruff check src/ tests/
+          uv run ruff format --check src/ tests/
+
+      - name: Testes do Éden
+        run: uv run pytest tests/eden tests/speech tests/server -q --tb=short -m "not live and not cloud and not hub"
+
+      - name: Todos os testes
+        run: uv run pytest tests/ -n auto -q --tb=short -m "not live and not cloud and not hub"
+
+  app:
+    name: App (frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - name: Testes
+        run: npm test
+      - name: Tipos (TypeScript)
+        run: npx tsc --noEmit
+      - name: Montar o app
+        run: npm run build
+
+  imagem:
+    name: Imagem do servidor (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Montar a imagem (sem publicar)
+        run: docker build -f deploy/docker/Dockerfile -t eden:teste .
+      - name: Conferir que liga
+        run: docker run --rm eden:teste --version

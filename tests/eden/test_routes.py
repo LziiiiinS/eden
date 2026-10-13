@@ -46,7 +46,9 @@ def test_put_list_get_delete(client):
 
     deleted = client.delete("/v1/eden/conversations/c1", params={"deleted_at": 2000})
     assert deleted.json()["conversation"]["deleted"] is True
-    assert client.get("/v1/eden/conversations/c1").json()["conversation"]["messages"] == []
+    assert (
+        client.get("/v1/eden/conversations/c1").json()["conversation"]["messages"] == []
+    )
 
 
 def test_get_missing_returns_404(client):

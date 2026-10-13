@@ -95,7 +95,9 @@ def test_openai_gpt_transcribe_sends_languages_list():
 def test_openai_gpt4o_transcribe_uses_json_and_language():
     mock_client = _mock_client()
     with patch("openjarvis.speech.openai_whisper.OpenAI", return_value=mock_client):
-        backend = OpenAIWhisperBackend(api_key="test-key", model="gpt-4o-mini-transcribe")
+        backend = OpenAIWhisperBackend(
+            api_key="test-key", model="gpt-4o-mini-transcribe"
+        )
         backend.transcribe(b"fake audio", format="webm", language="pt")
     kwargs = mock_client.audio.transcriptions.create.call_args.kwargs
     assert kwargs["language"] == "pt"

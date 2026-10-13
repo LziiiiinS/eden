@@ -388,7 +388,9 @@ def test_voice_id_not_reused_across_backends(mock_tts_backend):
 
 # Éden: idioma da configuração quando o app não informa.
 def test_transcribe_uses_configured_language(app_with_speech, mock_speech_backend):
-    app_with_speech.state.config = SimpleNamespace(speech=SimpleNamespace(language="pt"))
+    app_with_speech.state.config = SimpleNamespace(
+        speech=SimpleNamespace(language="pt")
+    )
     client = TestClient(app_with_speech)
     response = client.post(
         "/v1/speech/transcribe",
@@ -399,8 +401,12 @@ def test_transcribe_uses_configured_language(app_with_speech, mock_speech_backen
     assert kwargs == {"format": "mp4", "language": "pt"}
 
 
-def test_transcribe_form_language_wins_over_config(app_with_speech, mock_speech_backend):
-    app_with_speech.state.config = SimpleNamespace(speech=SimpleNamespace(language="pt"))
+def test_transcribe_form_language_wins_over_config(
+    app_with_speech, mock_speech_backend
+):
+    app_with_speech.state.config = SimpleNamespace(
+        speech=SimpleNamespace(language="pt")
+    )
     client = TestClient(app_with_speech)
     response = client.post(
         "/v1/speech/transcribe",
