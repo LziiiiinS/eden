@@ -1004,6 +1004,13 @@ async def transcribe_speech(request: Request):
 
     audio_bytes = await audio_file.read()
     language = form.get("language")
+    if not language:
+        # Éden: o app web não informa o idioma; usa o da configuração
+        # ([speech] language), quando houver. Sem configuração, segue automático.
+        app_config = getattr(request.app.state, "config", None)
+        speech_config = getattr(app_config, "speech", None)
+        configured = getattr(speech_config, "language", "")
+        language = configured if isinstance(configured, str) and configured else None
 
     # Detect format from filename
     filename = getattr(audio_file, "filename", "audio.wav")

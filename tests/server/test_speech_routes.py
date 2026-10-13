@@ -384,3 +384,28 @@ def test_voice_id_not_reused_across_backends(mock_tts_backend):
 
     # Backend is mock_tts, not the configured kokoro, so bm_george must not leak.
     assert mock_tts_backend.synthesize.call_args.kwargs["voice_id"] != "bm_george"
+
+
+# Éden: idioma da configuração quando o app não informa.
+def test_transcribe_uses_configured_language(app_with_speech, mock_speech_backend):
+    app_with_speech.state.config = SimpleNamespace(speech=SimpleNamespace(language="pt"))
+    client = TestClient(app_with_speech)
+    response = client.post(
+        "/v1/speech/transcribe",
+        files={"file": ("recording.mp4", b"fake audio data", "audio/mp4")},
+    )
+    assert response.status_code == 200
+    kwargs = mock_speech_backend.transcribe.call_args.kwargs
+    assert kwargs == {"format": "mp4", "language": "pt"}
+
+
+def test_transcribe_form_language_wins_over_config(app_with_speech, mock_speech_backend):
+    app_with_speech.state.config = SimpleNamespace(speech=SimpleNamespace(language="pt"))
+    client = TestClient(app_with_speech)
+    response = client.post(
+        "/v1/speech/transcribe",
+        files={"file": ("test.wav", b"fake audio data", "audio/wav")},
+        data={"language": "en"},
+    )
+    assert response.status_code == 200
+    assert mock_speech_backend.transcribe.call_args.kwargs["language"] == "en"

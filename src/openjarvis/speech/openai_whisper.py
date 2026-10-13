@@ -21,8 +21,14 @@ class OpenAIWhisperBackend(SpeechBackend):
 
     backend_id = "openai"
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = "whisper-1",
+    ) -> None:
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        # Éden: modelo configurável ([speech] openai_model). Padrão original: whisper-1.
+        self._model = model or "whisper-1"
         self._client: Optional[OpenAI] = None
         if self._api_key and OpenAI is not None:
             self._client = OpenAI(api_key=self._api_key)
@@ -42,10 +48,23 @@ class OpenAIWhisperBackend(SpeechBackend):
         audio_file = io.BytesIO(audio)
         audio_file.name = f"audio.{ext}"
 
-        kwargs: dict = {"model": "whisper-1", "file": audio_file}
-        if language:
-            kwargs["language"] = language
-        kwargs["response_format"] = "verbose_json"
+        kwargs: dict = {"model": self._model, "file": audio_file}
+        if self._model.startswith("whisper"):
+            if language:
+                kwargs["language"] = language
+            kwargs["response_format"] = "verbose_json"
+        elif self._model.startswith("gpt-transcribe"):
+            # Éden: o gpt-transcribe recebe o idioma como lista ("languages"),
+            # que substitui o campo "language". Vai em extra_body para funcionar
+            # mesmo com versões do SDK que ainda não conhecem o campo.
+            if language:
+                kwargs["extra_body"] = {"languages": [language]}
+            kwargs["response_format"] = "json"
+        else:
+            # Éden: gpt-4o-transcribe e gpt-4o-mini-transcribe só devolvem json/text.
+            if language:
+                kwargs["language"] = language
+            kwargs["response_format"] = "json"
 
         response = self._client.audio.transcriptions.create(**kwargs)
 

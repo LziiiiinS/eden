@@ -40,7 +40,11 @@ def _create_backend(
             api_key = os.environ.get("OPENAI_API_KEY", "")
             if not api_key:
                 return None
-            return backend_cls(api_key=api_key)
+            # Éden: passa o modelo de transcrição escolhido na configuração.
+            return backend_cls(
+                api_key=api_key,
+                model=getattr(config.speech, "openai_model", "") or "whisper-1",
+            )
         elif key == "deepgram":
             api_key = os.environ.get("DEEPGRAM_API_KEY", "")
             if not api_key:
