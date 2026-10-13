@@ -131,3 +131,6 @@ learning.db
 minion_logs/
 *.oj-debug.json
 oj-debug.*.json
+
+# Éden: o modelo do .env vai para o GitHub; o .env de verdade, nunca.
+!deploy/eden/.env.exemplo

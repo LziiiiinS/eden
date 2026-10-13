@@ -26,7 +26,15 @@ do OpenJarvis nem de Stanford.
 - `frontend/src/lib/eden-ai.ts`, `components/Chat/EdenModeSwitch.tsx`,
   `components/Chat/EdenAiLabel.tsx` e `components/Sidebar/EdenSpending.tsx`:
   escolha da IA, aviso de qual IA respondeu e gastos do mês.
-- `.github/workflows/eden-checks.yml`: testes automáticos (sem segredos, não publica nada).
+- `frontend/src/components/EdenAccessGate.tsx`: pede a chave de acesso do
+  servidor na primeira vez que o aparelho abre o Éden.
+- `frontend/src/pages/EdenSettingsPage.tsx`: configurações do Éden em português.
+- `deploy/eden/`: rodar o Éden com Docker (notebook Windows agora; servidor
+  depois). Passo a passo em `deploy/eden/LEIA-ME.md`.
+- `.github/workflows/eden-checks.yml` e `.github/eden/`: testes automáticos
+  (sem segredos, não publica nada), incluindo ligar a imagem do Éden e
+  conferir o básico.
+- `.gitattributes`: finais de linha certos para os scripts de Windows e Linux.
 - `tests/eden/`: testes do código do Éden.
 
 ## Como funciona a sincronização
@@ -60,6 +68,17 @@ do OpenJarvis nem de Stanford.
   piloto (pesquisa aprofundada, agentes) ficam escondidas e não entram na conta.
 - O crédito pré-pago nos sites da OpenAI e da Anthropic é uma segunda trava.
 
+## Como rodar
+
+- **Notebook (Windows):** Docker Desktop + a pasta `deploy/eden`. Dois cliques
+  em `iniciar-eden.cmd` cria a chave de acesso, monta a versão mais nova do
+  GitHub e abre `http://localhost:8000`. Detalhes em `deploy/eden/LEIA-ME.md`.
+- As chaves ficam no arquivo `.env` da pasta (fora do GitHub). Os dados
+  (conversas, gastos, perfil) ficam no volume `eden-dados` do Docker.
+- Dentro do contêiner, `deploy/eden/iniciar-no-conteiner.sh` copia
+  `eden/config.toml` e `eden/SOUL.md` para a pasta de dados a cada início e
+  cria `USER.md`/`MEMORY.md` vazios só na primeira vez.
+
 ## Arquivos do OpenJarvis modificados
 
 Mudanças de lógica têm um comentário `Éden:` explicando o motivo. Textos
@@ -70,14 +89,16 @@ em cada linha.
 |---|---|
 | `frontend/index.html` | Nome Éden, idioma pt-BR e nome do atalho no iPhone |
 | `frontend/vite.config.ts` | Nome e descrição do app instalável (PWA) |
-| `frontend/src/App.tsx` | Não abre o convite do ranking público quando o ranking está desligado; liga a sincronização |
+| `frontend/src/App.tsx` | Não abre o convite do ranking público quando o ranking está desligado; liga a sincronização; tela da chave de acesso; configurações do Éden em `/settings` (as originais em `/settings/avancado`); atalhos ⌘K e ⌘I desligados no servidor do Éden |
+| `frontend/src/pages/ChatPage.tsx` | Painel do sistema (energia, GPU) escondido no piloto |
+| `frontend/src/components/Chat/XRayFooter.tsx` | Detalhes da resposta em português, com qual IA respondeu e por quê |
 | `frontend/src/components/Layout.tsx` | Aviso de servidor fora do ar em português |
-| `frontend/src/components/Chat/InputArea.tsx` | Caixa de mensagem, estados ("Escrevendo…", "Pensando…"), erros e atalhos em português; modos do Éden no lugar da pesquisa aprofundada |
-| `frontend/src/components/Chat/ChatArea.tsx` | Saudação e tela inicial em português; dicas de "conectar fontes de dados" escondidas no piloto (`SHOW_DATA_SOURCE_HINTS`) |
+| `frontend/src/components/Chat/InputArea.tsx` | Caixa de mensagem, estados ("Escrevendo…", "Pensando…"), erros e atalhos em português; modos do Éden no lugar da pesquisa aprofundada; no celular, Enter pula linha e o motivo do microfone indisponível aparece escrito |
+| `frontend/src/components/Chat/ChatArea.tsx` | Saudação e tela inicial em português; dicas de "conectar fontes de dados" escondidas no piloto (`SHOW_DATA_SOURCE_HINTS`); botão do painel do sistema escondido |
 | `frontend/src/components/Chat/MicButton.tsx` | Avisos do microfone em português e nome acessível no botão |
 | `frontend/src/components/Chat/MessageBubble.tsx` | "Copiar mensagem"; botão visível em telas de toque; aviso de sincronização nas mensagens do usuário; qual IA respondeu |
 | `frontend/src/components/Chat/SpeakMessageButton.tsx` | "Ouvir mensagem" em português |
-| `frontend/src/components/Sidebar/Sidebar.tsx` | Menu lateral em português e nomes acessíveis nos botões de ícone; situação da sincronização; gastos do mês; nome amigável do modo |
+| `frontend/src/components/Sidebar/Sidebar.tsx` | Menu lateral em português e nomes acessíveis nos botões de ícone; situação da sincronização; gastos do mês; no piloto, menu só com Conversa e Configurações e seletor de modelos escondido no servidor do Éden |
 | `frontend/src/components/Sidebar/ConversationList.tsx` | Tempos ("há 5 min") e textos em português; botão de apagar visível em telas de toque |
 | `frontend/src/lib/store.ts` | Título de conversa nova "Nova conversa" (`NEW_CHAT_TITLE`); microfone ligado por padrão |
 | `frontend/src/hooks/useSpeech.ts` | Grava num formato aceito pela transcrição e envia o tipo certo de arquivo (corrige o iPhone); envia a duração da gravação |
@@ -91,6 +112,8 @@ em cada linha.
 | `src/openjarvis/server/app.py` | Registra as rotas de conversas do Éden |
 | `src/openjarvis/server/routes.py` | Conversa passa pela escolha de IA e pelo limite do Éden; modos do Éden na lista de modelos; erro de geração em português |
 | `src/openjarvis/server/cloud_router.py` | OpenAI e Anthropic passam pelo Éden (Responses API + limite) |
+| `deploy/docker/Dockerfile` | Rust 1.89 (a 1.88 não montava mais); SDKs da OpenAI e da Anthropic; arquivos do Éden e pasta `/dados` na imagem |
+| `.gitignore` | Deixa o modelo `deploy/eden/.env.exemplo` ir para o GitHub (o `.env` de verdade continua fora) |
 | `tests/speech/…`, `tests/server/test_speech_routes.py`, `frontend/src/hooks/useSpeech.test.ts` | Testes das mudanças de voz |
 
 ## Regras deste fork

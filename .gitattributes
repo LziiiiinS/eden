@@ -1,0 +1,4 @@
+# Éden: finais de linha certos para cada sistema (scripts do notebook/servidor).
+deploy/eden/*.sh text eol=lf
+deploy/eden/*.ps1 text eol=crlf
+deploy/eden/*.cmd text eol=crlf

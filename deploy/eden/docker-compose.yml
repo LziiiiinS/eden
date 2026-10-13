@@ -1,0 +1,31 @@
+# Éden: um serviço só, sem modelos locais. Serve para o notebook e, depois,
+# para o servidor.
+#
+# A imagem é montada direto do GitHub (branch main), então este computador não
+# precisa ter o código: basta esta pasta com o docker-compose.yml, o .env e os
+# scripts. Cada "iniciar" busca a versão mais nova do main.
+#
+# Chaves: ficam no arquivo .env desta pasta (nunca no GitHub).
+# Dados (conversas, gastos, perfil): ficam no volume "eden-dados" do Docker.
+name: eden
+
+services:
+  eden:
+    build:
+      context: https://github.com/LziiiiinS/eden.git#main
+      dockerfile: deploy/docker/Dockerfile
+    image: eden:local
+    entrypoint: ["sh", "/app/deploy/eden/iniciar-no-conteiner.sh"]
+    env_file: .env
+    environment:
+      OPENJARVIS_HOME: /dados
+    ports:
+      # Só este computador abre o Éden (http://localhost:8000). Para o
+      # celular, o acesso entra depois pela rede privada (Tailscale), com HTTPS.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - eden-dados:/dados
+    restart: unless-stopped
+
+volumes:
+  eden-dados:
