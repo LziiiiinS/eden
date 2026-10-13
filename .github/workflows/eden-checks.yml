@@ -3,7 +3,8 @@
 # Roda a cada mudança no main e em cada PR. Não usa nenhum segredo, não
 # publica nada e não acessa contas: só instala, testa e monta o app.
 # Os fluxos herdados do OpenJarvis (publicação, releases, robôs) ficam
-# desligados neste fork.
+# desligados neste fork. Quando um passo falha, o final da saída vira
+# anotação no PR (.github/eden/anotar.sh).
 name: Éden — testes
 
 on:
@@ -39,21 +40,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Instalar dependências
-        run: uv sync --extra dev --extra server --extra inference-cloud
+        run: bash .github/eden/anotar.sh "Dependências" uv sync --extra dev --extra server --extra inference-cloud
 
       - name: Montar a extensão em Rust
-        run: uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
+        run: bash .github/eden/anotar.sh "Rust" uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
 
       - name: Estilo do código (ruff)
         run: |
-          uv run ruff check src/ tests/
-          uv run ruff format --check src/ tests/
+          bash .github/eden/anotar.sh "ruff check" uv run ruff check src/ tests/
+          bash .github/eden/anotar.sh "ruff format" uv run ruff format --check src/ tests/
 
       - name: Testes do Éden
-        run: uv run pytest tests/eden tests/speech tests/server -q --tb=short -m "not live and not cloud and not hub"
+        run: bash .github/eden/anotar.sh "Testes do Éden" uv run pytest tests/eden tests/speech tests/server -q --tb=short -m "not live and not cloud and not hub"
 
       - name: Todos os testes
-        run: uv run pytest tests/ -n auto -q --tb=short -m "not live and not cloud and not hub"
+        run: bash .github/eden/anotar.sh "Todos os testes" uv run pytest tests/ -n auto -q --tb=line -m "not live and not cloud and not hub"
 
   app:
     name: App (frontend)
@@ -71,13 +72,18 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - run: npm ci
+      # O projeto exige o npm 11 (package.json "engines" + .npmrc engine-strict).
+      - name: Usar o npm do projeto
+        run: npm install --global npm@11.19.0
+
+      - name: Instalar dependências
+        run: bash ../.github/eden/anotar.sh "npm ci" npm ci
       - name: Testes
-        run: npm test
+        run: bash ../.github/eden/anotar.sh "Testes do app" npm test
       - name: Tipos (TypeScript)
-        run: npx tsc --noEmit
+        run: bash ../.github/eden/anotar.sh "TypeScript" npx tsc --noEmit
       - name: Montar o app
-        run: npm run build
+        run: bash ../.github/eden/anotar.sh "Build" npm run build
 
   imagem:
     name: Imagem do servidor (Docker)
@@ -86,6 +92,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Montar a imagem (sem publicar)
-        run: docker build -f deploy/docker/Dockerfile -t eden:teste .
+        run: bash .github/eden/anotar.sh "Docker" docker build --progress=plain -f deploy/docker/Dockerfile -t eden:teste .
       - name: Conferir que liga
         run: docker run --rm eden:teste --version
