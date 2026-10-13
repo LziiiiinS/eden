@@ -21,6 +21,13 @@ import {
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
 
+// Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
+const THEME_LABEL: Record<string, string> = {
+  light: 'claro',
+  dark: 'escuro',
+  system: 'automático',
+};
+
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -53,13 +60,13 @@ export function Sidebar() {
   };
 
   const navItems = [
-    { path: '/', icon: MessageSquare, label: 'Chat' },
-    { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
-    { path: '/data-sources', icon: Database, label: 'Data Sources' },
-    { path: '/agents', icon: Bot, label: 'Agents' },
-    { path: '/logs', icon: ScrollText, label: 'Logs' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
-    { path: '/get-started', icon: Rocket, label: 'Get Started' },
+    { path: '/', icon: MessageSquare, label: 'Conversa' },
+    { path: '/dashboard', icon: BarChart3, label: 'Painel' },
+    { path: '/data-sources', icon: Database, label: 'Fontes de dados' },
+    { path: '/agents', icon: Bot, label: 'Agentes' },
+    { path: '/logs', icon: ScrollText, label: 'Registros' },
+    { path: '/settings', icon: Settings, label: 'Configurações' },
+    { path: '/get-started', icon: Rocket, label: 'Primeiros passos' },
   ];
 
   return (
@@ -68,6 +75,7 @@ export function Sidebar() {
       {!sidebarOpen && (
         <button
           onClick={toggleSidebar}
+          aria-label="Abrir menu"
           className="fixed top-3 left-3 z-30 p-2 rounded-lg transition-colors cursor-pointer"
           style={{ color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)' }}
           onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
@@ -95,6 +103,7 @@ export function Sidebar() {
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <button
               onClick={toggleSidebar}
+              aria-label="Fechar menu"
               className="p-2 rounded-lg transition-colors cursor-pointer"
               style={{ color: 'var(--color-text-secondary)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
@@ -109,7 +118,8 @@ export function Sidebar() {
                 style={{ color: 'var(--color-text-secondary)' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                title={`Theme: ${settings.theme} (click for ${nextTheme})`}
+                title={`Tema: ${THEME_LABEL[settings.theme] ?? settings.theme} (clique para ${THEME_LABEL[nextTheme] ?? nextTheme})`}
+                aria-label={`Trocar tema para ${THEME_LABEL[nextTheme] ?? nextTheme}`}
               >
                 <ThemeIcon size={16} />
               </button>
@@ -119,7 +129,8 @@ export function Sidebar() {
                 style={{ color: 'var(--color-text-secondary)' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                title="New chat"
+                title="Nova conversa"
+                aria-label="Nova conversa"
               >
                 <Plus size={18} />
               </button>
@@ -149,12 +160,12 @@ export function Sidebar() {
                 style={{ color: deepResearch ? 'var(--color-accent)' : 'var(--color-text)' }}
               >
                 {deepResearch
-                  ? 'Deep Research'
-                  : selectedModel || serverInfo?.model || 'Select model'}
+                  ? 'Pesquisa aprofundada'
+                  : selectedModel || serverInfo?.model || 'Escolher modelo'}
               </span>
               {modelLoading && (
                 <span className="text-[10px] block text-left" style={{ color: 'var(--color-accent)' }}>
-                  Loading model...
+                  Carregando modelo…
                 </span>
               )}
             </div>
@@ -177,7 +188,8 @@ export function Sidebar() {
               <Search size={14} style={{ color: 'var(--color-text-tertiary)' }} />
               <input
                 type="text"
-                placeholder="Search chats..."
+                placeholder="Buscar conversas…"
+                aria-label="Buscar conversas"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 bg-transparent outline-none text-sm"

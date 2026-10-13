@@ -16,15 +16,24 @@ do OpenJarvis nem de Stanford.
 
 ## Arquivos do OpenJarvis modificados
 
-Cada mudança no código original tem um comentário `Éden:` explicando o motivo.
+Mudanças de lógica têm um comentário `Éden:` explicando o motivo. Textos
+traduzidos para português foram trocados no próprio lugar, sem comentário
+em cada linha.
 
 | Arquivo | O que mudou |
 |---|---|
 | `frontend/index.html` | Nome Éden, idioma pt-BR e nome do atalho no iPhone |
 | `frontend/vite.config.ts` | Nome e descrição do app instalável (PWA) |
 | `frontend/src/App.tsx` | Não abre o convite do ranking público quando o ranking está desligado |
-| `frontend/src/components/Layout.tsx` | Aviso de servidor fora do ar com o nome Éden |
-| `frontend/src/components/Chat/InputArea.tsx` | Texto da caixa de mensagem com o nome Éden |
+| `frontend/src/components/Layout.tsx` | Aviso de servidor fora do ar em português |
+| `frontend/src/components/Chat/InputArea.tsx` | Caixa de mensagem, estados ("Escrevendo…", "Pensando…"), erros e atalhos em português |
+| `frontend/src/components/Chat/ChatArea.tsx` | Saudação e tela inicial em português; dicas de "conectar fontes de dados" escondidas no piloto (`SHOW_DATA_SOURCE_HINTS`) |
+| `frontend/src/components/Chat/MicButton.tsx` | Avisos do microfone em português e nome acessível no botão |
+| `frontend/src/components/Chat/MessageBubble.tsx` | "Copiar mensagem"; botão visível em telas de toque |
+| `frontend/src/components/Chat/SpeakMessageButton.tsx` | "Ouvir mensagem" em português |
+| `frontend/src/components/Sidebar/Sidebar.tsx` | Menu lateral em português e nomes acessíveis nos botões de ícone |
+| `frontend/src/components/Sidebar/ConversationList.tsx` | Tempos ("há 5 min") e textos em português; botão de apagar visível em telas de toque |
+| `frontend/src/lib/store.ts` | Título de conversa nova "Nova conversa" (`NEW_CHAT_TITLE`) |
 | `frontend/src/hooks/useSpeech.ts` | Grava num formato aceito pela transcrição e envia o tipo certo de arquivo (corrige o iPhone) |
 | `src/openjarvis/core/config.py` | Novo campo `speech.openai_model` |
 | `src/openjarvis/speech/_discovery.py` | Passa o modelo de transcrição escolhido |

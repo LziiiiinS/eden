@@ -175,7 +175,7 @@ export function InputArea() {
     const content = input.trim();
     if (!content || streamState.isStreaming) return;
     if (!selectedModel) {
-      toast.error('Pick a model first (⌘K)');
+      toast.error('Escolha um modelo primeiro (⌘K)');
       return;
     }
 
@@ -235,7 +235,7 @@ export function InputArea() {
     setStreamState({
       conversationId: convId,
       isStreaming: true,
-      phase: deepResearch ? 'Researching...' : 'Generating...',
+      phase: deepResearch ? 'Pesquisando…' : 'Escrevendo…',
       elapsedMs: 0,
       activeToolCalls: [],
       content: '',
@@ -265,7 +265,7 @@ export function InputArea() {
               status: 'pending',
             };
             researchTraces.push(trace);
-            setStreamState({ phase: `Searching: ${trace.query}` });
+            setStreamState({ phase: `Buscando: ${trace.query}` });
             updateLastAssistant(
               convId,
               accumulatedContent,
@@ -337,9 +337,9 @@ export function InputArea() {
             // missing, KnowledgeStore locked, etc.). Without surfacing the
             // message, the user sees only the generic "No response was
             // generated" fallback and has no way to self-diagnose.
-            const msg = ev.message || 'Research failed (no detail provided)';
+            const msg = ev.message || 'A pesquisa falhou (sem detalhes)';
             accumulatedContent = accumulatedContent
-              ? `${accumulatedContent}\n\n**Research stopped:** ${msg}`
+              ? `${accumulatedContent}\n\n**Pesquisa interrompida:** ${msg}`
               : `**Research failed:** ${msg}`;
             setStreamState({ content: accumulatedContent, phase: '' });
             useAppStore.getState().addLogEntry({
@@ -382,9 +382,9 @@ export function InputArea() {
         const eventName = sseEvent.event;
 
         if (eventName === 'agent_turn_start') {
-          setStreamState({ phase: 'Agent thinking...' });
+          setStreamState({ phase: 'Pensando…' });
         } else if (eventName === 'inference_start') {
-          setStreamState({ phase: 'Generating...' });
+          setStreamState({ phase: 'Escrevendo…' });
           useAppStore.getState().addLogEntry({
             timestamp: Date.now(), level: 'info', category: 'chat',
             message: `Generating with ${selectedModel}...`,
@@ -400,7 +400,7 @@ export function InputArea() {
             };
             toolCalls.push(tc);
             setStreamState({
-              phase: `Calling ${data.tool}...`,
+              phase: `Usando ${data.tool}…`,
               activeToolCalls: [...toolCalls],
             });
             updateLastAssistant(convId, accumulatedContent, [...toolCalls]);
@@ -421,7 +421,7 @@ export function InputArea() {
               tc.result = data.result;
             }
             setStreamState({
-              phase: 'Generating...',
+              phase: 'Escrevendo…',
               activeToolCalls: [...toolCalls],
             });
             updateLastAssistant(convId, accumulatedContent, [...toolCalls]);
@@ -456,11 +456,11 @@ export function InputArea() {
     } catch (err: any) {
       if (err.name === 'AbortError') {
         // User cancelled or model switch — keep whatever was accumulated
-        if (!accumulatedContent) accumulatedContent = '(Generation stopped)';
+        if (!accumulatedContent) accumulatedContent = '(Resposta interrompida)';
       } else {
         const errMsg = err?.message || String(err);
         accumulatedContent =
-          accumulatedContent || `Error: ${errMsg}`;
+          accumulatedContent || `Erro: ${errMsg}`;
         useAppStore.getState().addLogEntry({
           timestamp: Date.now(), level: 'error', category: 'chat',
           message: `Stream error: ${errMsg}`,
@@ -471,7 +471,7 @@ export function InputArea() {
       useAppStore.getState().setLiveEnergy(null);
     } finally {
       if (!accumulatedContent) {
-        accumulatedContent = 'No response was generated. Please try again.';
+        accumulatedContent = 'Nenhuma resposta foi gerada. Tente de novo.';
       }
       const totalMs = Date.now() - startTime;
       const appState = useAppStore.getState();
@@ -576,10 +576,10 @@ export function InputArea() {
               border: `1px solid ${deepResearch ? 'var(--color-accent)' : 'var(--color-border)'}`,
               color: deepResearch ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
             }}
-            title={deepResearch ? 'Deep Research: on' : 'Deep Research: off'}
+            title={deepResearch ? 'Pesquisa aprofundada: ligada' : 'Pesquisa aprofundada: desligada'}
           >
             <Search size={12} />
-            Deep Research
+            Pesquisa aprofundada
           </button>
         </div>
         {deepResearch && corpusSync.syncing && corpusSync.itemsSynced > 0 && (
@@ -587,11 +587,11 @@ export function InputArea() {
             className="text-[11px] leading-snug"
             style={{ color: 'var(--color-text-tertiary)' }}
           >
-            Searching over{' '}
+            Buscando em{' '}
             <span key={corpusSync.itemsSynced} className="sync-bump" style={{ color: 'var(--color-text-secondary)' }}>
               {corpusSync.itemsSynced.toLocaleString()}
             </span>{' '}
-            items — sync in progress, results will improve as more data is indexed.
+            itens — sincronização em andamento; os resultados melhoram conforme mais dados forem indexados.
           </div>
         )}
       </div>
@@ -620,7 +620,8 @@ export function InputArea() {
             onClick={stopStreaming}
             className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer"
             style={{ background: 'var(--color-error)', color: 'var(--color-on-accent)' }}
-            title="Stop generating"
+            title="Parar resposta"
+            aria-label="Parar resposta"
           >
             <Square size={16} />
           </button>
@@ -635,7 +636,8 @@ export function InputArea() {
             <button
               onClick={sendMessage}
               disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
-              title={selectedModel ? 'Send message' : 'Pick a model first (⌘K)'}
+              title={selectedModel ? 'Enviar mensagem' : 'Escolha um modelo primeiro (⌘K)'}
+              aria-label="Enviar mensagem"
               className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
               style={{
                 background: input.trim() ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
@@ -649,8 +651,8 @@ export function InputArea() {
       </div>
       <div className="flex items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
         <span>
-          <kbd className="font-mono">Enter</kbd> to send &middot;{' '}
-          <kbd className="font-mono">Shift+Enter</kbd> for new line
+          <kbd className="font-mono">Enter</kbd> para enviar &middot;{' '}
+          <kbd className="font-mono">Shift+Enter</kbd> para nova linha
         </span>
       </div>
     </div>
