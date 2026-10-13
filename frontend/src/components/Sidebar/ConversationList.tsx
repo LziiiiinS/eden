@@ -6,16 +6,17 @@ interface Props {
   searchQuery: string;
 }
 
+// Éden: tempos e textos em português.
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return 'agora';
+  if (minutes < 60) return `há ${minutes} min`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `há ${hours} h`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
+  if (days < 7) return `há ${days} ${days === 1 ? 'dia' : 'dias'}`;
+  return new Date(timestamp).toLocaleDateString('pt-BR');
 }
 
 export function ConversationList({ searchQuery }: Props) {
@@ -37,7 +38,7 @@ export function ConversationList({ searchQuery }: Props) {
   if (filtered.length === 0) {
     return (
       <div className="px-3 py-8 text-center text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-        {searchQuery ? 'No matching chats' : 'No conversations yet'}
+        {searchQuery ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa ainda'}
       </div>
     );
   }
@@ -87,7 +88,7 @@ export function ConversationList({ searchQuery }: Props) {
                 deleteConversation(conv.id);
               }}
               disabled={isStreaming}
-              className="p-1.5 mr-1 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+              className="p-1.5 mr-1 rounded opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
               style={{ color: 'var(--color-text-tertiary)' }}
               onMouseEnter={(e) => {
                 if (!isStreaming) e.currentTarget.style.color = 'var(--color-error)';
@@ -95,9 +96,10 @@ export function ConversationList({ searchQuery }: Props) {
               onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
               title={
                 isStreaming
-                  ? 'Stop generating before deleting this conversation'
-                  : 'Delete conversation'
+                  ? 'Pare a resposta antes de apagar esta conversa'
+                  : 'Apagar conversa'
               }
+              aria-label="Apagar conversa"
             >
               <Trash2 size={14} />
             </button>

@@ -32,6 +32,10 @@ export interface AgentEvent {
   data: Record<string, unknown>;
 }
 
+// Éden: título de conversa nova em português. O título antigo ('New chat')
+// continua reconhecido para conversas já salvas.
+export const NEW_CHAT_TITLE = 'Nova conversa';
+
 // ── localStorage persistence ──────────────────────────────────────────
 
 const CONVERSATIONS_KEY = 'openjarvis-conversations';
@@ -351,7 +355,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const store = loadConversations();
       const conv: Conversation = {
         id: generateId(),
-        title: 'New chat',
+        title: NEW_CHAT_TITLE,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         model: model || get().selectedModel || 'default',
@@ -421,7 +425,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!conv) return;
       conv.messages.push(message);
       conv.updatedAt = Date.now();
-      if (message.role === 'user' && conv.title === 'New chat') {
+      if (message.role === 'user' && (conv.title === NEW_CHAT_TITLE || conv.title === 'New chat')) {
         conv.title =
           message.content.slice(0, 50) +
           (message.content.length > 50 ? '...' : '');
