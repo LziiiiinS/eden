@@ -362,7 +362,11 @@ export interface SpeechHealth {
   reason?: string;
 }
 
-export async function transcribeAudio(audioBlob: Blob, filename = 'recording.webm'): Promise<TranscriptionResult> {
+export async function transcribeAudio(
+  audioBlob: Blob,
+  filename = 'recording.webm',
+  durationMs?: number,
+): Promise<TranscriptionResult> {
   if (isTauri()) {
     try {
       const buffer = await audioBlob.arrayBuffer();
@@ -377,6 +381,8 @@ export async function transcribeAudio(audioBlob: Blob, filename = 'recording.web
   }
   const formData = new FormData();
   formData.append('file', audioBlob, filename);
+  // Éden: duração da gravação, usada no controle de gastos da transcrição.
+  if (durationMs && durationMs > 0) formData.append('duration_ms', String(Math.round(durationMs)));
   const res = await apiFetch(`/v1/speech/transcribe`, {
     method: 'POST',
     body: formData,
@@ -389,7 +395,7 @@ export async function transcribeAudio(audioBlob: Blob, filename = 'recording.web
     } catch {
       // Keep the status-only message below when the body is not JSON.
     }
-    throw new Error(detail || `Transcription failed: ${res.status}`);
+    throw new Error(detail || `A transcrição falhou (erro ${res.status}).`);
   }
   return res.json();
 }

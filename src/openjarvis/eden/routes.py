@@ -1,4 +1,4 @@
-"""Éden: rotas para sincronizar as conversas entre os aparelhos.
+"""Éden: rotas para sincronizar as conversas e ver os gastos do mês.
 
 Ficam em /v1/eden/..., então a chave de acesso do servidor
 (OPENJARVIS_API_KEY) protege todas elas, como as outras rotas /v1.
@@ -109,3 +109,18 @@ async def delete_conversation(conv_id: str, request: Request, deleted_at: int = 
     except ConversationValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"conversation": meta}
+
+
+@router.get("/gastos")
+async def get_spending():
+    """Quanto o Éden gastou neste mês com cada IA, e o limite de cada uma."""
+    from openjarvis.eden.budget import get_ledger
+    from openjarvis.eden.settings import get_settings
+
+    settings = get_settings()
+    summary = await asyncio.to_thread(get_ledger().summary, settings)
+    summary["models"] = {
+        "dia": settings.daily_model,
+        "missao": settings.mission_model,
+    }
+    return summary

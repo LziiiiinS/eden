@@ -1,5 +1,17 @@
 import type { ResearchEvent, SSEEvent } from '../types';
 import { getBase, authHeaders } from './api';
+import { routeFromHeaders } from './eden-ai';
+
+/** Mensagem de erro do servidor (campo "detail"), quando houver. */
+async function errorDetail(response: Response): Promise<string | undefined> {
+  try {
+    const body = await response.json();
+    const detail = body?.detail;
+    return typeof detail === 'string' && detail ? detail : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface ChatRequest {
   model: string;
@@ -22,8 +34,16 @@ export async function* streamChat(
   });
 
   if (!response.ok) {
-    throw new Error(`Chat request failed: ${response.status}`);
+    // Éden: mostra o motivo em português (ex.: limite do mês atingido).
+    const detail = await errorDetail(response);
+    if (detail) throw new Error(detail);
+    if (response.status === 401) throw new Error('Chave de acesso do servidor inválida.');
+    throw new Error(`O servidor recusou o pedido (erro ${response.status}).`);
   }
+
+  // Éden: avisa logo no começo qual IA vai responder.
+  const route = routeFromHeaders(response.headers);
+  if (route) yield { event: 'eden_route', data: JSON.stringify(route) };
 
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();

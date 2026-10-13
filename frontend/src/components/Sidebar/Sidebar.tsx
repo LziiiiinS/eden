@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { EdenSyncStatus } from './EdenSyncStatus';
+import { EdenSpending } from './EdenSpending';
+import { friendlyModelName } from '../../lib/eden-ai';
 import { useAppStore } from '../../lib/store';
 
 // Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
@@ -162,7 +164,9 @@ export function Sidebar() {
               >
                 {deepResearch
                   ? 'Pesquisa aprofundada'
-                  : selectedModel || serverInfo?.model || 'Escolher modelo'}
+                  : selectedModel
+                    ? friendlyModelName(selectedModel)
+                    : serverInfo?.model || 'Escolher modelo'}
               </span>
               {modelLoading && (
                 <span className="text-[10px] block text-left" style={{ color: 'var(--color-accent)' }}>
@@ -172,7 +176,7 @@ export function Sidebar() {
             </div>
             {!modelLoading && (
               <kbd
-                className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                className="text-[10px] px-1.5 py-0.5 rounded font-mono [@media(hover:none)]:hidden"
                 style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
               >
                 ⌘K
@@ -204,8 +208,9 @@ export function Sidebar() {
             <ConversationList searchQuery={searchQuery} />
           </div>
 
-          {/* Éden: situação da sincronização das conversas */}
+          {/* Éden: situação da sincronização das conversas e gastos do mês */}
           <EdenSyncStatus />
+          <EdenSpending />
 
           {/* Bottom nav */}
           <nav className="px-2 pb-3 pt-2 flex flex-col gap-0.5" style={{ borderTop: '1px solid var(--color-border)' }}>

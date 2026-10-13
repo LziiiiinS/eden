@@ -1016,6 +1016,17 @@ async def transcribe_speech(request: Request):
     filename = getattr(audio_file, "filename", "audio.wav")
     ext = filename.rsplit(".", 1)[-1] if "." in filename else "wav"
 
+    # Éden: a transcrição pela OpenAI entra no limite de gastos do mês.
+    from openjarvis.eden import speech_budget
+    from openjarvis.eden.budget import BudgetExceeded
+
+    client_ms = speech_budget.parse_client_ms(form.get("duration_ms"))
+    if speech_budget.tracked(backend):
+        try:
+            speech_budget.check(backend, len(audio_bytes), client_ms)
+        except BudgetExceeded as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+
     try:
         result = await asyncio.to_thread(
             backend.transcribe,
@@ -1029,6 +1040,11 @@ async def transcribe_speech(request: Request):
             status_code=500,
             detail=f"Speech transcription failed: {exc}",
         ) from exc
+
+    if speech_budget.tracked(backend):
+        speech_budget.record(
+            backend, result.duration_seconds, len(audio_bytes), client_ms
+        )
 
     return {
         "text": result.text,

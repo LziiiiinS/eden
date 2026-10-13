@@ -157,6 +157,21 @@ def _ensure_identity_prompt(messages: list[Message], app_config) -> list[Message
 
 @router.post("/v1/chat/completions")
 async def chat_completions(request_body: ChatCompletionRequest, request: Request):
+    """Handle chat completion requests (streaming and non-streaming).
+
+    Éden: antes de responder, escolhe a IA (eden-auto/eden-dia/eden-missao) e
+    confere o limite de gastos do mês; depois informa qual IA respondeu.
+    """
+    from openjarvis.eden.chat_hooks import finish_chat, prepare_chat
+
+    decision, refusal = prepare_chat(request_body)
+    if refusal is not None:
+        return refusal
+    response = await _chat_completions_impl(request_body, request)
+    return finish_chat(response, decision, request_body)
+
+
+async def _chat_completions_impl(request_body: ChatCompletionRequest, request: Request):
     """Handle chat completion requests (streaming and non-streaming)."""
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
@@ -867,7 +882,7 @@ async def _handle_stream_tools(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"\n\nError during generation: {exc}",
+                            content=f"\n\n**Não foi possível responder:** {exc}",
                         ),
                         finish_reason="stop",
                     )
@@ -1035,7 +1050,7 @@ async def _handle_stream(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"\n\nError during generation: {exc}",
+                            content=f"\n\n**Não foi possível responder:** {exc}",
                         ),
                         finish_reason="stop",
                     )
@@ -1132,8 +1147,20 @@ async def list_models(request: Request) -> ModelListResponse:
     # the UI auto-select nomic-embed-text and fail every generation with 400.
     model_ids = [m for m in model_ids if not is_embed_only_model(m)]
 
+    # Éden: os três modos do Éden aparecem primeiro (o app escolhe o
+    # primeiro da lista quando ainda não há modelo escolhido).
+    from openjarvis.eden.routing import VIRTUAL_MODELS
+    from openjarvis.eden.settings import get_settings
+
+    eden_models = (
+        [ModelObject(id=mid, owned_by="eden") for mid in VIRTUAL_MODELS]
+        if get_settings().enabled
+        else []
+    )
+
     return ModelListResponse(
-        data=[
+        data=eden_models
+        + [
             ModelObject(
                 id=mid,
                 owned_by=(

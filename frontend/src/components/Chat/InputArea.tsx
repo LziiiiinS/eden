@@ -11,7 +11,14 @@ import {
   resolveChatEngine,
 } from '../../lib/chat-telemetry';
 import { MicButton } from './MicButton';
+import { EdenModeSwitch } from './EdenModeSwitch';
 import { useSpeech } from '../../hooks/useSpeech';
+import {
+  isEdenModel,
+  providerName,
+  requestModelFor,
+  type EdenRoute,
+} from '../../lib/eden-ai';
 import type {
   ChatMessage,
   MessageTelemetry,
@@ -100,6 +107,12 @@ export function InputArea() {
   const modelLoading = useAppStore((s) => s.modelLoading);
   const deepResearch = useAppStore((s) => s.deepResearch);
   const setDeepResearch = useAppStore((s) => s.setDeepResearch);
+  // Éden: servidor do Éden tem os modos Automático / Dia a dia / Missão.
+  // A pesquisa aprofundada fica escondida no piloto (não entra no limite de gastos).
+  const edenServer = useAppStore((s) => s.models.some((m) => isEdenModel(m.id)));
+  useEffect(() => {
+    if (edenServer && deepResearch) setDeepResearch(false);
+  }, [edenServer, deepResearch, setDeepResearch]);
   const corpusSync = useResearchCorpusSync(deepResearch);
   const isCurrentChatStreaming = streamState.isStreaming && streamState.conversationId === activeId;
 
@@ -200,6 +213,8 @@ export function InputArea() {
       role: m.role,
       content: m.content,
     }));
+    // Éden: no automático, uma conversa em missão continua com o Claude.
+    const requestModel = requestModelFor(selectedModel, currentMessages);
 
     const assistantMsg: ChatMessage = {
       id: generateId(),
@@ -224,6 +239,7 @@ export function InputArea() {
     let usage: TokenUsage | undefined;
     let complexity: { score: number; tier: string; suggested_max_tokens: number } | undefined;
     let routedEngine: string | undefined;
+    let edenRoute: EdenRoute | undefined;
     const toolCalls: ToolCallInfo[] = [];
     const researchTraces: ResearchSearchTrace[] = [];
     const researchSourcesByRef = new Map<number, ResearchSource>();
@@ -376,12 +392,17 @@ export function InputArea() {
         }
       } else {
       for await (const sseEvent of streamChat(
-        { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
+        { model: requestModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
         controller.signal,
       )) {
         const eventName = sseEvent.event;
 
-        if (eventName === 'agent_turn_start') {
+        if (eventName === 'eden_route') {
+          try {
+            edenRoute = JSON.parse(sseEvent.data) as EdenRoute;
+            setStreamState({ phase: `${providerName(edenRoute.provider)} escrevendo…` });
+          } catch {}
+        } else if (eventName === 'agent_turn_start') {
           setStreamState({ phase: 'Pensando…' });
         } else if (eventName === 'inference_start') {
           setStreamState({ phase: 'Escrevendo…' });
@@ -484,7 +505,10 @@ export function InputArea() {
       });
       const telemetry: MessageTelemetry = {
         engine: engineLabel,
-        model_id: selectedModel,
+        model_id: edenRoute?.model ?? selectedModel,
+        eden_mode: edenRoute?.mode,
+        eden_provider: edenRoute?.provider,
+        eden_reason: edenRoute?.reason,
         total_ms: totalMs,
         ttft_ms: ttftMs,
         tokens_per_sec: usage?.completion_tokens
@@ -564,6 +588,9 @@ export function InputArea() {
   return (
     <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
       <div className="mb-2 flex flex-col gap-1">
+        {edenServer ? (
+          <EdenModeSwitch disabled={streamState.isStreaming} />
+        ) : (
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -582,6 +609,7 @@ export function InputArea() {
             Pesquisa aprofundada
           </button>
         </div>
+        )}
         {deepResearch && corpusSync.syncing && corpusSync.itemsSynced > 0 && (
           <div
             className="text-[11px] leading-snug"

@@ -369,6 +369,15 @@ async def stream_cloud(
     """Stream tokens from a cloud provider for the given model."""
     provider = get_provider(model)
 
+    # Éden: OpenAI e Anthropic passam pelo Éden, que usa a Responses API da
+    # OpenAI (modelos GPT-6) e aplica o limite de gastos do mês.
+    if provider in ("openai", "anthropic"):
+        from openjarvis.eden.providers import stream_eden
+
+        async for token in stream_eden(model, messages, temperature, provider):
+            yield token
+        return
+
     if provider == "openai":
         async for token in _stream_openai(model, messages, temperature, max_tokens):
             yield token

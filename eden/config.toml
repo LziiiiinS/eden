@@ -52,3 +52,42 @@ language = "pt"
 # Modelo recomendado pela OpenAI para transcrição geral (out/2026).
 # Conferir preço e disponibilidade na implantação.
 openai_model = "gpt-transcribe"
+
+# ---------------------------------------------------------------------------
+# Éden: qual IA responde e quanto pode gastar.
+# ---------------------------------------------------------------------------
+# O app tem três modos: Automático (o Éden escolhe), Dia a dia (ChatGPT) e
+# Missão (Claude). No automático, pedidos de entrega (documento, proposta,
+# planilha, resposta a cliente, texto longo) vão para o Claude; o resto vai
+# para o ChatGPT. Começar a mensagem com /missao ou /dia força o modo.
+
+[eden.ias]
+# Modelos pela API (nomes e preços conferidos em 13/10/2026).
+dia_a_dia = "gpt-6.1-sol"          # ChatGPT: "quase Astra", US$ 2 / 10 por 1M tokens
+missao = "claude-sonnet-5-5"       # Claude: US$ 2 / 10 por 1M tokens
+# Raciocínio do ChatGPT no dia a dia: "low" responde mais rápido e gasta menos.
+esforco_dia_a_dia = "low"
+# Tamanho máximo de cada resposta (tokens). Também limita o custo por pedido.
+max_saida_tokens = 8000
+
+[eden.limites]
+# Limite por mês, em dólares, por empresa. Quando o gasto do mês chega no
+# limite, o Éden para de usar aquela IA até o mês virar (meia-noite do dia 1,
+# horário de Brasília). 0 desliga a IA daquela empresa.
+# Ajuste para caber nos R$ 200/mês junto com o servidor, pelo câmbio do dia.
+openai = 10.0
+anthropic = 15.0
+
+[eden.precos]
+# US$ por 1 milhão de tokens: [entrada, saída]. Atualize se a empresa mudar o
+# preço. Modelo sem preço aqui é cobrado como o mais caro da mesma empresa.
+"gpt-6-astra" = [10.0, 50.0]
+"gpt-6.1-sol" = [2.0, 10.0]
+"gpt-6-luna" = [0.10, 0.50]
+"claude-opus-5-5" = [4.0, 20.0]
+"claude-sonnet-5-5" = [2.0, 10.0]
+"claude-haiku-5-5" = [0.10, 0.50]
+
+[eden.precos_transcricao]
+# US$ por minuto de áudio.
+"gpt-transcribe" = 0.0045

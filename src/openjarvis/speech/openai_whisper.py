@@ -15,6 +15,27 @@ except ImportError:
     OpenAI = None  # type: ignore[assignment, misc]
 
 
+def _duration_seconds(response: object) -> float:
+    """Duração do áudio informada pela OpenAI (Éden: usada no controle de gastos).
+
+    whisper-1 (verbose_json) devolve ``duration``; os modelos novos podem
+    devolver ``usage`` do tipo "duration" com ``seconds``.
+    """
+    for value in (
+        getattr(response, "duration", None),
+        getattr(getattr(response, "usage", None), "seconds", None)
+        if getattr(getattr(response, "usage", None), "type", "") == "duration"
+        else None,
+    ):
+        try:
+            seconds = float(value) if value is not None else 0.0
+        except (TypeError, ValueError):
+            seconds = 0.0
+        if seconds > 0:
+            return seconds
+    return 0.0
+
+
 @SpeechRegistry.register("openai")
 class OpenAIWhisperBackend(SpeechBackend):
     """Cloud speech-to-text using OpenAI Whisper API."""
@@ -72,9 +93,13 @@ class OpenAIWhisperBackend(SpeechBackend):
             text=getattr(response, "text", str(response)),
             language=getattr(response, "language", None),
             confidence=None,
-            duration_seconds=getattr(response, "duration", 0.0),
+            duration_seconds=_duration_seconds(response),
             segments=[],
         )
+
+    @property
+    def model(self) -> str:
+        return self._model
 
     def health(self) -> bool:
         return self._client is not None and bool(self._api_key)
