@@ -188,20 +188,52 @@ def settings_from_dict(data: Dict[str, Any]) -> EdenSettings:
     return s
 
 
+# Variáveis de ambiente que mudam a configuração sem editar o config.toml
+# (ficam no arquivo .env do servidor, junto com as chaves).
+ENV_OVERRIDES = {
+    "EDEN_MODELO_DIA": "daily_model",
+    "EDEN_MODELO_MISSAO": "mission_model",
+    "EDEN_LIMITE_OPENAI": "openai",
+    "EDEN_LIMITE_ANTHROPIC": "anthropic",
+}
+
+
+def apply_env_overrides(
+    settings: EdenSettings, env: Optional[Dict[str, str]] = None
+) -> EdenSettings:
+    env = os.environ if env is None else env
+    for var, target in ENV_OVERRIDES.items():
+        raw = (env.get(var) or "").strip()
+        if not raw:
+            continue
+        if target in ("daily_model", "mission_model"):
+            setattr(settings, target, raw)
+            continue
+        try:
+            value = float(raw.replace(",", "."))
+        except ValueError:
+            logger.warning("Éden: %s inválido (%r); ignorado", var, raw)
+            continue
+        if value >= 0:
+            settings.monthly_limits_usd[target] = value
+    return settings
+
+
 def load_settings(path: Optional[Path] = None) -> EdenSettings:
     config_path = path or _config_file()
     try:
         with open(config_path, "rb") as fh:
             data = tomllib.load(fh)
     except FileNotFoundError:
-        return EdenSettings()
+        data = {}
     except Exception:
         logger.warning("Éden: não consegui ler %s; usando padrões", config_path)
-        return EdenSettings()
+        data = {}
     section = data.get("eden")
-    if not isinstance(section, dict):
-        return EdenSettings()
-    return settings_from_dict(section)
+    settings = (
+        settings_from_dict(section) if isinstance(section, dict) else EdenSettings()
+    )
+    return apply_env_overrides(settings)
 
 
 _lock = threading.Lock()

@@ -579,7 +579,11 @@ export function InputArea() {
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Éden: no celular, a tecla Enter do teclado pula linha (como nos apps de
+    // mensagem); enviar é pelo botão. No computador, Enter envia.
+    const touchOnly =
+      typeof window !== 'undefined' && window.matchMedia?.('(hover: none)').matches;
+    if (e.key === 'Enter' && !e.shiftKey && !touchOnly && !e.nativeEvent.isComposing) {
       e.preventDefault();
       sendMessage();
     }
@@ -677,7 +681,19 @@ export function InputArea() {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+      {/* Éden: no celular não existe "passar o mouse", então o motivo do
+          microfone indisponível aparece escrito. */}
+      {(micReason === 'no-backend' || micReason === 'not-enabled') && (
+        <div className="mt-2 text-[11px] text-center" style={{ color: 'var(--color-text-tertiary)' }}>
+          {micReason === 'no-backend'
+            ? 'Microfone indisponível: o servidor ainda não tem a transcrição de voz configurada.'
+            : 'Microfone desligado. Ligue em Configurações → Voz.'}
+        </div>
+      )}
+      <div
+        className="flex items-center justify-center mt-2 text-[11px] [@media(hover:none)]:hidden"
+        style={{ color: 'var(--color-text-tertiary)' }}
+      >
         <span>
           <kbd className="font-mono">Enter</kbd> para enviar &middot;{' '}
           <kbd className="font-mono">Shift+Enter</kbd> para nova linha

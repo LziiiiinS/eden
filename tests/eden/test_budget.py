@@ -155,3 +155,20 @@ def test_speech_budget_uses_reported_duration_then_client_then_size(tmp_path):
         settings_mod.set_settings(None)
         budget_mod.set_ledger(None)
         led.close()
+
+
+def test_env_overrides_limits_and_models():
+    from openjarvis.eden.settings import apply_env_overrides
+
+    settings = apply_env_overrides(
+        EdenSettings(),
+        {
+            "EDEN_LIMITE_OPENAI": "7,5",
+            "EDEN_LIMITE_ANTHROPIC": "abc",
+            "EDEN_MODELO_DIA": "gpt-6-luna",
+        },
+    )
+    assert settings.monthly_limits_usd["openai"] == 7.5
+    assert settings.monthly_limits_usd["anthropic"] == 15.0
+    assert settings.daily_model == "gpt-6-luna"
+    assert settings.mission_model == "claude-sonnet-5-5"

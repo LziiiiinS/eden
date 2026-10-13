@@ -21,8 +21,11 @@ import {
 import { ConversationList } from './ConversationList';
 import { EdenSyncStatus } from './EdenSyncStatus';
 import { EdenSpending } from './EdenSpending';
-import { friendlyModelName } from '../../lib/eden-ai';
+import { friendlyModelName, isEdenModel } from '../../lib/eden-ai';
 import { useAppStore } from '../../lib/store';
+
+// Éden: páginas que aparecem no menu durante o piloto.
+const EDEN_PILOT_PAGES = ['/', '/settings'];
 
 // Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
 const THEME_LABEL: Record<string, string> = {
@@ -44,6 +47,10 @@ export function Sidebar() {
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const modelLoading = useAppStore((s) => s.modelLoading);
   const deepResearch = useAppStore((s) => s.deepResearch);
+  // Éden: quem responde é escolhido na caixa de mensagem (Automático / Dia a
+  // dia / Missão). O seletor de modelos do OpenJarvis (em inglês, com
+  // download de modelos locais) fica escondido no servidor do Éden.
+  const edenServer = useAppStore((s) => s.models.some((m) => isEdenModel(m.id)));
 
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
@@ -62,7 +69,7 @@ export function Sidebar() {
     navigate('/');
   };
 
-  const navItems = [
+  const allNavItems = [
     { path: '/', icon: MessageSquare, label: 'Conversa' },
     { path: '/dashboard', icon: BarChart3, label: 'Painel' },
     { path: '/data-sources', icon: Database, label: 'Fontes de dados' },
@@ -71,6 +78,9 @@ export function Sidebar() {
     { path: '/settings', icon: Settings, label: 'Configurações' },
     { path: '/get-started', icon: Rocket, label: 'Primeiros passos' },
   ];
+  // Éden: no piloto o menu mostra só o que o Éden usa. As outras páginas do
+  // OpenJarvis (em inglês, para uso local) continuam no código, escondidas.
+  const navItems = allNavItems.filter((item) => EDEN_PILOT_PAGES.includes(item.path));
 
   return (
     <>
@@ -141,48 +151,50 @@ export function Sidebar() {
           </div>
 
           {/* Model badge */}
-          <button
-            onClick={() => setCommandPaletteOpen(true)}
-            className="mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer"
-            style={{
-              background: 'var(--color-bg-secondary)',
-              color: 'var(--color-text-secondary)',
-              border: '1px solid var(--color-border)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-bg-secondary)')}
-          >
-            {modelLoading ? (
-              <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-accent)' }} />
-            ) : (
-              <Cpu size={14} />
-            )}
-            <div className="flex-1 min-w-0">
-              <span
-                className="truncate block text-left"
-                style={{ color: deepResearch ? 'var(--color-accent)' : 'var(--color-text)' }}
-              >
-                {deepResearch
-                  ? 'Pesquisa aprofundada'
-                  : selectedModel
-                    ? friendlyModelName(selectedModel)
-                    : serverInfo?.model || 'Escolher modelo'}
-              </span>
-              {modelLoading && (
-                <span className="text-[10px] block text-left" style={{ color: 'var(--color-accent)' }}>
-                  Carregando modelo…
-                </span>
+          {!edenServer && (
+            <button
+              onClick={() => setCommandPaletteOpen(true)}
+              className="mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer"
+              style={{
+                background: 'var(--color-bg-secondary)',
+                color: 'var(--color-text-secondary)',
+                border: '1px solid var(--color-border)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-bg-secondary)')}
+            >
+              {modelLoading ? (
+                <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-accent)' }} />
+              ) : (
+                <Cpu size={14} />
               )}
-            </div>
-            {!modelLoading && (
-              <kbd
-                className="text-[10px] px-1.5 py-0.5 rounded font-mono [@media(hover:none)]:hidden"
-                style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
-              >
-                ⌘K
-              </kbd>
-            )}
-          </button>
+              <div className="flex-1 min-w-0">
+                <span
+                  className="truncate block text-left"
+                  style={{ color: deepResearch ? 'var(--color-accent)' : 'var(--color-text)' }}
+                >
+                  {deepResearch
+                    ? 'Pesquisa aprofundada'
+                    : selectedModel
+                      ? friendlyModelName(selectedModel)
+                      : serverInfo?.model || 'Escolher modelo'}
+                </span>
+                {modelLoading && (
+                  <span className="text-[10px] block text-left" style={{ color: 'var(--color-accent)' }}>
+                    Carregando modelo…
+                  </span>
+                )}
+              </div>
+              {!modelLoading && (
+                <kbd
+                  className="text-[10px] px-1.5 py-0.5 rounded font-mono [@media(hover:none)]:hidden"
+                  style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
+                >
+                  ⌘K
+                </kbd>
+              )}
+            </button>
+          )}
 
           {/* Search */}
           <div className="px-3 mb-2">

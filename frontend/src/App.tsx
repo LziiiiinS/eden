@@ -4,6 +4,8 @@ import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { EdenSettingsPage } from './pages/EdenSettingsPage';
+import { EdenAccessGate } from './components/EdenAccessGate';
 import { GetStartedPage } from './pages/GetStartedPage';
 import { AgentsPage } from './pages/AgentsPage';
 import { DataSourcesPage } from './pages/DataSourcesPage';
@@ -16,6 +18,7 @@ import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } fr
 import { OptInModal } from './components/OptInModal';
 import { LEADERBOARD_ENABLED } from './lib/supabase';
 import { startEdenSync } from './lib/eden-sync';
+import { isEdenModel } from './lib/eden-ai';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
 
@@ -165,10 +168,15 @@ export default function App() {
   }, []);
 
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
+  const edenServer = useAppStore((s) => s.models.some((m) => isEdenModel(m.id)));
 
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Éden: no servidor do Éden, o seletor de modelos (⌘K) e o painel do
+      // sistema (⌘I) ficam desligados; quem responde é escolhido na caixa de
+      // mensagem.
+      if (edenServer) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setCommandPaletteOpen(!commandPaletteOpen);
@@ -180,7 +188,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandPaletteOpen, setCommandPaletteOpen, toggleSystemPanel]);
+  }, [commandPaletteOpen, setCommandPaletteOpen, toggleSystemPanel, edenServer]);
 
 
   if (!setupDone) {
@@ -194,7 +202,9 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<ChatPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+          {/* Éden: configurações simples em português; as do OpenJarvis ficam em "avançado". */}
+          <Route path="settings" element={<EdenSettingsPage />} />
+          <Route path="settings/avancado" element={<SettingsPage />} />
           <Route path="get-started" element={<GetStartedPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />
           <Route path="agents" element={<AgentsPage />} />
@@ -202,6 +212,7 @@ export default function App() {
         </Route>
       </Routes>
       <Toaster position="bottom-right" />
+      <EdenAccessGate />
       {commandPaletteOpen && <CommandPalette />}
       {optInModalOpen && (
         <OptInModal onClose={() => setOptInModalOpen(false)} />

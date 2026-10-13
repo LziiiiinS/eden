@@ -11,6 +11,8 @@ import { listConnectors } from '../../lib/connectors-api';
 
 // Éden: textos em português; dicas de "conectar fontes de dados" escondidas no piloto
 // (contas como Gmail entram depois, com permissões revisadas).
+// Éden: o painel do sistema fica escondido no piloto (ver pages/ChatPage.tsx).
+const SHOW_SYSTEM_PANEL_TOGGLE: boolean = false;
 const SHOW_DATA_SOURCE_HINTS: boolean = false;
 
 function getGreeting(): string {
@@ -140,15 +142,17 @@ export function ChatArea() {
     <div className="flex flex-col h-full">
       {/* Toggle bar */}
       <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
-        <button
-          onClick={toggleSystemPanel}
-          className="p-1.5 rounded-md transition-colors cursor-pointer"
-          style={{ color: 'var(--color-text-tertiary)' }}
-          aria-label={systemPanelOpen ? 'Esconder painel do sistema' : 'Mostrar painel do sistema'}
-          title={`${systemPanelOpen ? 'Esconder' : 'Mostrar'} painel do sistema (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
-        >
-          <PanelIcon size={16} />
-        </button>
+        {SHOW_SYSTEM_PANEL_TOGGLE && (
+          <button
+            onClick={toggleSystemPanel}
+            className="p-1.5 rounded-md transition-colors cursor-pointer"
+            style={{ color: 'var(--color-text-tertiary)' }}
+            aria-label={systemPanelOpen ? 'Esconder painel do sistema' : 'Mostrar painel do sistema'}
+            title={`${systemPanelOpen ? 'Esconder' : 'Mostrar'} painel do sistema (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
+          >
+            <PanelIcon size={16} />
+          </button>
+        )}
       </div>
 
       {/* Data sources banner */}
