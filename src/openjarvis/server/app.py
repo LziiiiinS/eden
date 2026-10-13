@@ -501,6 +501,14 @@ def create_app(
     app.include_router(analytics_router)
     include_all_routes(app)
 
+    # Éden: conversas guardadas no servidor (sincronização celular ↔ notebook).
+    try:
+        from openjarvis.eden.routes import router as eden_router
+
+        app.include_router(eden_router)
+    except Exception as exc:
+        logger.warning("Éden: rotas de conversas não carregadas: %s", exc)
+
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)
 

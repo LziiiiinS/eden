@@ -15,6 +15,7 @@ import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { LEADERBOARD_ENABLED } from './lib/supabase';
+import { startEdenSync } from './lib/eden-sync';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
 
@@ -117,6 +118,11 @@ export default function App() {
     const interval = setInterval(refresh, 30000);
     return () => clearInterval(interval);
   }, [optInEnabled, optInDisplayName, optInAnonId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Éden: liga a sincronização das conversas com o servidor.
+  useEffect(() => {
+    startEdenSync();
+  }, []);
 
   // Show opt-in modal on first visit
   // Éden: só mostra o convite do ranking público quando o ranking existe.
