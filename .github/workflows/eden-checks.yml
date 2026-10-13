@@ -101,3 +101,7 @@ jobs:
         run: |
           cp deploy/eden/.env.exemplo deploy/eden/.env
           bash .github/eden/anotar.sh "Compose" docker compose -f deploy/eden/docker-compose.yml config -q
+      # No main, monta do jeito que o notebook monta: direto do GitHub.
+      - name: Montar pelo docker-compose a partir do GitHub (só no main)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: bash .github/eden/anotar.sh "Compose do GitHub" docker compose -f deploy/eden/docker-compose.yml build --progress=plain
