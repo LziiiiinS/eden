@@ -390,6 +390,9 @@ def registrar_lembretes(app) -> None:
 
         async with httpx.AsyncClient() as client:
             while True:
+                # Espera antes de conferir (também na primeira vez, logo
+                # depois de ligar).
+                await asyncio.sleep(INTERVALO_LEMBRETES)
                 try:
                     store = getattr(app.state, "eden_organizacao", None)
                     if store is None:
@@ -404,7 +407,6 @@ def registrar_lembretes(app) -> None:
                     raise
                 except Exception:  # noqa: BLE001
                     logger.exception("Éden: falha ao conferir lembretes")
-                await asyncio.sleep(INTERVALO_LEMBRETES)
 
     @app.on_event("startup")
     async def _ligar() -> None:  # pragma: no cover - roda com o servidor de verdade
