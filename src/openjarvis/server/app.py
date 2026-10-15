@@ -273,6 +273,13 @@ def create_app(
             "http://tauri.localhost",
             "https://tauri.localhost",
         ]
+    # Éden: o app abre pelo próprio endereço do servidor, então nenhuma outra
+    # origem precisa chamar a API (sem lista de origens de desenvolvimento).
+    if cors_origins is None and not _env_origins:
+        from openjarvis.eden.hardening import eden_mode_enabled
+
+        if eden_mode_enabled():
+            _origins = []
     # Defense in depth: a literal "*" with credentials is unsafe. Refuse it.
     _origins = [o for o in _origins if o != "*"]
     # Store dependencies in app state
@@ -560,6 +567,13 @@ def create_app(
             app.include_router(webhook_router)
         except Exception as exc:
             logger.debug("Webhook routes init skipped: %s", exc)
+
+    # Éden: no servidor do Éden, desliga todas as rotas que o Éden não usa
+    # (agentes, ferramentas, conectores, memória, pesquisa, webhooks, painéis,
+    # documentação da API). Fica antes dos arquivos do app, que continuam.
+    from openjarvis.eden.hardening import restrict_routes_for_eden
+
+    restrict_routes_for_eden(app)
 
     # Serve static frontend assets if the static/ directory exists
     static_dir = pathlib.Path(__file__).parent / "static"

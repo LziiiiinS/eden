@@ -1,7 +1,6 @@
 // Éden: configurações do piloto, em português e só com o que o Éden usa.
 // As configurações completas do OpenJarvis continuam em /settings/avancado.
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
 import { Sun, Moon, Monitor, Smartphone } from 'lucide-react';
 import { EdenPhoneQr } from '../components/EdenPhoneQr';
 import { useAppStore, type ThemeMode } from '../lib/store';
@@ -358,10 +357,9 @@ export function EdenSettingsPage() {
             O Éden é baseado no OpenJarvis (Universidade Stanford, licença Apache 2.0). As conversas
             ficam no seu servidor e são sincronizadas entre os seus aparelhos.
           </p>
-          <p className="text-xs mt-2">
-            <Link to="/settings/avancado" style={{ color: 'var(--color-accent)' }}>
-              Configurações avançadas do OpenJarvis (em inglês)
-            </Link>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-tertiary)' }}>
+            Por segurança, o servidor do Éden liga só o que o Éden usa: conversa, sincronização,
+            microfone e gastos. As outras funções do OpenJarvis ficam desligadas.
           </p>
         </Section>
       </div>
