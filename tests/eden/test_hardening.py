@@ -202,3 +202,14 @@ def test_pairing_code_works_on_the_real_eden_server(tmp_path):
         settings.set_settings(None)
         budget.set_ledger(None)
         ledger.close()
+
+
+def test_eden_server_hides_query_strings_in_the_access_log(eden_app):
+    import logging
+
+    from openjarvis.eden.hardening import ACCESS_LOGGER, SemConsultaNoRegistro
+
+    assert any(
+        isinstance(f, SemConsultaNoRegistro)
+        for f in logging.getLogger(ACCESS_LOGGER).filters
+    )

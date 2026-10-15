@@ -1086,12 +1086,15 @@ class Organizacao:
         )
         return [self.acao_publica(r, agora) for r in reversed(rows)]
 
-    def acoes_recentes(self, desde_ms: int) -> int:
-        return int(
-            self._ler("SELECT COUNT(*) FROM acoes WHERE criado_em >= ?", (desde_ms,))[
-                0
-            ][0]
-        )
+    def acoes_recentes(self, desde_ms: int, conversa_id: Optional[str] = None) -> int:
+        """Quantas sugestões foram criadas desde ``desde_ms`` (em todas as
+        conversas ou só numa)."""
+        if conversa_id is None:
+            sql, params = "SELECT COUNT(*) FROM acoes WHERE criado_em >= ?", (desde_ms,)
+        else:
+            sql = "SELECT COUNT(*) FROM acoes WHERE criado_em >= ? AND conversa_id = ?"
+            params = (desde_ms, conversa_id)
+        return int(self._ler(sql, params)[0][0])
 
     def listar_acoes(
         self, estado: Optional[str] = None, limite: int = 50
