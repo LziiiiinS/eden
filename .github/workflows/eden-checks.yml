@@ -97,6 +97,14 @@ jobs:
         run: docker run --rm eden:teste --version
       - name: Éden no contêiner (chaves de teste, sem chamar IA)
         run: bash .github/eden/anotar.sh "Éden no contêiner" bash .github/eden/teste-conteiner.sh eden:teste
+      # Abre o app num navegador de verdade (Chromium): chave, conversa, folha,
+      # slides, arquivo salvo, código curto do iPhone e regras de segurança.
+      - name: Navegador de verdade (Chromium) no app do contêiner
+        run: |
+          python3 -m venv /tmp/pw
+          /tmp/pw/bin/pip install --quiet playwright==1.56.0
+          /tmp/pw/bin/python -m playwright install --with-deps chromium
+          PATH="/tmp/pw/bin:$PATH" bash .github/eden/anotar.sh "Navegador" bash .github/eden/teste-navegador.sh eden:teste
       - name: Conferir o docker-compose do notebook
         run: |
           cp deploy/eden/.env.exemplo deploy/eden/.env

@@ -1,0 +1,220 @@
+"""Éden: abre o app num navegador de verdade (Chromium) contra o contêiner e
+confere, como uma pessoa faria:
+
+1. a tela da chave aceita a chave e some;
+2. a conversa guardada no servidor aparece e abre;
+3. o ícone de folha abre a resposta como folha e como slides, o texto pode
+   ser editado e o arquivo salvo não tem scripts;
+4. um "aparelho novo" entra com o código curto (iPhone pela tela de início),
+   e o código não vale uma segunda vez;
+5. nenhuma regra de segurança da página (CSP) bloqueou nada e não houve erro
+   de JavaScript.
+
+Sem IA de verdade: a resposta da conversa é colocada direto no servidor.
+Uso: EDEN_CHAVE=... python teste_navegador.py
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import sys
+import time
+import urllib.error
+import urllib.request
+
+from playwright.sync_api import expect, sync_playwright
+
+BASE = os.environ.get("EDEN_BASE", "http://127.0.0.1:8000")
+CHAVE = os.environ["EDEN_CHAVE"]
+FOTOS = pathlib.Path(os.environ.get("EDEN_FOTOS", "fotos-navegador"))
+
+RESPOSTA = """# Plano americano x Plano 3/4
+
+Diferenças de enquadramento para vídeo.
+
+## Plano americano
+- **Enquadramento:** da cabeça até os joelhos.
+- **Quando usar:** cenas de ação e diálogos com movimento.
+
+## Plano 3/4
+- **Enquadramento:** da cabeça até a cintura.
+- **Quando usar:** entrevistas e depoimentos.
+
+## Diferença principal
+O americano mostra mais corpo e ambiente; o 3/4 aproxima da pessoa.
+"""
+
+
+def api(metodo: str, caminho: str, corpo=None, chave: bool = True):
+    dados = json.dumps(corpo).encode() if corpo is not None else None
+    pedido = urllib.request.Request(BASE + caminho, data=dados, method=metodo)
+    if dados is not None:
+        pedido.add_header("Content-Type", "application/json")
+    if chave:
+        pedido.add_header("Authorization", f"Bearer {CHAVE}")
+    try:
+        with urllib.request.urlopen(pedido, timeout=30) as resposta:
+            return resposta.status, json.loads(resposta.read() or b"null")
+    except urllib.error.HTTPError as erro:
+        return erro.code, None
+
+
+def passo(texto: str) -> None:
+    print(f"ok: {texto}", flush=True)
+
+
+def main() -> int:
+    FOTOS.mkdir(parents=True, exist_ok=True)
+    agora = int(time.time() * 1000)
+    status, _ = api(
+        "PUT",
+        "/v1/eden/conversations/teste-pagina",
+        {
+            "id": "teste-pagina",
+            "title": "Teste da página",
+            "model": "eden-auto",
+            "createdAt": agora,
+            "updatedAt": agora + 1,
+            "messages": [
+                {
+                    "id": "u1",
+                    "role": "user",
+                    "content": "faz uma apresentação",
+                    "timestamp": agora,
+                },
+                {
+                    "id": "a1",
+                    "role": "assistant",
+                    "content": RESPOSTA,
+                    "timestamp": agora + 1,
+                },
+            ],
+        },
+    )
+    assert status == 200, f"conversa de teste não foi guardada ({status})"
+
+    problemas: list[str] = []
+    avisos: list[str] = []
+
+    def vigiar(pagina, nome: str) -> None:
+        def no_console(msg) -> None:
+            texto = msg.text
+            if "Content Security Policy" in texto or "Refused to" in texto:
+                problemas.append(f"[{nome}] CSP: {texto}")
+            elif msg.type == "error":
+                avisos.append(f"[{nome}] {texto}")
+
+        pagina.on("console", no_console)
+        pagina.on("pageerror", lambda e: problemas.append(f"[{nome}] erro: {e}"))
+
+    with sync_playwright() as pw:
+        navegador = pw.chromium.launch()
+
+        # ── notebook: chave, conversa, folha e slides ─────────────────────
+        ctx = navegador.new_context(viewport={"width": 1280, "height": 900})
+        pg = ctx.new_page()
+        vigiar(pg, "notebook")
+        pg.goto(BASE)
+        pg.get_by_label("Chave de acesso", exact=True).fill(CHAVE)
+        pg.get_by_role("button", name="Entrar").click()
+        expect(pg.get_by_label("Chave de acesso", exact=True)).to_have_count(
+            0, timeout=30_000
+        )
+        passo("tela da chave aceitou a chave")
+
+        conversa = pg.get_by_text("Teste da página").first
+        expect(conversa).to_be_visible(timeout=60_000)
+        conversa.click()
+        expect(pg.get_by_text("Diferença principal").first).to_be_visible(
+            timeout=30_000
+        )
+        passo("conversa do servidor apareceu e abriu")
+
+        pg.get_by_text("Diferença principal").first.hover()
+        pg.get_by_label("Abrir como página").first.click()
+        folha = pg.locator(".eden-pagina-folha")
+        expect(folha).to_be_visible()
+        expect(folha).to_contain_text("O americano mostra mais corpo")
+        expect(folha.locator("h1")).to_have_text("Plano americano x Plano 3/4")
+        pg.screenshot(path=str(FOTOS / "folha.png"), full_page=True)
+        passo("folha abriu com o texto da resposta")
+
+        pg.get_by_role("tab", name="Slides").click()
+        slides = pg.locator(".eden-slide")
+        expect(slides).to_have_count(4)
+        expect(slides.nth(0)).to_contain_text("Plano americano x Plano 3/4")
+        proporcao = slides.nth(1).evaluate(
+            "e => e.getBoundingClientRect().width / e.getBoundingClientRect().height"
+        )
+        assert 1.7 < proporcao < 1.85, f"slide fora de 16:9 ({proporcao:.2f})"
+        passo("slides: capa + 3 slides em 16:9")
+
+        pg.get_by_role("button", name="Editar texto").click()
+        area = pg.get_by_label("Texto da página")
+        area.fill(area.input_value() + "\n\n## Slide novo\n" + "- item\n" * 40)
+        expect(slides).to_have_count(5)
+        escala = slides.nth(4).evaluate(
+            "e => parseFloat(getComputedStyle(e).getPropertyValue('--escala') || '1')"
+        )
+        assert escala < 1, "slide com muito texto não encolheu a letra"
+        pg.get_by_role("button", name="Pronto").click()
+        pg.screenshot(path=str(FOTOS / "slides.png"), full_page=True)
+        passo(f"editar texto criou um slide; texto longo encolheu ({escala})")
+
+        with pg.expect_download() as baixado:
+            pg.get_by_role("button", name="Salvar arquivo").click()
+        html = pathlib.Path(baixado.value.path()).read_text(encoding="utf-8")
+        assert "default-src 'none'" in html, "arquivo salvo sem a regra de segurança"
+        assert "<script" not in html.lower(), "arquivo salvo com script"
+        assert "Slide novo" in html, "arquivo salvo sem o texto editado"
+        assert baixado.value.suggested_filename.endswith(".html")
+        passo(f"arquivo salvo: {baixado.value.suggested_filename}")
+
+        pg.get_by_label("Fechar a página").click()
+        expect(folha).to_have_count(0)
+        expect(pg.locator(".eden-slide")).to_have_count(0)
+        passo("página fechou")
+        ctx.close()
+
+        # ── aparelho novo: código curto ────────────────────────────────────
+        status, criado = api("POST", "/v1/eden/pareamento")
+        assert status == 200 and criado, f"código não foi criado ({status})"
+        codigo = criado["codigo"]
+        ctx2 = navegador.new_context(
+            viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
+        )
+        cel = ctx2.new_page()
+        vigiar(cel, "celular")
+        cel.goto(BASE)
+        cel.get_by_role("button", name="Tenho um código do notebook").click()
+        cel.get_by_label("Código do notebook").fill(codigo.lower().replace("-", " "))
+        expect(cel.get_by_label("Código do notebook")).to_have_value(codigo)
+        cel.get_by_role("button", name="Entrar").click()
+        expect(cel.get_by_text("Ligar este aparelho")).to_have_count(0, timeout=30_000)
+        expect(cel.get_by_label("Chave de acesso", exact=True)).to_have_count(0)
+        cel.screenshot(path=str(FOTOS / "celular.png"), full_page=True)
+        passo("aparelho novo entrou com o código curto")
+        ctx2.close()
+
+        status, _ = api(
+            "POST", "/v1/eden/pareamento/usar", {"codigo": codigo}, chave=False
+        )
+        assert status == 400, f"o código valeu duas vezes ({status})"
+        passo("o código não vale uma segunda vez")
+        navegador.close()
+
+    for aviso in avisos:
+        print(f"aviso (console): {aviso}")
+    if problemas:
+        for problema in problemas:
+            print(f"error: {problema}")
+        return 1
+    passo("nenhum bloqueio de CSP nem erro de JavaScript")
+    print("Éden no navegador: tudo certo")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
