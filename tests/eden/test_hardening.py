@@ -118,5 +118,5 @@ def test_eden_server_answers_no_cross_origin_requests(eden_app):
 
 def test_plain_openjarvis_server_is_untouched(plain_app):
     paths = _paths(plain_app)
-    assert "/v1/managed-agents" in paths
     assert "/api/research" in paths
+    assert "/api/digest" in paths
