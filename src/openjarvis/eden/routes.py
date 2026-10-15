@@ -136,6 +136,102 @@ async def get_info():
     return {"endereco_celular": endereco_celular()}
 
 
+# ── código curto para ligar um aparelho (veja eden/pareamento.py) ────────
+
+_pareamento_lock = threading.Lock()
+
+
+def _pareamento(request: Request):
+    from openjarvis.eden.pareamento import Pareamento
+
+    atual = getattr(request.app.state, "eden_pareamento", None)
+    if atual is not None:
+        return atual
+    with _pareamento_lock:
+        atual = getattr(request.app.state, "eden_pareamento", None)
+        if atual is None:
+            atual = Pareamento()
+            request.app.state.eden_pareamento = atual
+    return atual
+
+
+def _chave_do_servidor(request: Request) -> str:
+    chave = getattr(request.app.state, "api_key", "")
+    return chave if isinstance(chave, str) else ""
+
+
+_SEM_GUARDAR = {"Cache-Control": "no-store"}
+
+
+@router.post("/pareamento")
+async def criar_pareamento(request: Request):
+    """Cria um código de 5 minutos (protegida pela chave, como as outras)."""
+    from fastapi.responses import JSONResponse
+
+    if not _chave_do_servidor(request):
+        raise HTTPException(
+            status_code=409, detail="O servidor está sem chave de acesso"
+        )
+    return JSONResponse(_pareamento(request).criar(), headers=_SEM_GUARDAR)
+
+
+@router.delete("/pareamento")
+async def cancelar_pareamento(request: Request):
+    _pareamento(request).cancelar()
+    return {"ok": True}
+
+
+@router.post("/pareamento/usar")
+async def usar_pareamento(request: Request):
+    """Troca o código pela chave de acesso. É a única rota /v1 que funciona
+    sem a chave (o aparelho ainda não tem a chave)."""
+    from fastapi.responses import JSONResponse
+
+    from openjarvis.eden import pareamento
+
+    # Só JSON: assim um site de fora nem consegue mandar o pedido pelo
+    # navegador (o navegador pergunta antes e o servidor não autoriza).
+    tipo = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if tipo != "application/json":
+        raise HTTPException(status_code=415, detail="Envie em JSON")
+    corpo = await request.body()
+    if len(corpo) > 1024:
+        raise HTTPException(status_code=413, detail="Pedido grande demais")
+    try:
+        dados = json.loads(corpo)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="JSON inválido") from None
+    codigo = dados.get("codigo") if isinstance(dados, dict) else None
+
+    chave = _chave_do_servidor(request)
+    if not chave:
+        raise HTTPException(
+            status_code=409, detail="O servidor está sem chave de acesso"
+        )
+    resultado = _pareamento(request).usar(codigo)
+    if resultado == pareamento.MUITAS_TENTATIVAS:
+        return JSONResponse(
+            {
+                "detail": "Muitas tentativas. Espere 1 minuto.",
+                "code": "eden_muitas_tentativas",
+            },
+            status_code=429,
+            headers={"Retry-After": "60", **_SEM_GUARDAR},
+        )
+    if resultado != pareamento.OK:
+        logger.info("Éden: código de pareamento errado ou vencido")
+        return JSONResponse(
+            {
+                "detail": "Código errado ou vencido. Peça um novo no notebook.",
+                "code": "eden_codigo_invalido",
+            },
+            status_code=400,
+            headers=_SEM_GUARDAR,
+        )
+    logger.info("Éden: um aparelho foi ligado com o código de pareamento")
+    return JSONResponse({"chave": chave}, headers=_SEM_GUARDAR)
+
+
 @router.get("/gastos")
 async def get_spending():
     """Quanto o Éden gastou neste mês com cada IA, e o limite de cada uma."""

@@ -1,7 +1,7 @@
 // Éden: configurações do piloto, em português e só com o que o Éden usa.
 // As configurações completas do OpenJarvis continuam em /settings/avancado.
 import { useEffect, useRef, useState } from 'react';
-import { Sun, Moon, Monitor, Smartphone } from 'lucide-react';
+import { Sun, Moon, Monitor, Smartphone, KeyRound } from 'lucide-react';
 import { EdenPhoneQr } from '../components/EdenPhoneQr';
 import { EdenSpacesSettings } from '../components/Eden/EdenSpacesSettings';
 import { EdenPushSettings } from '../components/Eden/EdenPushSettings';
@@ -9,6 +9,7 @@ import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
 import { buildPhoneLink, isPhoneReachableUrl, normalizeAccessKey } from '../lib/eden-key';
+import { cancelPairingCode, createPairingCode, type PairingCode } from '../lib/eden-pareamento';
 
 const PHONE_URL_KEY = 'eden-phone-url';
 // O QR code leva a chave de acesso: some sozinho depois de 5 minutos.
@@ -23,6 +24,92 @@ function initialPhoneUrl(): string {
   } catch {
     return '';
   }
+}
+
+// Éden: código curto (ABCD-EFGH) para o aparelho que não recebe a chave pelo
+// QR code — o iPhone aberto pelo ícone da tela de início guarda tudo separado
+// do Safari. Vale 5 minutos e serve uma vez só.
+function PairingCodeBlock() {
+  const [code, setCode] = useState<PairingCode | null>(null);
+  const [expiresAt, setExpiresAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!code) return;
+    const t = setInterval(() => {
+      const agora = Date.now();
+      setNow(agora);
+      if (agora >= expiresAt) setCode(null);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [code, expiresAt]);
+
+  const show = async () => {
+    setBusy(true);
+    setError('');
+    const novo = await createPairingCode();
+    setBusy(false);
+    if (!novo) {
+      setError('Não consegui criar o código agora. Tente de novo.');
+      return;
+    }
+    setCode(novo);
+    setExpiresAt(Date.now() + novo.validadeS * 1000);
+    setNow(Date.now());
+  };
+
+  const hide = () => {
+    setCode(null);
+    void cancelPairingCode();
+  };
+
+  const restante = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  const minutos = Math.floor(restante / 60);
+  const segundos = String(restante % 60).padStart(2, '0');
+
+  return (
+    <div className="pt-4 mt-3 flex flex-col items-start gap-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
+        <strong>iPhone pelo ícone da tela de início:</strong> o ícone não enxerga a chave que o QR
+        code salvou no Safari e pede a chave de novo. Nesse caso, mostre um código aqui e, no iPhone,
+        toque em "Tenho um código do notebook" e digite.
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={code ? hide : show}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs cursor-pointer disabled:opacity-40 disabled:cursor-default"
+        style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+      >
+        <KeyRound size={14} />
+        {code ? 'Esconder código' : busy ? 'Criando…' : 'Mostrar código'}
+      </button>
+      {error && (
+        <p className="text-xs" role="alert" style={{ color: 'var(--color-error)' }}>
+          {error}
+        </p>
+      )}
+      {code && (
+        <div className="flex flex-col items-center gap-1 self-center">
+          <p
+            className="font-mono text-3xl font-semibold tracking-widest select-all"
+            style={{ color: 'var(--color-text)' }}
+            aria-label="Código para digitar no aparelho"
+          >
+            {code.codigo}
+          </p>
+          <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            Vale por mais {minutos}:{segundos} e serve uma vez só.
+          </p>
+          <p className="text-xs text-center max-w-xs" style={{ color: 'var(--color-warning)' }}>
+            Este código dá acesso ao seu Éden. Digite só nos seus aparelhos, não mande para ninguém.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Éden: QR code para conectar um celular sem digitar a chave de acesso.
@@ -130,6 +217,7 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
           </div>
         )}
       </div>
+      <PairingCodeBlock />
     </>
   );
 }

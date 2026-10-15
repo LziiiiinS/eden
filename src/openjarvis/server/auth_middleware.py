@@ -13,6 +13,12 @@ from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
+# Éden: a única rota /v1 que funciona sem a chave. Ela troca um código curto
+# (5 minutos, uso único, poucas tentativas) pela chave, para ligar o app do
+# iPhone aberto pela tela de início (openjarvis/eden/pareamento.py). Caminho e
+# método exatos; nenhum outro caminho fica de fora.
+_ROTAS_SEM_CHAVE = frozenset({("POST", "/v1/eden/pareamento/usar")})
+
 _WS_AUTH_PROTOCOL = "openjarvis.auth.v1"
 _WS_KEY_PROTOCOL_PREFIX = "openjarvis.key.b64url."
 
@@ -45,6 +51,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # outright (#758). Do not exempt arbitrary OPTIONS requests: a real
         # preflight is identified by both headers required by the CORS protocol.
         if self._is_cors_preflight(request):
+            return await call_next(request)
+        if (request.method, request.url.path) in _ROTAS_SEM_CHAVE:
             return await call_next(request)
         if self._api_key and self._requires_auth(request.url.path):
             auth = request.headers.get("Authorization", "")
