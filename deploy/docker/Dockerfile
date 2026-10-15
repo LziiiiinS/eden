@@ -78,6 +78,12 @@ RUN groupadd --system --gid 10001 openjarvis && \
     useradd --system --uid 10001 --gid openjarvis \
         --create-home --home-dir /home/openjarvis openjarvis
 
+# Éden: correções de segurança do Debian na hora de montar (a imagem base é
+# fixa e fica desatualizada; o verificador Trivy apontava pacotes com correção).
+RUN apt-get update && \
+    apt-get -y upgrade && \
+    rm -rf /var/lib/apt/lists/*
+
 # Éden: configuração, personalidade e script de início dentro da imagem, e a
 # pasta de dados (/dados) do usuário sem privilégios. Os SDKs da OpenAI e da
 # Anthropic entram acima (extra inference-cloud), para o servidor ligar com a

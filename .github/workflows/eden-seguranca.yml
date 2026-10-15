@@ -87,8 +87,8 @@ jobs:
             echo "::error title=Chave na imagem::o histórico da imagem contém algo com cara de chave"
             exit 1
           fi
-          docker run --rm --entrypoint sh eden:seguranca -c \
-            'find / -xdev \( -name ".env" -o -name "cloud-keys.env" \) -not -path "/proc/*" 2>/dev/null' > envs.txt
+          docker run --rm --user root --entrypoint sh eden:seguranca -c \
+            'find / -xdev \( -name ".env" -o -name "cloud-keys.env" \) -not -path "/proc/*" 2>/dev/null || true' > envs.txt
           if [ -s envs.txt ]; then
             echo "::error title=Arquivo .env na imagem::$(tr '\n' ' ' < envs.txt)"
             exit 1
