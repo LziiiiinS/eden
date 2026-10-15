@@ -231,6 +231,10 @@ class TestWebSearchTool:
         assert fn["function"]["name"] == "web_search"
         assert "query" in fn["function"]["parameters"]["properties"]
 
+    # Éden: este teste faz uma busca de verdade no DuckDuckGo (precisa de
+    # internet e às vezes volta sem resultados). Fica fora dos testes
+    # automáticos, como os outros testes "live".
+    @pytest.mark.live
     def test_execute_import_error(self, monkeypatch):
         """When tavily-python not installed, falls back to DuckDuckGo."""
         monkeypatch.delitem(sys.modules, "tavily", raising=False)
