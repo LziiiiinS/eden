@@ -2,8 +2,9 @@
 // o Éden (ou quando a chave muda no servidor). A chave fica salva só neste
 // aparelho, no navegador.
 import { useEffect, useState } from 'react';
-import { KeyRound } from 'lucide-react';
+import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import { apiFetch, isTauri } from '../lib/api';
+import { normalizeAccessKey } from '../lib/eden-key';
 import { useAppStore } from '../lib/store';
 
 type GateState = 'checking' | 'ok' | 'needs-key' | 'offline';
@@ -26,6 +27,7 @@ export function EdenAccessGate() {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (isTauri()) return;
@@ -42,7 +44,7 @@ export function EdenAccessGate() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const key = draft.trim();
+    const key = normalizeAccessKey(draft);
     if (!key) return;
     setBusy(true);
     setError('');
@@ -56,7 +58,9 @@ export function EdenAccessGate() {
       window.location.reload();
     } else if (result === 'needs-key') {
       updateSettings({ apiKey: previous });
-      setError('Chave incorreta. Confira e tente de novo.');
+      setError(
+        'Chave incorreta. Toque no olho para conferir o que foi colado: tem que ser igual ao que vem depois de OPENJARVIS_API_KEY= no arquivo .env.',
+      );
     } else {
       setError('Não consegui falar com o servidor agora. Tente de novo em instantes.');
     }
@@ -85,19 +89,37 @@ export function EdenAccessGate() {
           Para usar o Éden neste aparelho, digite a chave de acesso criada no servidor. Ela fica
           salva só neste aparelho. Não envie essa chave por mensagem para ninguém.
         </p>
-        <input
-          type="password"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          autoComplete="current-password"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder="oj_sk_…"
-          aria-label="Chave de acesso"
-          className="w-full text-sm px-3 py-2.5 rounded-lg outline-none"
-          style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
-        />
+        {/* Éden: sem preenchimento automático do navegador (uma senha salva
+            somada à chave colada dava "chave incorreta"); o olho mostra o que
+            foi colado. Também aceita a linha inteira do .env. */}
+        <div className="relative">
+          <input
+            type={visible ? 'text' : 'password'}
+            name="eden-chave-de-acesso"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            placeholder="oj_sk_…"
+            aria-label="Chave de acesso"
+            className="w-full text-sm pl-3 pr-10 py-2.5 rounded-lg outline-none font-mono"
+            style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+          />
+          <button
+            type="button"
+            onClick={() => setVisible((v) => !v)}
+            aria-label={visible ? 'Esconder a chave' : 'Mostrar a chave'}
+            title={visible ? 'Esconder a chave' : 'Mostrar a chave'}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-md cursor-pointer"
+            style={{ color: 'var(--color-text-tertiary)' }}
+          >
+            {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
         {error && (
           <p className="text-xs" role="alert" style={{ color: 'var(--color-error)' }}>
             {error}

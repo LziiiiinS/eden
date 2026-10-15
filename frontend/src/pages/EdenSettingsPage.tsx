@@ -2,10 +2,101 @@
 // As configurações completas do OpenJarvis continuam em /settings/avancado.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { Sun, Moon, Monitor } from 'lucide-react';
+import { Sun, Moon, Monitor, Smartphone } from 'lucide-react';
+import { EdenPhoneQr } from '../components/EdenPhoneQr';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
+import { buildPhoneLink, isPhoneReachableUrl, normalizeAccessKey } from '../lib/eden-key';
+
+const PHONE_URL_KEY = 'eden-phone-url';
+const QR_VISIBLE_MS = 120_000;
+
+function initialPhoneUrl(): string {
+  if (typeof window !== 'undefined' && isPhoneReachableUrl(window.location.origin)) {
+    return window.location.origin;
+  }
+  try {
+    return localStorage.getItem(PHONE_URL_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+// Éden: QR code para conectar um celular sem digitar a chave de acesso.
+function ConnectPhone({ apiKey }: { apiKey: string }) {
+  const [phoneUrl, setPhoneUrl] = useState(initialPhoneUrl);
+  const [showQr, setShowQr] = useState(false);
+  const reachable = isPhoneReachableUrl(phoneUrl);
+
+  useEffect(() => {
+    if (!showQr) return;
+    const t = setTimeout(() => setShowQr(false), QR_VISIBLE_MS);
+    return () => clearTimeout(t);
+  }, [showQr]);
+
+  const changeUrl = (value: string) => {
+    setPhoneUrl(value);
+    setShowQr(false);
+    try {
+      localStorage.setItem(PHONE_URL_KEY, value.trim());
+    } catch {
+      // Melhor esforço.
+    }
+  };
+
+  return (
+    <>
+      <p className="text-xs leading-relaxed mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+        Aponte a câmera do celular para o QR code: ele abre o Éden já com a chave de acesso. O
+        celular precisa estar na sua rede privada (Tailscale ligado).
+      </p>
+      <Row
+        label="Endereço do Éden no celular"
+        description="O endereço com cadeado do Tailscale, por exemplo https://eden-notebook.tailxxxx.ts.net (aparece no comando tailscale serve status)."
+      >
+        <input
+          type="url"
+          value={phoneUrl}
+          onChange={(e) => changeUrl(e.target.value)}
+          placeholder="https://…ts.net"
+          aria-label="Endereço do Éden no celular"
+          autoCapitalize="off"
+          spellCheck={false}
+          className="text-sm px-3 py-1.5 rounded-lg outline-none w-64"
+          style={inputStyle}
+        />
+      </Row>
+      {!reachable && phoneUrl.trim() !== '' && (
+        <p className="text-xs mt-2" role="alert" style={{ color: 'var(--color-warning)' }}>
+          Precisa começar com https:// e não pode ser localhost: o celular não abre o Éden sem
+          cadeado.
+        </p>
+      )}
+      <div className="pt-3 flex flex-col items-start gap-3">
+        <button
+          type="button"
+          disabled={!reachable}
+          onClick={() => setShowQr((v) => !v)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs cursor-pointer disabled:opacity-40 disabled:cursor-default"
+          style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent, white)' }}
+        >
+          <Smartphone size={14} />
+          {showQr ? 'Esconder QR code' : 'Mostrar QR code'}
+        </button>
+        {showQr && reachable && (
+          <div className="flex flex-col items-center gap-2 self-center">
+            <EdenPhoneQr text={buildPhoneLink(phoneUrl, apiKey)} />
+            <p className="text-xs text-center max-w-xs" style={{ color: 'var(--color-warning)' }}>
+              Este QR code leva a sua chave de acesso. Mostre só para os seus aparelhos, não
+              fotografe nem mande para ninguém. Ele some sozinho em 2 minutos.
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -106,7 +197,7 @@ export function EdenSettingsPage() {
   }, [settings.apiKey, settings.apiUrl]);
 
   const saveKey = () => {
-    const key = newKey.trim();
+    const key = normalizeAccessKey(newKey);
     if (!key) return;
     updateSettings({ apiKey: key });
     setNewKey('');
@@ -218,6 +309,12 @@ export function EdenSettingsPage() {
             />
           </Row>
         </Section>
+
+        {settings.apiKey && (
+          <Section title="Conectar um celular">
+            <ConnectPhone apiKey={settings.apiKey} />
+          </Section>
+        )}
 
         <Section title="IAs e gastos do mês">
           <Row label="Dia a dia" description="Respostas rápidas, dúvidas, anotações">

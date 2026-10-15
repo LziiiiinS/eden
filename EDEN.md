@@ -26,9 +26,17 @@ do OpenJarvis nem de Stanford.
 - `frontend/src/lib/eden-ai.ts`, `components/Chat/EdenModeSwitch.tsx`,
   `components/Chat/EdenAiLabel.tsx` e `components/Sidebar/EdenSpending.tsx`:
   escolha da IA, aviso de qual IA respondeu e gastos do mês.
-- `frontend/src/components/EdenAccessGate.tsx`: pede a chave de acesso do
-  servidor na primeira vez que o aparelho abre o Éden.
-- `frontend/src/pages/EdenSettingsPage.tsx`: configurações do Éden em português.
+- `frontend/src/components/EdenAccessGate.tsx` e `frontend/src/lib/eden-key.ts`:
+  pedem a chave de acesso do servidor na primeira vez que o aparelho abre o
+  Éden (sem preenchimento automático do navegador, com botão de mostrar, e
+  aceitando a linha inteira do `.env`).
+- `frontend/src/pages/EdenSettingsPage.tsx`: configurações do Éden em português,
+  com "Conectar um celular": um QR code com o endereço do Éden e a chave de
+  acesso depois do `#` (essa parte não vai ao servidor). O celular abre, a
+  chave é guardada e tirada do endereço na hora (`lib/eden-key-from-url.ts`).
+  O QR code some sozinho em 2 minutos.
+- `frontend/src/lib/vendor/qrcodegen.ts`: biblioteca de QR code do Project
+  Nayuki (licença MIT, aviso mantido no arquivo).
 - `deploy/eden/`: rodar o Éden com Docker (notebook Windows agora; servidor
   depois). Passo a passo em `deploy/eden/LEIA-ME.md`.
 - `.github/workflows/eden-checks.yml` e `.github/eden/`: testes automáticos
@@ -89,6 +97,7 @@ em cada linha.
 |---|---|
 | `frontend/index.html` | Nome Éden, idioma pt-BR e nome do atalho no iPhone |
 | `frontend/vite.config.ts` | Nome e descrição do app instalável (PWA) |
+| `frontend/src/main.tsx` | Guarda a chave que chega pelo link do QR code antes de o app abrir |
 | `frontend/src/App.tsx` | Não abre o convite do ranking público quando o ranking está desligado; liga a sincronização; tela da chave de acesso; configurações do Éden em `/settings` (as originais em `/settings/avancado`); atalhos ⌘K e ⌘I desligados no servidor do Éden |
 | `frontend/src/pages/ChatPage.tsx` | Painel do sistema (energia, GPU) escondido no piloto |
 | `frontend/src/components/Chat/XRayFooter.tsx` | Detalhes da resposta em português, com qual IA respondeu e por quê |

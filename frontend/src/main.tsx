@@ -1,3 +1,6 @@
+// Éden: precisa vir primeiro — guarda a chave que chega pelo link do QR code
+// antes de o app começar a falar com o servidor.
+import './lib/eden-key-from-url';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
