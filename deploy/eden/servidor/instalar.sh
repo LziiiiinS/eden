@@ -222,7 +222,17 @@ if [ "$TESTE" = 1 ]; then
   echo "(modo de teste: sem tailscale serve)"
 else
   tailscale serve --bg 8000 >/dev/null
-  endereco="$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"
+  endereco="$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip(".").lower())')"
+  # Guarda o endereço no .env: as Configurações do app mostram o QR code
+  # para o celular sem precisar digitar nada.
+  if [[ "$endereco" =~ ^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$ ]]; then
+    if grep -q '^EDEN_ENDERECO_CELULAR=' "$EDEN_DIR/.env"; then
+      sed -i "s|^EDEN_ENDERECO_CELULAR=.*|EDEN_ENDERECO_CELULAR=https://$endereco|" "$EDEN_DIR/.env"
+    else
+      printf '\n# Endereço do Éden no celular (o instalar.sh preenche sozinho).\nEDEN_ENDERECO_CELULAR=https://%s\n' "$endereco" >> "$EDEN_DIR/.env"
+    fi
+    docker compose up -d >/dev/null
+  fi
   echo "Pronto! Nos aparelhos com Tailscale, abra: https://$endereco"
 fi
 echo

@@ -1,6 +1,6 @@
 // Éden: configurações do piloto, em português e só com o que o Éden usa.
 // As configurações completas do OpenJarvis continuam em /settings/avancado.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sun, Moon, Monitor, Smartphone } from 'lucide-react';
 import { EdenPhoneQr } from '../components/EdenPhoneQr';
 import { EdenSpacesSettings } from '../components/Eden/EdenSpacesSettings';
@@ -11,7 +11,8 @@ import { EdenSpending } from '../components/Sidebar/EdenSpending';
 import { buildPhoneLink, isPhoneReachableUrl, normalizeAccessKey } from '../lib/eden-key';
 
 const PHONE_URL_KEY = 'eden-phone-url';
-const QR_VISIBLE_MS = 120_000;
+// O QR code leva a chave de acesso: some sozinho depois de 5 minutos.
+const QR_VISIBLE_MS = 5 * 60_000;
 
 function initialPhoneUrl(): string {
   if (typeof window !== 'undefined' && isPhoneReachableUrl(window.location.origin)) {
@@ -28,7 +29,34 @@ function initialPhoneUrl(): string {
 function ConnectPhone({ apiKey }: { apiKey: string }) {
   const [phoneUrl, setPhoneUrl] = useState(initialPhoneUrl);
   const [showQr, setShowQr] = useState(false);
+  const [automatico, setAutomatico] = useState(false);
   const reachable = isPhoneReachableUrl(phoneUrl);
+  const phoneUrlRef = useRef(phoneUrl);
+  phoneUrlRef.current = phoneUrl;
+
+  // Éden: o iniciar-eden descobre o endereço do Tailscale deste computador e
+  // o servidor informa aqui. Se o campo estiver vazio ou errado, usa esse.
+  useEffect(() => {
+    let cancelado = false;
+    apiFetch('/v1/eden/info')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((info) => {
+        const endereco = typeof info?.endereco_celular === 'string' ? info.endereco_celular : '';
+        if (cancelado || !isPhoneReachableUrl(endereco)) return;
+        if (isPhoneReachableUrl(phoneUrlRef.current)) return;
+        setPhoneUrl(endereco);
+        setAutomatico(true);
+        try {
+          localStorage.setItem(PHONE_URL_KEY, endereco);
+        } catch {
+          // Melhor esforço.
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!showQr) return;
@@ -39,6 +67,7 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
   const changeUrl = (value: string) => {
     setPhoneUrl(value);
     setShowQr(false);
+    setAutomatico(false);
     try {
       localStorage.setItem(PHONE_URL_KEY, value.trim());
     } catch {
@@ -68,6 +97,11 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
           style={inputStyle}
         />
       </Row>
+      {automatico && reachable && (
+        <p className="text-xs mt-2" style={{ color: 'var(--color-text-tertiary)' }}>
+          Endereço encontrado sozinho (Tailscale deste computador).
+        </p>
+      )}
       {!reachable && phoneUrl.trim() !== '' && (
         <p className="text-xs mt-2" role="alert" style={{ color: 'var(--color-warning)' }}>
           Use o endereço com cadeado do Tailscale, como https://eden-notebook.tailxxxx.ts.net
@@ -90,7 +124,8 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
             <EdenPhoneQr text={buildPhoneLink(phoneUrl, apiKey)} />
             <p className="text-xs text-center max-w-xs" style={{ color: 'var(--color-warning)' }}>
               Este QR code leva a sua chave de acesso. Mostre só para os seus aparelhos, não
-              fotografe nem mande para ninguém. Ele some sozinho em 2 minutos.
+              fotografe nem mande para ninguém. Ele some sozinho em 5 minutos (é só tocar no botão
+              de novo para ver outra vez).
             </p>
           </div>
         )}
