@@ -185,14 +185,12 @@ def prepare_chat(
     return decision, None
 
 
-def _evento_acoes(resposta: str) -> Optional[str]:
+def _evento_acoes(resposta: str, pedido: Any) -> Optional[str]:
     """Lê os blocos eden-acao da resposta e cria as ações pendentes."""
     from openjarvis.eden.acoes import propor
-    from openjarvis.eden.contexto import pedido_atual
 
     if "eden-acao" not in resposta:
         return None
-    pedido = pedido_atual()
     if pedido is None or pedido.store is None:
         return None
     try:
@@ -239,7 +237,7 @@ def _fim_do_streaming(pedaco: str, partes: list) -> bool:
     return fim
 
 
-async def _com_acoes(corpo: AsyncIterator[Any]) -> AsyncIterator[Any]:
+async def _com_acoes(corpo: AsyncIterator[Any], pedido: Any) -> AsyncIterator[Any]:
     """Repassa o streaming e, antes do pedaço final, manda as ações."""
     partes: list = []
     enviado = False
@@ -252,7 +250,7 @@ async def _com_acoes(corpo: AsyncIterator[Any]) -> AsyncIterator[Any]:
             )
             if _fim_do_streaming(texto_pedaco, partes):
                 enviado = True
-                evento = await asyncio.to_thread(_evento_acoes, "".join(partes))
+                evento = await asyncio.to_thread(_evento_acoes, "".join(partes), pedido)
                 if evento:
                     yield evento
         yield pedaco
@@ -267,7 +265,10 @@ def finish_chat(
         and request_body.stream
         and isinstance(response, StreamingResponse)
     ):
-        response.body_iterator = _com_acoes(response.body_iterator)
+        from openjarvis.eden.contexto import pedido_atual
+
+        # O pedido (espaço, conversa) vai junto: o streaming roda depois.
+        response.body_iterator = _com_acoes(response.body_iterator, pedido_atual())
     model = request_body.model
     provider = _provider(model)
     if not request_body.stream and provider in TRACKED_PROVIDERS:
