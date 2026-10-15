@@ -22,6 +22,7 @@ from openjarvis.eden.budget import (
     estimate_tokens,
     get_ledger,
 )
+from openjarvis.eden.redact import redact_secrets
 from openjarvis.eden.settings import EdenSettings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,14 @@ TRUNCATED_NOTE = "\n\n_(Resposta cortada no limite de tamanho do Éden.)_"
 
 
 class ProviderError(Exception):
-    """Erro vindo da OpenAI ou da Anthropic, explicado em português."""
+    """Erro vindo da OpenAI ou da Anthropic, explicado em português.
+
+    A mensagem passa por redact_secrets: nada com cara de chave chega ao app
+    nem aos registros do servidor.
+    """
+
+    def __init__(self, message: object = "") -> None:
+        super().__init__(redact_secrets(message))
 
 
 def _role(m: Message) -> str:
@@ -155,19 +163,22 @@ def read_anthropic_event(obj: Dict[str, Any], usage: Dict[str, int]) -> str:
             return text if isinstance(text, str) else ""
         return ""
     if kind == "message_start":
+        # Só a contagem inicial: a de saída de verdade vem no message_delta do
+        # fim. Se a resposta for interrompida antes, o gasto é estimado.
         u = (obj.get("message") or {}).get("usage") or {}
         usage["input_tokens"] = (
             int(u.get("input_tokens") or 0)
             + int(u.get("cache_creation_input_tokens") or 0)
             + int(u.get("cache_read_input_tokens") or 0)
         )
-        usage["output_tokens"] = int(u.get("output_tokens") or 0)
-        usage["reported"] = 1
+        usage["output_tokens_start"] = int(u.get("output_tokens") or 0)
+        usage["input_reported"] = 1
         return ""
     if kind == "message_delta":
         u = obj.get("usage") or {}
         if "output_tokens" in u:
             usage["output_tokens"] = int(u.get("output_tokens") or 0)
+            usage["reported"] = 1
         if (obj.get("delta") or {}).get("stop_reason") == "max_tokens":
             return TRUNCATED_NOTE
         return ""
@@ -265,8 +276,48 @@ async def stream_eden(
     reserve = settings.token_cost(
         provider, model, estimate_tokens(input_chars), max_out
     )
-    ledger.check(provider, settings, reserve)
+    # Separa o valor máximo deste pedido (conferir + separar juntos, para
+    # pedidos simultâneos de vários aparelhos não passarem do limite).
+    reservation = ledger.reserve(provider, settings, reserve)
+    try:
+        url, headers, payload = _request_for(
+            provider, model, messages, temperature, settings, max_out, api_key
+        )
+    except Exception:
+        ledger.release(reservation)
+        raise
 
+    usage: Dict[str, int] = {}
+    output_chars = 0
+    try:
+        async for text in _post_stream(
+            provider, url, headers, payload, usage, client_factory
+        ):
+            output_chars += len(text)
+            yield text
+    finally:
+        _record(
+            ledger,
+            settings,
+            provider,
+            model,
+            usage,
+            input_chars,
+            output_chars,
+            reservation,
+        )
+
+
+def _request_for(
+    provider: str,
+    model: str,
+    messages: Sequence[Message],
+    temperature: Optional[float],
+    settings: EdenSettings,
+    max_out: int,
+    api_key: Optional[str],
+) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
+    """Monta endereço, cabeçalhos e corpo do pedido para a empresa certa."""
     if provider == "openai":
         key = api_key if api_key is not None else _api_key("OPENAI_API_KEY")
         if not key:
@@ -294,17 +345,7 @@ async def stream_eden(
         payload = build_anthropic_payload(model, messages, max_out, temperature)
     else:
         raise ProviderError(f"O Éden não conhece o provedor de {model!r}.")
-
-    usage: Dict[str, int] = {}
-    output_chars = 0
-    try:
-        async for text in _post_stream(
-            provider, url, headers, payload, usage, client_factory
-        ):
-            output_chars += len(text)
-            yield text
-    finally:
-        _record(ledger, settings, provider, model, usage, input_chars, output_chars)
+    return url, headers, payload
 
 
 def _record(
@@ -315,19 +356,26 @@ def _record(
     usage: Dict[str, int],
     input_chars: int,
     output_chars: int,
+    reservation: Optional[str] = None,
 ) -> None:
     reported = bool(usage.get("reported"))
     if not reported and not usage.get("accepted"):
         # A empresa recusou ou nem recebeu o pedido: não há cobrança.
+        ledger.release(reservation)
         return
     if reported:
-        input_tokens = usage.get("input_tokens", 0)
+        input_tokens = usage.get("input_tokens") or estimate_tokens(input_chars)
         output_tokens = usage.get("output_tokens", 0)
     else:
-        # Sem números da empresa (resposta interrompida ou erro no meio):
-        # estima pelo tamanho do texto.
-        input_tokens = estimate_tokens(input_chars)
-        output_tokens = estimate_tokens(output_chars) if output_chars else 0
+        # Sem a contagem final da empresa (resposta interrompida ou erro no
+        # meio): usa a entrada informada, se houver, e estima a saída pelo
+        # texto recebido — nunca menos do que a empresa já tinha informado.
+        if usage.get("input_reported"):
+            input_tokens = usage.get("input_tokens", 0)
+        else:
+            input_tokens = estimate_tokens(input_chars)
+        estimated_out = estimate_tokens(output_chars) if output_chars else 0
+        output_tokens = max(estimated_out, usage.get("output_tokens_start", 0))
     cost = settings.token_cost(provider, model, input_tokens, output_tokens)
     try:
         ledger.record(
@@ -339,6 +387,8 @@ def _record(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             estimated=not reported,
+            reservation=reservation,
         )
     except Exception:  # noqa: BLE001 — anotar o gasto nunca derruba a resposta
         logger.exception("Éden: falha ao anotar o gasto")
+        ledger.release(reservation)

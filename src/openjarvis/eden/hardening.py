@@ -14,6 +14,7 @@ servidor, economia, transcrição de voz, as rotas /v1/eden/... e o app.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Iterable, List, Optional, Set, Tuple
 
 from openjarvis.eden.settings import EdenSettings, get_settings
@@ -64,6 +65,14 @@ def restrict_routes_for_eden(app, settings: Optional[EdenSettings] = None) -> No
     os arquivos do app (que são acrescentados depois e continuam servidos).
     """
     if not eden_mode_enabled(settings):
+        if os.environ.get("EDEN_IMAGEM") == "1":
+            # Imagem do Éden ligada sem a configuração do Éden (por exemplo,
+            # "jarvis serve" direto, sem o iniciar do Éden): recusar é mais
+            # seguro do que subir o OpenJarvis completo.
+            raise RuntimeError(
+                "Éden: a seção [eden] do config.toml não foi encontrada. Ligue "
+                "pelo iniciar do Éden (deploy/eden/iniciar-no-conteiner.sh)."
+            )
         return
     from fastapi.routing import APIRoute
 

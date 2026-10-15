@@ -15,7 +15,9 @@ from starlette.responses import JSONResponse, Response
 
 from openjarvis.eden.budget import BudgetExceeded, estimate_tokens, get_ledger
 from openjarvis.eden.routing import (
+    AUTO_IN_MISSION,
     REASON_COMMAND,
+    VIRTUAL_MODELS,
     RouteDecision,
     resolve,
     strip_command,
@@ -38,23 +40,50 @@ def _provider(model: str) -> Optional[str]:
     return get_provider(model)
 
 
+def _refuse(code: str, detail: str) -> Response:
+    return JSONResponse(status_code=400, content={"detail": detail, "code": code})
+
+
+# Modelos que o app do Éden pode pedir (os três modos e o automático que
+# continua uma missão). O servidor troca pelo modelo de verdade.
+EDEN_REQUEST_MODELS = frozenset(VIRTUAL_MODELS) | {AUTO_IN_MISSION}
+
+
+def _eden_gate(request_body: Any, settings: Any) -> Optional[Response]:
+    """No servidor do Éden, só passa o caminho que tem limite de gastos:
+    um dos modos do Éden, com streaming e sem ferramentas."""
+    if not request_body.stream:
+        # Sem streaming, a conversa iria pelo motor antigo do OpenJarvis
+        # (sem store=false e fora do caminho do Éden).
+        return _refuse(
+            "eden_somente_streaming",
+            "No servidor do Éden, a conversa usa streaming (stream: true).",
+        )
+    if request_body.tools or getattr(request_body, "tool_choice", None):
+        # Com ferramentas, o pedido ia direto ao SDK da empresa, sem anotar o
+        # gasto. O Éden do piloto não usa ferramentas.
+        return _refuse(
+            "eden_sem_ferramentas",
+            "O Éden não aceita ferramentas (tools) neste servidor.",
+        )
+    if request_body.model not in EDEN_REQUEST_MODELS:
+        # Outros nomes de modelo podiam escapar da conta de gastos.
+        return _refuse(
+            "eden_modelo",
+            "Use um dos modos do Éden: eden-auto, eden-dia ou eden-missao.",
+        )
+    return None
+
+
 def prepare_chat(
     request_body: Any,
 ) -> Tuple[Optional[RouteDecision], Optional[Response]]:
     """Escolhe a IA e confere o limite. Devolve (decisão, resposta de erro)."""
     settings = get_settings()
-    if settings.enabled and not request_body.stream:
-        # Éden: sem streaming, a conversa iria pelo motor antigo do OpenJarvis
-        # (sem store=false e fora do caminho do Éden). O app sempre usa
-        # streaming; outros clientes recebem um aviso claro.
-        return None, JSONResponse(
-            status_code=400,
-            content={
-                "detail": "No servidor do Éden, a conversa usa streaming "
-                "(stream: true).",
-                "code": "eden_somente_streaming",
-            },
-        )
+    if settings.enabled:
+        refusal = _eden_gate(request_body, settings)
+        if refusal is not None:
+            return None, refusal
     last_user = _last_user(request_body)
     decision = resolve(
         request_body.model, last_user.content if last_user else "", settings
@@ -66,6 +95,19 @@ def prepare_chat(
 
     model = request_body.model
     provider = _provider(model)
+    if settings.enabled:
+        if provider not in TRACKED_PROVIDERS or model not in settings.prices:
+            # Modelo sem preço explícito em [eden.precos]: a conta de gastos
+            # ficaria estimada; melhor recusar e avisar.
+            return decision, _refuse(
+                "eden_preco",
+                f"O modelo {model} não tem preço em [eden.precos] no servidor.",
+            )
+        # Teto de tamanho da resposta: nunca mais que [eden.ias] max_saida_tokens.
+        request_body.max_tokens = min(
+            int(request_body.max_tokens or settings.max_output_tokens),
+            settings.max_output_tokens,
+        )
     if provider in TRACKED_PROVIDERS:
         chars = sum(len(m.content or "") for m in request_body.messages or [])
         reserve = settings.token_cost(

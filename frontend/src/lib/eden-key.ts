@@ -25,8 +25,9 @@ export function normalizeAccessKey(raw: string): string {
  * endereço fica só no aparelho, o navegador não envia ao servidor.
  */
 export function buildPhoneLink(baseUrl: string, key: string): string {
-  const base = baseUrl.trim().replace(/[/#?]+$/, '');
-  return `${base}/#${KEY_HASH_PARAM}=${encodeURIComponent(key)}`;
+  // Só a origem (https://nome.ts.net), sem caminho, usuário ou senha.
+  const origin = new URL(baseUrl.trim()).origin;
+  return `${origin}/#${KEY_HASH_PARAM}=${encodeURIComponent(key)}`;
 }
 
 /** Lê a chave do fim do endereço ("#chave=…"); devolve null se não houver. */
@@ -38,11 +39,25 @@ export function readKeyFromHash(hash: string): string | null {
   return key || null;
 }
 
-/** O endereço serve para o celular abrir? (precisa de https, fora do localhost) */
+/**
+ * O endereço serve para o celular abrir e para receber a chave?
+ * Só o endereço com cadeado do Tailscale (https://…ts.net), sem usuário,
+ * senha, porta diferente ou caminho — assim um endereço disfarçado
+ * (ex.: https://eden.ts.net@site-falso.com) não recebe a chave.
+ */
 export function isPhoneReachableUrl(url: string): boolean {
   try {
-    const u = new URL(url);
-    return u.protocol === 'https:' && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1';
+    const u = new URL(url.trim());
+    return (
+      u.protocol === 'https:' &&
+      u.username === '' &&
+      u.password === '' &&
+      u.port === '' &&
+      (u.pathname === '/' || u.pathname === '') &&
+      u.search === '' &&
+      u.hash === '' &&
+      /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/.test(u.hostname)
+    );
   } catch {
     return false;
   }
