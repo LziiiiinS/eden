@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Sun, Moon, Monitor, Smartphone } from 'lucide-react';
 import { EdenPhoneQr } from '../components/EdenPhoneQr';
 import { EdenSpacesSettings } from '../components/Eden/EdenSpacesSettings';
+import { EdenPushSettings } from '../components/Eden/EdenPushSettings';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
@@ -319,6 +320,12 @@ export function EdenSettingsPage() {
         {settings.apiKey && (
           <Section title="Espaços">
             <EdenSpacesSettings />
+          </Section>
+        )}
+
+        {settings.apiKey && (
+          <Section title="Avisos de lembrete neste aparelho">
+            <EdenPushSettings />
           </Section>
         )}
 

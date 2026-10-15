@@ -59,6 +59,14 @@ echo "ok: gastos do mês"
 curl -fsS "$BASE/" | grep -qi '<html' || { echo "error: página do app não abriu"; exit 1; }
 echo "ok: página do app"
 
+com_chave "$BASE/v1/eden/espacos" | grep -q '"pessoal"' || { echo "error: espaços não responderam"; exit 1; }
+echo "ok: organização pessoal (espaços)"
+
+com_chave "$BASE/v1/eden/push/chave" | grep -q '"chave"' || { echo "error: chave dos avisos não respondeu"; exit 1; }
+docker exec eden-teste sh -c 'test "$(stat -c %a /dados/eden/push-vapid.key)" = 600' \
+  || { echo "error: chave dos avisos sem a proteção 600"; exit 1; }
+echo "ok: avisos no aparelho (chave do servidor protegida)"
+
 docker exec eden-teste sh -c 'test -s /dados/SOUL.md && test -f /dados/USER.md && grep -q "^\[eden" /dados/config.toml' \
   || { echo "error: configuração/personalidade do Éden não estão em /dados"; exit 1; }
 echo "ok: configuração e personalidade em /dados"

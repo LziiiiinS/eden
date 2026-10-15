@@ -40,6 +40,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // Éden: avisos de lembrete no aparelho (Web Push).
+        importScripts: ['eden-push-sw.js'],
         navigateFallbackDenylist: [/^\/v1\//, /^\/health/, /^\/dashboard/, /^\/api\//],
       },
     }),

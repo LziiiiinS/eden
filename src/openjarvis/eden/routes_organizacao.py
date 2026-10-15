@@ -331,3 +331,78 @@ async def lembretes(request: Request):
 @router.get("/registro")
 async def registro(request: Request, limite: int = 100):
     return {"registro": await _rodar(_store(request).registro, limite)}
+
+
+# ── avisos no aparelho (Web Push) ────────────────────────────────────────
+
+
+def _chave_push(request: Request):
+    from openjarvis.eden import push
+
+    chave = getattr(request.app.state, "eden_push_chave", None)
+    if chave is None:
+        chave = push.carregar_chave()
+        request.app.state.eden_push_chave = chave
+    return chave
+
+
+@router.get("/push/chave")
+async def push_chave(request: Request):
+    from openjarvis.eden import push
+
+    chave = await asyncio.to_thread(_chave_push, request)
+    return {"chave": push.chave_publica_b64(chave)}
+
+
+@router.get("/push/inscricoes")
+async def push_listar(request: Request):
+    from openjarvis.eden import push
+
+    return {"inscricoes": await _rodar(push.listar_inscricoes, _store(request))}
+
+
+@router.post("/push/inscricoes")
+async def push_inscrever(request: Request):
+    from openjarvis.eden import push
+
+    dados = await _corpo(request)
+    try:
+        insc = await asyncio.to_thread(push.salvar_inscricao, _store(request), dados)
+    except push.ErroPush as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"inscricao": insc}
+
+
+@router.post("/push/cancelar")
+async def push_cancelar(request: Request):
+    from openjarvis.eden import push
+
+    dados = await _corpo(request)
+    removida = await asyncio.to_thread(
+        push.remover_inscricao, _store(request), dados.get("endpoint")
+    )
+    return {"removida": removida}
+
+
+@router.post("/push/teste")
+async def push_teste(request: Request):
+    """Manda um aviso de teste para os aparelhos inscritos."""
+    import httpx
+
+    from openjarvis.eden import push
+
+    store = _store(request)
+    chave = await asyncio.to_thread(_chave_push, request)
+    async with httpx.AsyncClient() as client:
+        resultado = await push.enviar(
+            store,
+            chave,
+            {
+                "titulo": "Éden",
+                "corpo": "Teste: os avisos estão funcionando neste aparelho.",
+                "tag": "teste",
+                "url": "/tarefas",
+            },
+            client,
+        )
+    return resultado
