@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, FileText } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { ToolCallCard } from './ToolCallCard';
 import { ResearchTimeline } from './ResearchTimeline';
@@ -18,6 +18,8 @@ import { EdenSyncBadge } from './EdenSyncBadge';
 import { EdenAiLabel } from './EdenAiLabel';
 import { EdenActionCards } from './EdenActionCards';
 import { removeActionBlocks } from '../../lib/eden-acoes';
+import { SafeImage, SafeLink } from './EdenSafeMarkdown';
+import { EdenPageView } from './EdenPageView';
 
 interface Props {
   message: ChatMessage;
@@ -79,60 +81,6 @@ function CodeBlockPre({ children, ...props }: any) {
   );
 }
 
-// Éden: imagens que a IA escreve na resposta (![...](https://...)) não são
-// carregadas. Carregar faria o aparelho chamar um site de fora — e um texto
-// malicioso colado na conversa poderia fazer a IA esconder dados pessoais no
-// endereço da imagem. Fica só o texto, com o endereço à vista.
-function SafeImage({ src, alt }: { src?: unknown; alt?: string }) {
-  const endereco = typeof src === 'string' ? src : '';
-  return (
-    <span
-      className="inline-block text-xs px-2 py-1 rounded"
-      style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
-      title={endereco}
-    >
-      [imagem não carregada{alt ? `: ${alt}` : ''}]
-    </span>
-  );
-}
-
-// Éden: links escritos pela IA. Para fora do Éden, pergunta antes de abrir e
-// mostra o site — um texto malicioso colado na conversa poderia fazer a IA
-// montar um link que leva dados pessoais no endereço.
-function SafeLink({ href, children }: { href?: string; children?: React.ReactNode }) {
-  const destino = typeof href === 'string' ? href : '';
-  let externo: URL | null = null;
-  try {
-    const url = new URL(destino, window.location.origin);
-    if (url.origin !== window.location.origin) externo = url;
-  } catch {
-    externo = null;
-  }
-  if (!externo) {
-    return <a href={destino}>{children}</a>;
-  }
-  const site = externo.host;
-  return (
-    <a
-      href={destino}
-      rel="noopener noreferrer nofollow"
-      title={site}
-      onClick={(e) => {
-        e.preventDefault();
-        const ok = window.confirm(
-          `Abrir um site fora do Éden?\n\n${site}\n\nEste link foi escrito pela IA. Só abra se você confia nele.`,
-        );
-        if (ok) window.open(destino, '_blank', 'noopener,noreferrer');
-      }}
-    >
-      {children}
-      <span className="text-[11px] ml-1" style={{ color: 'var(--color-text-tertiary)' }}>
-        ({site})
-      </span>
-    </a>
-  );
-}
-
 function CopyMessageButton({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -155,8 +103,25 @@ function CopyMessageButton({ content }: { content: string }) {
   );
 }
 
+// Éden: abre a resposta como uma página de uma folha (imprimir, PDF, arquivo).
+function PageButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      className="p-1 rounded opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity cursor-pointer"
+      style={{ color: 'var(--color-text-tertiary)' }}
+      title="Abrir como página (imprimir ou salvar PDF)"
+      aria-label="Abrir como página"
+    >
+      <FileText size={14} />
+    </button>
+  );
+}
+
 export function MessageBubble({ message, isLive = false }: Props) {
   const isUser = message.role === 'user';
+  const [pageOpen, setPageOpen] = useState(false);
+  const closePage = useCallback(() => setPageOpen(false), []);
 
   // Éden: os blocos de ação (eden-acao) viram cartões; o texto deles some.
   const cleanContent = useMemo(
@@ -248,10 +213,12 @@ export function MessageBubble({ message, isLive = false }: Props) {
       <div className="flex items-center gap-2 mt-1.5">
         {!isLive && <EdenAiLabel telemetry={message.telemetry} />}
         <CopyMessageButton content={cleanContent} />
+        {!isLive && cleanContent && <PageButton onOpen={() => setPageOpen(true)} />}
         {!isUser && !isLive && (
           <SpeakMessageButton messageId={message.id} content={cleanContent} />
         )}
       </div>
+      {pageOpen && <EdenPageView content={cleanContent} onClose={closePage} />}
       <XRayFooter
         usage={message.usage}
         telemetry={message.telemetry}
