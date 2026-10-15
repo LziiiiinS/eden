@@ -1,6 +1,7 @@
 // Éden: testes da limpeza da chave de acesso.
 import { describe, expect, it } from 'vitest';
-import { normalizeAccessKey } from './eden-key';
+import { buildPhoneLink, isPhoneReachableUrl, normalizeAccessKey, readKeyFromHash } from './eden-key';
+import { qrcodegen } from './vendor/qrcodegen';
 
 const KEY = 'oj_sk_Ab-9_xYz0123456789abcdefghijklmnopqrstuv';
 
@@ -20,5 +21,35 @@ describe('normalizeAccessKey', () => {
 
   it('leaves keys in other formats untouched (only trimmed)', () => {
     expect(normalizeAccessKey('  outra-chave  ')).toBe('outra-chave');
+  });
+});
+
+describe('phone link (QR code)', () => {
+  it('puts the key after "#" and reads it back', () => {
+    const link = buildPhoneLink('https://eden-notebook.tail1234.ts.net/', KEY);
+    expect(link).toBe(`https://eden-notebook.tail1234.ts.net/#chave=${KEY}`);
+    expect(readKeyFromHash(new URL(link).hash)).toBe(KEY);
+  });
+
+  it('ignores addresses without a key', () => {
+    expect(readKeyFromHash('')).toBeNull();
+    expect(readKeyFromHash('#outra=coisa')).toBeNull();
+  });
+
+  it('accepts only https addresses outside localhost for the phone', () => {
+    expect(isPhoneReachableUrl('https://eden-notebook.tail1234.ts.net')).toBe(true);
+    expect(isPhoneReachableUrl('http://eden-notebook.tail1234.ts.net')).toBe(false);
+    expect(isPhoneReachableUrl('https://localhost:8000')).toBe(false);
+    expect(isPhoneReachableUrl('http://localhost:8000')).toBe(false);
+    expect(isPhoneReachableUrl('não é endereço')).toBe(false);
+  });
+});
+
+describe('QR code', () => {
+  it('encodes the phone link into a square grid', () => {
+    const link = buildPhoneLink('https://eden-notebook.tail1234.ts.net', KEY);
+    const qr = qrcodegen.QrCode.encodeText(link, qrcodegen.QrCode.Ecc.MEDIUM);
+    expect(qr.size).toBeGreaterThan(20);
+    expect(qr.size % 4).toBe(1);
   });
 });
