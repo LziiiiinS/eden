@@ -45,6 +45,12 @@ enabled = ""
 # As rotas deles também ficam desligadas no servidor do Éden.
 enabled = false
 
+[traces]
+# Registro técnico de cada conversa (pergunta e resposta inteiras) do
+# OpenJarvis: desligado no Éden. As conversas ficam só no banco de conversas,
+# que apaga de verdade quando a pessoa apaga (revisão de segurança, 15/10).
+enabled = false
+
 [analytics]
 # Telemetria anônima do OpenJarvis (envia uso para a equipe do projeto):
 # desligada no Éden.

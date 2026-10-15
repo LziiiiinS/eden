@@ -317,4 +317,9 @@ def test_push_subscription_routes(client):
     assert lista[0]["servico"] == "fcm.googleapis.com" and "endpoint" not in lista[0]
     r = client.post("/v1/eden/push/cancelar", json={"endpoint": insc["endpoint"]})
     assert r.json() == {"removida": True}
+    # Remover pela tela (por id), sem precisar do endereço do aparelho.
+    client.post("/v1/eden/push/inscricoes", json=insc)
+    insc_id = client.get("/v1/eden/push/inscricoes").json()["inscricoes"][0]["id"]
+    assert client.delete(f"/v1/eden/push/inscricoes/{insc_id}").status_code == 200
+    assert client.delete(f"/v1/eden/push/inscricoes/{insc_id}").status_code == 404
     assert client.post("/v1/eden/push/teste").json()["enviados"] == 0

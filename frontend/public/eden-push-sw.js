@@ -10,11 +10,18 @@ self.addEventListener('push', (event) => {
     dados = { corpo: event.data ? event.data.text() : '' };
   }
   const titulo = typeof dados.titulo === 'string' && dados.titulo ? dados.titulo : 'Éden';
-  // Só caminhos do próprio Éden ("/tarefas"), nunca outro site.
-  const url =
-    typeof dados.url === 'string' && dados.url.startsWith('/') && !dados.url.startsWith('//')
-      ? dados.url
-      : '/';
+  // Só endereços do próprio Éden ("/tarefas"), nunca outro site.
+  let url = '/';
+  try {
+    if (typeof dados.url === 'string') {
+      const destino = new URL(dados.url, self.location.origin);
+      if (destino.origin === self.location.origin) {
+        url = destino.pathname + destino.search + destino.hash;
+      }
+    }
+  } catch (e) {
+    url = '/';
+  }
   event.waitUntil(
     self.registration.showNotification(titulo, {
       body: typeof dados.corpo === 'string' ? dados.corpo : '',

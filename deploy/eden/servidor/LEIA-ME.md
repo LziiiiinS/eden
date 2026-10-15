@@ -98,6 +98,18 @@ bash instalar.sh
 
 ## 7. Fechar o SSH para a internet
 
+Antes, dois cuidados para não ficar trancado do lado de fora:
+
+1. **Desligar a expiração da chave do servidor no Tailscale.** Por padrão, a
+   chave de cada aparelho expira depois de alguns meses; no servidor, isso o
+   tiraria da rede privada (e o Éden e o SSH parariam juntos). No painel do
+   Tailscale, em **Machines**, nos três pontinhos do `eden-servidor`, escolha
+   **Disable key expiry**.
+2. **Senha do root para emergência.** No servidor, rode `passwd` e crie uma
+   senha forte; guarde num gerenciador de senhas. Ela **não** serve para o
+   SSH (que só aceita chave): serve só para o **console** do painel da
+   Hetzner, se um dia o Tailscale falhar.
+
 Depois que você conseguir entrar pelo Tailscale (`ssh root@eden-servidor`,
 com o Tailscale ligado no notebook):
 
@@ -106,7 +118,11 @@ sudo /opt/eden/fechar-ssh-publico.sh
 ```
 
 A partir daí o servidor não aceita nenhuma conexão da internet. Em
-emergência, ainda dá para entrar pelo **console** do painel da Hetzner.
+emergência, entre pelo **console** do painel da Hetzner com a senha do root
+(se esqueceu, o painel tem a opção de redefinir a senha do root).
+
+- Use verificação em duas etapas na conta do Tailscale (e na do GitHub, que
+  é o login dela): quem entra na conta do Tailscale chega ao servidor.
 
 ## No dia a dia
 

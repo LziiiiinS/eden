@@ -31,23 +31,41 @@ function Cartao({ messageId, acao }: { messageId: string; acao: EdenActionRef })
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
+  // O que o SERVIDOR guardou para esta ação. O botão Confirmar só aparece
+  // depois de conferir: o resumo mostrado e a assinatura enviada são os do
+  // servidor, não os que vieram na mensagem sincronizada.
+  const [conferida, setConferida] = useState<Acao | null>(null);
+  const [semConexao, setSemConexao] = useState(false);
   const estado = visibleState(acao, agora);
 
-  // Pendente aqui pode já ter sido decidida em outro aparelho: confere no servidor.
   useEffect(() => {
     if (acao.estado !== 'pendente') return;
     let cancelado = false;
     edenJson<{ acao: Acao }>(`/acoes/${encodeURIComponent(acao.id)}`)
       .then(({ acao: atual }) => {
-        if (!cancelado && atual.estado !== acao.estado) {
-          updateEdenAction(messageId, acao.id, { estado: atual.estado });
+        if (cancelado) return;
+        setConferida(atual);
+        setSemConexao(false);
+        const mudou =
+          atual.estado !== acao.estado ||
+          atual.resumo !== acao.resumo ||
+          atual.assinatura !== acao.assinatura;
+        if (mudou) {
+          updateEdenAction(messageId, acao.id, {
+            estado: atual.estado,
+            resumo: atual.resumo,
+            assinatura: atual.assinatura,
+            expira_em: atual.expira_em,
+          });
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelado) setSemConexao(true);
+      });
     return () => {
       cancelado = true;
     };
-  }, [acao.id, acao.estado, messageId, updateEdenAction]);
+  }, [acao.id, acao.estado, acao.resumo, acao.assinatura, messageId, updateEdenAction]);
 
   // Atualiza o "expirou" sozinho.
   useEffect(() => {
@@ -65,7 +83,7 @@ function Cartao({ messageId, acao }: { messageId: string; acao: EdenActionRef })
       const caminho = `/acoes/${encodeURIComponent(acao.id)}/${confirmar ? 'confirmar' : 'recusar'}`;
       const { acao: nova } = await edenJson<{ acao: Acao }>(caminho, {
         method: 'POST',
-        body: confirmar ? { assinatura: acao.assinatura } : {},
+        body: confirmar ? { assinatura: conferida?.assinatura ?? '' } : {},
       });
       updateEdenAction(messageId, acao.id, { estado: nova.estado });
       if (confirmar) {
@@ -117,10 +135,17 @@ function Cartao({ messageId, acao }: { messageId: string; acao: EdenActionRef })
           <Icone tipo={acao.tipo} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="leading-snug break-words" style={{ color: 'var(--color-text)' }}>
-            {acao.resumo}
+          <p
+            className="leading-snug break-words overflow-y-auto"
+            style={{ color: 'var(--color-text)', whiteSpace: 'pre-wrap', maxHeight: '40vh' }}
+          >
+            {conferida?.resumo ?? acao.resumo}
           </p>
-          {pendente ? (
+          {pendente && !conferida ? (
+            <p className="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              {semConexao ? 'Sem conexão com o servidor; tente de novo daqui a pouco.' : 'Conferindo…'}
+            </p>
+          ) : pendente ? (
             <div className="mt-2 flex flex-wrap gap-2">
               <button
                 type="button"

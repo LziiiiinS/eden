@@ -373,6 +373,19 @@ async def push_inscrever(request: Request):
     return {"inscricao": insc}
 
 
+@router.delete("/push/inscricoes/{insc_id}")
+async def push_remover(insc_id: int, request: Request):
+    """Remove um aparelho da lista de avisos (pela tela de Configurações)."""
+    from openjarvis.eden import push
+
+    removida = await asyncio.to_thread(
+        push.remover_inscricao_id, _store(request), insc_id
+    )
+    if not removida:
+        raise HTTPException(status_code=404, detail="Aparelho não encontrado")
+    return {"removida": True}
+
+
 @router.post("/push/cancelar")
 async def push_cancelar(request: Request):
     from openjarvis.eden import push

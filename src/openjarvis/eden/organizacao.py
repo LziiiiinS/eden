@@ -55,10 +55,12 @@ ESPACOS_INICIAIS: Tuple[Tuple[str, str, str], ...] = (
 
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # Marcas de direção do texto (bidi) e afins.
-_INVISIVEIS = frozenset(
-    "\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u061c"
-)
-_HORA = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+# Horário, data e números só com algarismos 0-9 (em Python, \d também aceita
+# dígitos de outras escritas, que parecem outros números na tela).
+_HORA = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$", re.ASCII)
+_DATA = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", re.ASCII)
+_INTEIRO = re.compile(r"^[0-9]{1,12}$", re.ASCII)
+_ESPACOS = re.compile(r"\s+")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS espacos (
@@ -136,6 +138,10 @@ CREATE TABLE IF NOT EXISTS registro (
     alvo    TEXT    NOT NULL,
     acao_id TEXT
 );
+CREATE TABLE IF NOT EXISTS ajustes (
+    chave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS push_inscricoes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint   TEXT    NOT NULL UNIQUE,
@@ -164,20 +170,39 @@ def agora_ms() -> int:
 # ── regras dos campos ────────────────────────────────────────────────────
 
 
-def texto(valor: Any, campo: str, maximo: int, obrigatorio: bool = True) -> str:
+def _visivel(c: str) -> bool:
+    """O caractere aparece na tela? Fora: controle, formatação invisível
+    (direção do texto, largura zero, "tags" Unicode), uso privado, sem
+    atribuição e os seletores de variação (menos o do emoji, U+FE0F).
+    Assim o cartão de confirmação mostra exatamente o que será gravado."""
+    if unicodedata.category(c) in ("Cc", "Cf", "Co", "Cn", "Cs"):
+        return False
+    codigo = ord(c)
+    return not (0xFE00 <= codigo <= 0xFE0E or 0xE0100 <= codigo <= 0xE01EF)
+
+
+def texto(
+    valor: Any,
+    campo: str,
+    maximo: int,
+    obrigatorio: bool = True,
+    uma_linha: bool = False,
+) -> str:
+    """Confere e limpa um texto. ``uma_linha``: quebras de linha e espaços
+    seguidos viram um espaço só (títulos, memórias, nomes)."""
     if valor is None:
         valor = ""
     if not isinstance(valor, str):
         raise ErroOrganizacao(f"'{campo}' precisa ser texto")
-    limpo = valor.replace("\r\n", "\n").replace("\r", "\n")
-    # Sem caracteres de controle (menos quebra de linha e tab) e sem os
-    # caracteres invisíveis que invertem a direção do texto — eles fariam o
-    # cartão de confirmação mostrar uma coisa diferente do que está gravado.
-    limpo = "".join(
-        c
-        for c in limpo
-        if c in "\n\t" or (unicodedata.category(c) != "Cc" and c not in _INVISIVEIS)
-    ).strip()
+    limpo = (
+        valor.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\u2028", "\n")
+        .replace("\u2029", "\n")
+    )
+    limpo = "".join(c for c in limpo if c in "\n\t" or _visivel(c)).strip()
+    if uma_linha:
+        limpo = _ESPACOS.sub(" ", limpo)
     if obrigatorio and not limpo:
         raise ErroOrganizacao(f"'{campo}' não pode ficar vazio")
     if len(limpo) > maximo:
@@ -189,7 +214,7 @@ def data_iso(valor: Any, campo: str = "data") -> Optional[str]:
     """'AAAA-MM-DD' (ou None)."""
     if valor in (None, ""):
         return None
-    if not isinstance(valor, str):
+    if not isinstance(valor, str) or not _DATA.match(valor.strip()):
         raise ErroOrganizacao(f"'{campo}' precisa ser uma data AAAA-MM-DD")
     try:
         d = date.fromisoformat(valor.strip())
@@ -226,9 +251,9 @@ def slug(nome: str) -> str:
 
 
 def inteiro(valor: Any, campo: str = "id") -> int:
+    if isinstance(valor, str) and _INTEIRO.match(valor.strip()):
+        valor = int(valor.strip())
     if isinstance(valor, bool) or not isinstance(valor, int) or valor <= 0:
-        if isinstance(valor, str) and valor.strip().isdigit():
-            return int(valor.strip())
         raise ErroOrganizacao(f"'{campo}' precisa ser um número")
     return valor
 
@@ -345,9 +370,13 @@ class Organizacao:
     def criar_espaco(
         self, nome: Any, descricao: Any = "", quem: str = "voce"
     ) -> Dict[str, Any]:
-        nome = texto(nome, "nome", MAX_NOME_ESPACO)
+        nome = texto(nome, "nome", MAX_NOME_ESPACO, uma_linha=True)
         descricao = texto(
-            descricao, "descricao", MAX_DESCRICAO_ESPACO, obrigatorio=False
+            descricao,
+            "descricao",
+            MAX_DESCRICAO_ESPACO,
+            obrigatorio=False,
+            uma_linha=True,
         )
 
         def fazer(conn: sqlite3.Connection) -> str:
@@ -381,13 +410,16 @@ class Organizacao:
             raise ErroOrganizacao("espaço não encontrado", 404)
         novos: Dict[str, Any] = {}
         if "nome" in campos:
-            novos["nome"] = texto(campos["nome"], "nome", MAX_NOME_ESPACO)
+            novos["nome"] = texto(
+                campos["nome"], "nome", MAX_NOME_ESPACO, uma_linha=True
+            )
         if "descricao" in campos:
             novos["descricao"] = texto(
                 campos["descricao"],
                 "descricao",
                 MAX_DESCRICAO_ESPACO,
                 obrigatorio=False,
+                uma_linha=True,
             )
         if "arquivado" in campos:
             if not isinstance(campos["arquivado"], bool):
@@ -494,7 +526,7 @@ class Organizacao:
         acao_id: Optional[str] = None,
         conn: Optional[sqlite3.Connection] = None,
     ) -> Dict[str, Any]:
-        novo = texto(valor, "texto", MAX_MEMORIA)
+        novo = texto(valor, "texto", MAX_MEMORIA, uma_linha=True)
         esp = self._espaco_memoria(espaco)
 
         def fazer(c: sqlite3.Connection) -> int:
@@ -532,7 +564,9 @@ class Organizacao:
             raise ErroOrganizacao("memória não encontrada", 404)
         novos: Dict[str, Any] = {}
         if "texto" in campos:
-            novos["texto"] = texto(campos["texto"], "texto", MAX_MEMORIA)
+            novos["texto"] = texto(
+                campos["texto"], "texto", MAX_MEMORIA, uma_linha=True
+            )
         if "espaco" in campos:
             novos["espaco"] = self._espaco_memoria(campos["espaco"])
         if not novos:
@@ -646,7 +680,9 @@ class Organizacao:
         """
         novos: Dict[str, Any] = {}
         if not parcial or "titulo" in campos:
-            novos["titulo"] = texto(campos.get("titulo"), "titulo", MAX_TITULO)
+            novos["titulo"] = texto(
+                campos.get("titulo"), "titulo", MAX_TITULO, uma_linha=True
+            )
         if "notas" in campos or not parcial:
             novos["notas"] = texto(
                 campos.get("notas"), "notas", MAX_NOTAS_TAREFA, obrigatorio=False
@@ -899,7 +935,11 @@ class Organizacao:
             novos["texto"] = texto(campos.get("texto"), "texto", MAX_TEXTO_NOTA)
         if not parcial or "titulo" in campos:
             novos["titulo"] = texto(
-                campos.get("titulo"), "titulo", MAX_TITULO, obrigatorio=False
+                campos.get("titulo"),
+                "titulo",
+                MAX_TITULO,
+                obrigatorio=False,
+                uma_linha=True,
             )
         if not parcial or "espaco" in campos:
             novos["espaco"] = self.espaco_valido(campos.get("espaco"))

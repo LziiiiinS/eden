@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -262,6 +263,41 @@ def remover_inscricao(store, endpoint: Any) -> bool:
     return bool(store.transacao(fazer))
 
 
+def remover_inscricao_id(store, insc_id: int) -> bool:
+    def fazer(conn):
+        cur = conn.execute("DELETE FROM push_inscricoes WHERE id = ?", (insc_id,))
+        return cur.rowcount > 0
+
+    return bool(store.transacao(fazer))
+
+
+def conferir_troca_de_chave(store, chave_acesso: str) -> bool:
+    """Se a chave de acesso do servidor mudou desde a última vez, apaga as
+    inscrições de avisos: quem só tinha a chave antiga não continua
+    recebendo os lembretes. Os aparelhos do dono se inscrevem de novo
+    sozinhos quando ele entra com a chave nova. Devolve True se apagou."""
+    if not chave_acesso:
+        return False
+    marca = hashlib.sha256(f"eden-push:{chave_acesso}".encode("utf-8")).hexdigest()
+
+    def fazer(conn):
+        row = conn.execute(
+            "SELECT valor FROM ajustes WHERE chave = 'marca_chave_acesso'"
+        ).fetchone()
+        apagou = False
+        if row is not None and row["valor"] != marca:
+            conn.execute("DELETE FROM push_inscricoes")
+            apagou = True
+        conn.execute(
+            "INSERT INTO ajustes (chave, valor) VALUES ('marca_chave_acesso', ?) "
+            "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+            (marca,),
+        )
+        return apagou
+
+    return bool(store.transacao(fazer))
+
+
 def listar_inscricoes(store) -> List[Dict[str, Any]]:
     """Sem o endereço completo (ele funciona como senha do aparelho)."""
     return [
@@ -408,9 +444,23 @@ def registrar_lembretes(app) -> None:
                 except Exception:  # noqa: BLE001
                     logger.exception("Éden: falha ao conferir lembretes")
 
+    def _conferir_chave() -> None:
+        from openjarvis.eden.organizacao import Organizacao
+
+        store = getattr(app.state, "eden_organizacao", None)
+        if store is None:
+            store = Organizacao()
+            app.state.eden_organizacao = store
+        if conferir_troca_de_chave(store, os.environ.get("OPENJARVIS_API_KEY", "")):
+            logger.info("Éden: chave de acesso nova; avisos dos aparelhos reiniciados")
+
     @app.on_event("startup")
     async def _ligar() -> None:  # pragma: no cover - roda com o servidor de verdade
         if get_settings().enabled:
+            try:
+                await asyncio.to_thread(_conferir_chave)
+            except Exception:  # noqa: BLE001
+                logger.exception("Éden: não consegui conferir a chave de acesso")
             estado["tarefa"] = asyncio.create_task(laco())
 
     @app.on_event("shutdown")

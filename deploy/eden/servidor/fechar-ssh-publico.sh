@@ -15,6 +15,21 @@ if ! tailscale status >/dev/null 2>&1; then
   exit 1
 fi
 
+# A chave do servidor no Tailscale expira? Se expirar com a porta 22 fechada,
+# o servidor sai da rede privada e só o console da Hetzner entra.
+expira="$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Self", {}).get("KeyExpiry", ""))')"
+if [ -n "$expira" ]; then
+  echo "Atenção: a chave deste servidor no Tailscale expira em $expira."
+  echo "Antes de fechar: no painel do Tailscale (Machines), nos três pontinhos do"
+  echo "servidor, escolha \"Disable key expiry\". E guarde a senha do root (sudo passwd root)"
+  echo "num gerenciador de senhas: ela serve para o console da Hetzner em emergência."
+  read -r -p "Já fez isso? Digite SIM para continuar: " ok_expira
+  if [ "$ok_expira" != "SIM" ] && [ "$ok_expira" != "sim" ]; then
+    echo "Cancelado. Nada foi mudado."
+    exit 0
+  fi
+fi
+
 # Esta sessão veio pela rede privada? (endereços do Tailscale: 100.64.0.0/10)
 conexao="${SSH_CONNECTION:-}"
 origem="${conexao%% *}"
