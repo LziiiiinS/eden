@@ -5,6 +5,7 @@ import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { EdenSettingsPage } from './pages/EdenSettingsPage';
+import { EdenMemoryPage } from './pages/EdenMemoryPage';
 import { EdenAccessGate } from './components/EdenAccessGate';
 import { GetStartedPage } from './pages/GetStartedPage';
 import { AgentsPage } from './pages/AgentsPage';
@@ -204,6 +205,8 @@ export default function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           {/* Éden: configurações simples em português; as do OpenJarvis ficam em "avançado". */}
           <Route path="settings" element={<EdenSettingsPage />} />
+          {/* Éden (Parte 2): organização pessoal. */}
+          <Route path="memoria" element={<EdenMemoryPage />} />
           <Route path="settings/avancado" element={<SettingsPage />} />
           <Route path="get-started" element={<GetStartedPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />

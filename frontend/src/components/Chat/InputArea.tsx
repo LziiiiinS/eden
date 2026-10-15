@@ -12,6 +12,10 @@ import {
 } from '../../lib/chat-telemetry';
 import { MicButton } from './MicButton';
 import { EdenModeSwitch } from './EdenModeSwitch';
+import { EdenSpaceSelect } from './EdenSpaceSelect';
+import { avisarMudanca } from './EdenActionCards';
+import { parseActionsEvent, removeActionBlocks, type EdenActionRef } from '../../lib/eden-acoes';
+import { useEdenOrg } from '../../lib/eden-org';
 import { useSpeech } from '../../hooks/useSpeech';
 import {
   isEdenModel,
@@ -211,7 +215,8 @@ export function InputArea() {
     const currentMessages = useAppStore.getState().messages;
     const apiMessages = currentMessages.map((m) => ({
       role: m.role,
-      content: m.content,
+      // Éden: blocos de ação antigos não voltam para a IA.
+      content: m.role === 'assistant' ? removeActionBlocks(m.content) : m.content,
     }));
     // Éden: no automático, uma conversa em missão continua com o Claude.
     const requestModel = requestModelFor(selectedModel, currentMessages);
@@ -236,6 +241,7 @@ export function InputArea() {
     abortRef.current = controller;
 
     let accumulatedContent = '';
+    let edenActions: EdenActionRef[] = [];
     let usage: TokenUsage | undefined;
     let complexity: { score: number; tier: string; suggested_max_tokens: number } | undefined;
     let routedEngine: string | undefined;
@@ -394,10 +400,23 @@ export function InputArea() {
       for await (const sseEvent of streamChat(
         { model: requestModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
         controller.signal,
+        // Éden: em qual espaço a conversa acontece (o servidor usa as
+        // tarefas, notas e memórias desse espaço).
+        edenServer
+          ? { 'X-Eden-Espaco': useEdenOrg.getState().espacoAtivo, 'X-Eden-Conversa': convId }
+          : {},
       )) {
         const eventName = sseEvent.event;
 
-        if (eventName === 'eden_route') {
+        if (eventName === 'eden_acoes') {
+          const { acoes, recusadas } = parseActionsEvent(sseEvent.data);
+          edenActions = acoes;
+          if (recusadas.length > 0) {
+            toast.warning(`O Éden sugeriu algo que não deu para usar: ${recusadas.join('; ')}`, {
+              duration: 8000,
+            });
+          }
+        } else if (eventName === 'eden_route') {
           try {
             edenRoute = JSON.parse(sseEvent.data) as EdenRoute;
             setStreamState({ phase: `${providerName(edenRoute.provider)} escrevendo…` });
@@ -491,6 +510,11 @@ export function InputArea() {
       // numbers don't get stuck on the last sample.
       useAppStore.getState().setLiveEnergy(null);
     } finally {
+      // Éden: o texto guardado fica sem os blocos de ação (viram cartões).
+      accumulatedContent = removeActionBlocks(accumulatedContent);
+      if (!accumulatedContent && edenActions.length > 0) {
+        accumulatedContent = 'Deixei para você confirmar:';
+      }
       if (!accumulatedContent) {
         accumulatedContent = 'Nenhuma resposta foi gerada. Tente de novo.';
       }
@@ -541,7 +565,9 @@ export function InputArea() {
         audioMeta,
         researchTraces.length > 0 ? researchTraces : undefined,
         researchSourcesByRef.size > 0 ? flushSources() : undefined,
+        edenActions.length > 0 ? edenActions : undefined,
       );
+      if (edenActions.length > 0) avisarMudanca();
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -576,6 +602,7 @@ export function InputArea() {
     deepResearch,
     temperature,
     maxTokens,
+    edenServer,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -593,7 +620,10 @@ export function InputArea() {
     <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
       <div className="mb-2 flex flex-col gap-1">
         {edenServer ? (
-          <EdenModeSwitch disabled={streamState.isStreaming} />
+          <div className="flex flex-col gap-1">
+            <EdenModeSwitch disabled={streamState.isStreaming} />
+            <EdenSpaceSelect disabled={streamState.isStreaming} />
+          </div>
         ) : (
         <div className="flex items-center gap-2">
           <button

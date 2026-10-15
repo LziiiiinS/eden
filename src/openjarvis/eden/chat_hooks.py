@@ -4,14 +4,22 @@ Antes: troca o modelo do Éden (eden-auto, eden-dia, eden-missao) pelo modelo
 de verdade e confere o limite de gastos. Depois: informa ao app qual IA
 respondeu (cabeçalhos X-Eden-*) e, nas respostas sem streaming, anota o gasto.
 O streaming anota o gasto em openjarvis.eden.providers.
+
+Parte 2: o pedido traz o espaço ativo (cabeçalho X-Eden-Espaco) e a conversa
+(X-Eden-Conversa). O contexto do Éden (perfil, memórias, tarefas, notas do
+espaço) entra na mensagem de sistema, e no fim da resposta o servidor lê os
+blocos eden-acao e manda ao app as ações para a pessoa confirmar (evento
+"eden_acoes", antes do fim do streaming).
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any, AsyncIterator, Optional, Tuple
 
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, Response, StreamingResponse
 
 from openjarvis.eden.budget import BudgetExceeded, estimate_tokens, get_ledger
 from openjarvis.eden.routing import (
@@ -75,8 +83,54 @@ def _eden_gate(request_body: Any, settings: Any) -> Optional[Response]:
     return None
 
 
+def _organizacao(request: Any):
+    from openjarvis.eden.organizacao import Organizacao
+
+    store = getattr(request.app.state, "eden_organizacao", None)
+    if store is None:
+        store = Organizacao()
+        request.app.state.eden_organizacao = store
+    return store
+
+
+def _definir_pedido(request: Any) -> None:
+    """Guarda o espaço e a conversa deste pedido (cabeçalhos do app)."""
+    from openjarvis.eden.contexto import PedidoEden, definir_pedido
+    from openjarvis.eden.conversations import is_valid_id
+
+    try:
+        store = _organizacao(request)
+        espacos = [e["id"] for e in store.listar_espacos()]
+        espaco = request.headers.get("x-eden-espaco", "")
+        if espaco not in espacos:
+            espaco = "pessoal" if "pessoal" in espacos else espacos[0]
+        conversa = request.headers.get("x-eden-conversa") or None
+        if conversa is not None and not is_valid_id(conversa):
+            conversa = None
+        definir_pedido(PedidoEden(espaco=espaco, conversa_id=conversa, store=store))
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: não consegui preparar o contexto da conversa")
+        definir_pedido(None)
+
+
+def eden_system_extra() -> str:
+    """Contexto do Éden para a mensagem de sistema ("" fora do Éden)."""
+    from openjarvis.eden.contexto import montar, pedido_atual
+
+    settings = get_settings()
+    pedido = pedido_atual()
+    if not settings.enabled or pedido is None or pedido.store is None:
+        return ""
+    try:
+        return montar(pedido.store, pedido.espaco, settings.tz)
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: não consegui montar o contexto")
+        return ""
+
+
 def prepare_chat(
     request_body: Any,
+    request: Any = None,
 ) -> Tuple[Optional[RouteDecision], Optional[Response]]:
     """Escolhe a IA e confere o limite. Devolve (decisão, resposta de erro)."""
     settings = get_settings()
@@ -84,6 +138,8 @@ def prepare_chat(
         refusal = _eden_gate(request_body, settings)
         if refusal is not None:
             return None, refusal
+        if request is not None:
+            _definir_pedido(request)
     last_user = _last_user(request_body)
     decision = resolve(
         request_body.model, last_user.content if last_user else "", settings
@@ -129,10 +185,90 @@ def prepare_chat(
     return decision, None
 
 
+def _evento_acoes(resposta: str, pedido: Any) -> Optional[str]:
+    """Lê os blocos eden-acao da resposta e cria as ações pendentes."""
+    from openjarvis.eden.acoes import propor
+
+    if "eden-acao" not in resposta:
+        return None
+    if pedido is None or pedido.store is None:
+        return None
+    try:
+        criadas, recusadas = propor(
+            resposta,
+            pedido.store,
+            pedido.espaco,
+            get_settings().tz,
+            conversa_id=pedido.conversa_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: não consegui ler as ações da resposta")
+        criadas, recusadas = [], ["não deu para ler as sugestões do Éden"]
+    if not criadas and not recusadas:
+        return None
+    dados = json.dumps({"acoes": criadas, "recusadas": recusadas}, ensure_ascii=False)
+    return f"event: eden_acoes\ndata: {dados}\n\n"
+
+
+def _fim_do_streaming(pedaco: str, partes: list) -> bool:
+    """Junta o texto dos pedaços e diz se este pedaço fecha a resposta."""
+    fim = False
+    for linha in pedaco.splitlines():
+        if not linha.startswith("data: "):
+            continue
+        dado = linha[6:].strip()
+        if dado == "[DONE]":
+            fim = True
+            continue
+        try:
+            obj = json.loads(dado)
+        except ValueError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        escolhas = obj.get("choices") or [{}]
+        escolha = escolhas[0] if isinstance(escolhas[0], dict) else {}
+        delta = escolha.get("delta") or {}
+        conteudo = delta.get("content") if isinstance(delta, dict) else None
+        if isinstance(conteudo, str):
+            partes.append(conteudo)
+        if escolha.get("finish_reason"):
+            fim = True
+    return fim
+
+
+async def _com_acoes(corpo: AsyncIterator[Any], pedido: Any) -> AsyncIterator[Any]:
+    """Repassa o streaming e, antes do pedaço final, manda as ações."""
+    partes: list = []
+    enviado = False
+    async for pedaco in corpo:
+        if not enviado:
+            texto_pedaco = (
+                pedaco.decode("utf-8", "replace")
+                if isinstance(pedaco, (bytes, bytearray))
+                else str(pedaco)
+            )
+            if _fim_do_streaming(texto_pedaco, partes):
+                enviado = True
+                evento = await asyncio.to_thread(_evento_acoes, "".join(partes), pedido)
+                if evento:
+                    yield evento
+        yield pedaco
+
+
 def finish_chat(
     response: Any, decision: Optional[RouteDecision], request_body: Any
 ) -> Any:
     """Anota o gasto das respostas sem streaming e marca qual IA respondeu."""
+    if (
+        get_settings().enabled
+        and request_body.stream
+        and isinstance(response, StreamingResponse)
+    ):
+        from openjarvis.eden.contexto import pedido_atual
+
+        # O pedido (espaço, conversa) vai junto: o streaming roda depois.
+        response.body_iterator = _com_acoes(response.body_iterator, pedido_atual())
     model = request_body.model
     provider = _provider(model)
     if not request_body.stream and provider in TRACKED_PROVIDERS:

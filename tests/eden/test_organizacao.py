@@ -1,0 +1,517 @@
+"""Éden (Parte 2): espaços, perfil, memórias, tarefas, notas, ações e contexto."""
+
+from __future__ import annotations
+
+import json
+from datetime import date, datetime, timedelta, timezone
+
+import pytest
+
+from openjarvis.eden import acoes, contexto
+from openjarvis.eden.organizacao import (
+    ErroOrganizacao,
+    Organizacao,
+    resumo_data,
+    texto,
+)
+
+TZ = timezone(timedelta(hours=-3))
+# 15/10/2026, 10:00 em Brasília.
+AGORA = int(datetime(2026, 10, 15, 10, 0, tzinfo=TZ).timestamp() * 1000)
+HOJE = date(2026, 10, 15)
+
+
+@pytest.fixture
+def store(tmp_path):
+    s = Organizacao(tmp_path / "organizacao.db")
+    yield s
+    s.close()
+
+
+def _bloco(dados) -> str:
+    return f"```eden-acao\n{json.dumps(dados, ensure_ascii=False)}\n```"
+
+
+# ── espaços e perfil ─────────────────────────────────────────────────────
+
+
+def test_starts_with_the_three_spaces(store):
+    ids = [e["id"] for e in store.listar_espacos()]
+    assert ids == ["pessoal", "ls-visuals", "clientes"]
+
+
+def test_new_space_gets_a_unique_id(store):
+    a = store.criar_espaco("Família & Casa")
+    b = store.criar_espaco("Família & Casa")
+    assert a["id"] == "familia-casa" and b["id"] == "familia-casa-2"
+
+
+def test_cannot_archive_the_last_space(store):
+    store.atualizar_espaco("ls-visuals", {"arquivado": True})
+    store.atualizar_espaco("clientes", {"arquivado": True})
+    with pytest.raises(ErroOrganizacao):
+        store.atualizar_espaco("pessoal", {"arquivado": True})
+    assert [e["id"] for e in store.listar_espacos()] == ["pessoal"]
+    with pytest.raises(ErroOrganizacao):
+        store.espaco_valido("clientes")
+
+
+def test_profile_is_saved_and_logged(store):
+    assert store.perfil()["texto"] == ""
+    store.salvar_perfil("Levi, mora em Fortaleza.")
+    assert store.perfil()["texto"] == "Levi, mora em Fortaleza."
+    assert store.registro()[0]["o_que"] == "perfil.editar"
+
+
+def test_text_rules_remove_invisible_direction_marks():
+    # ‮ inverte o texto na tela; o cartão mostraria outra coisa.
+    assert texto("Pagar‮ conta", "titulo", 100) == "Pagar conta"
+    assert texto("  oi\u0000 ", "titulo", 100) == "oi"
+    # Emoji com junção (ZWJ) continua inteiro.
+    familia = "\U0001f468‍\U0001f469‍\U0001f467"
+    assert texto(familia, "titulo", 100) == familia
+    with pytest.raises(ErroOrganizacao):
+        texto("   ", "titulo", 100)
+    with pytest.raises(ErroOrganizacao):
+        texto("x" * 101, "titulo", 100)
+
+
+# ── memórias ─────────────────────────────────────────────────────────────
+
+
+def test_memories_belong_to_a_space_or_to_all(store):
+    store.criar_memoria("Prefere reuniões de manhã", None)
+    store.criar_memoria("Cliente X paga em 30 dias", "clientes")
+    store.criar_memoria("Academia às 7h", "pessoal")
+    pessoal = [m["texto"] for m in store.listar_memorias("pessoal")]
+    assert sorted(pessoal) == ["Academia às 7h", "Prefere reuniões de manhã"]
+    assert len(store.listar_memorias(todas=True)) == 3
+    with pytest.raises(ErroOrganizacao):
+        store.criar_memoria("x", "nao-existe")
+
+
+def test_deleted_memory_disappears(store):
+    m = store.criar_memoria("algo", "pessoal")
+    store.apagar_memoria(m["id"])
+    assert store.listar_memorias("pessoal") == []
+    with pytest.raises(ErroOrganizacao):
+        store.apagar_memoria(m["id"])
+
+
+# ── tarefas ──────────────────────────────────────────────────────────────
+
+
+def test_task_with_reminder_at_its_time(store):
+    t = store.criar_tarefa(
+        {
+            "titulo": "Dentista",
+            "espaco": "pessoal",
+            "data": "2026-10-16",
+            "hora": "14:30",
+            "lembrete": True,
+        },
+        TZ,
+    )
+    assert t["lembrete_em"] == int(
+        datetime(2026, 10, 16, 14, 30, tzinfo=TZ).timestamp() * 1000
+    )
+    # Sem hora, o lembrete é às 09:00.
+    t2 = store.criar_tarefa(
+        {
+            "titulo": "Pagar boleto",
+            "espaco": "pessoal",
+            "data": "2026-10-20",
+            "lembrete": True,
+        },
+        TZ,
+    )
+    assert local(t2["lembrete_em"]) == datetime(2026, 10, 20, 9, 0, tzinfo=TZ)
+
+
+def local(ms):
+    return datetime.fromtimestamp(ms / 1000, tz=TZ)
+
+
+def test_task_rules(store):
+    with pytest.raises(ErroOrganizacao, match="precisa de uma data"):
+        store.criar_tarefa({"titulo": "x", "espaco": "pessoal", "hora": "10:00"}, TZ)
+    with pytest.raises(ErroOrganizacao, match="data"):
+        store.criar_tarefa(
+            {"titulo": "x", "espaco": "pessoal", "data": "16/10/2026"}, TZ
+        )
+    with pytest.raises(ErroOrganizacao, match="horário"):
+        store.criar_tarefa(
+            {"titulo": "x", "espaco": "pessoal", "data": "2026-10-16", "hora": "25:00"},
+            TZ,
+        )
+    with pytest.raises(ErroOrganizacao, match="precisa de uma data"):
+        store.criar_tarefa({"titulo": "x", "espaco": "pessoal", "lembrete": True}, TZ)
+
+
+def test_moving_a_task_moves_its_reminder_and_resets_it(store):
+    t = store.criar_tarefa(
+        {
+            "titulo": "Reunião",
+            "espaco": "pessoal",
+            "data": "2026-10-16",
+            "hora": "10:00",
+            "lembrete": True,
+        },
+        TZ,
+    )
+    store.marcar_lembrete_enviado(t["id"], AGORA)
+    t = store.atualizar_tarefa(t["id"], {"data": "2026-10-17"}, TZ)
+    assert local(t["lembrete_em"]) == datetime(2026, 10, 17, 10, 0, tzinfo=TZ)
+    assert t["lembrete_enviado_em"] is None
+
+
+def test_open_tasks_order_and_done(store):
+    store.criar_tarefa({"titulo": "sem data", "espaco": "pessoal"}, TZ)
+    store.criar_tarefa(
+        {"titulo": "dia 20", "espaco": "pessoal", "data": "2026-10-20"}, TZ
+    )
+    c = store.criar_tarefa(
+        {"titulo": "dia 16", "espaco": "pessoal", "data": "2026-10-16"}, TZ
+    )
+    store.criar_tarefa({"titulo": "outro espaço", "espaco": "clientes"}, TZ)
+    assert [t["titulo"] for t in store.listar_tarefas("pessoal")] == [
+        "dia 16",
+        "dia 20",
+        "sem data",
+    ]
+    store.atualizar_tarefa(c["id"], {"feita": True}, TZ)
+    assert [t["titulo"] for t in store.listar_tarefas("pessoal", "feitas")] == [
+        "dia 16"
+    ]
+    assert len(store.listar_tarefas(None)) == 3
+
+
+def test_due_reminders_are_sent_once(store):
+    t = store.criar_tarefa(
+        {
+            "titulo": "Ligar",
+            "espaco": "pessoal",
+            "data": "2026-10-15",
+            "hora": "09:50",
+            "lembrete": True,
+        },
+        TZ,
+    )
+    store.criar_tarefa(
+        {
+            "titulo": "Depois",
+            "espaco": "pessoal",
+            "data": "2026-10-15",
+            "hora": "18:00",
+            "lembrete": True,
+        },
+        TZ,
+    )
+    assert [x["id"] for x in store.lembretes_vencidos(AGORA)] == [t["id"]]
+    assert store.marcar_lembrete_enviado(t["id"], AGORA) is True
+    assert store.marcar_lembrete_enviado(t["id"], AGORA) is False
+    assert store.lembretes_vencidos(AGORA) == []
+
+
+# ── notas ────────────────────────────────────────────────────────────────
+
+
+def test_notes_search_and_pinned_first(store):
+    store.criar_nota({"texto": "Comprar lente 50mm", "espaco": "ls-visuals"})
+    fixa = store.criar_nota(
+        {
+            "texto": "Vídeo de bastidores",
+            "tipo": "ideia",
+            "espaco": "ls-visuals",
+            "fixada": True,
+        }
+    )
+    store.criar_nota({"texto": "Receita de bolo", "espaco": "pessoal"})
+    lista = store.listar_notas("ls-visuals")
+    assert lista[0]["id"] == fixa["id"]
+    assert [n["texto"] for n in store.listar_notas(None, busca="lente")] == [
+        "Comprar lente 50mm"
+    ]
+    assert [n["texto"] for n in store.listar_notas(None, tipo="ideia")] == [
+        "Vídeo de bastidores"
+    ]
+    # % e _ na busca são letras comuns.
+    assert store.listar_notas(None, busca="%") == []
+
+
+# ── ações propostas ──────────────────────────────────────────────────────
+
+
+def test_blocks_are_found_and_hidden():
+    resposta = "Posso criar.\n\n" + _bloco({"tipo": "tarefa.criar", "titulo": "Pão"})
+    assert acoes.extrair_blocos(resposta) == [
+        '{"tipo": "tarefa.criar", "titulo": "Pão"}'
+    ]
+    assert acoes.remover_blocos(resposta) == "Posso criar."
+    # Bloco cortado no meio (resposta interrompida) também some da tela.
+    assert acoes.remover_blocos('Ok.\n```eden-acao\n{"tipo": ') == "Ok."
+
+
+def test_proposal_creates_pending_action_with_summary(store):
+    resposta = "Combinado.\n" + _bloco(
+        {
+            "tipo": "tarefa.criar",
+            "titulo": "Comprar presente da Ana",
+            "data": "2026-10-17",
+            "hora": "18:00",
+            "lembrete": True,
+        }
+    )
+    criadas, recusadas = acoes.propor(resposta, store, "pessoal", TZ, "c1", AGORA)
+    assert recusadas == []
+    [acao] = criadas
+    assert acao["estado"] == "pendente"
+    assert acao["resumo"] == (
+        "Criar tarefa “Comprar presente da Ana” em Pessoal — sáb 17/10 18:00"
+        " · lembrete sáb 17/10 18:00"
+    )
+    assert acao["expira_em"] == AGORA + acoes.VALIDADE_MS
+    # Nada foi criado ainda.
+    assert store.listar_tarefas(None) == []
+
+
+def test_confirming_runs_exactly_the_stored_action_once(store):
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "tarefa.criar", "titulo": "Pão", "data": "2026-10-16"}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    acao = criadas[0]
+    feita = acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA + 1000)
+    assert feita["estado"] == "feita"
+    [tarefa] = store.listar_tarefas("pessoal")
+    assert tarefa["titulo"] == "Pão" and tarefa["origem"] == "eden"
+    assert feita["resultado"] == {"tarefa": tarefa["id"]}
+    # Repetir não cria outra.
+    with pytest.raises(acoes.ErroAcao) as erro:
+        acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA + 2000)
+    assert erro.value.status == 409
+    assert len(store.listar_tarefas("pessoal")) == 1
+    assert store.registro()[0]["acao_id"] == acao["id"]
+
+
+def test_wrong_signature_is_refused_and_action_stays_pending(store):
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "memoria.criar", "texto": "Gosta de café"}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    acao = criadas[0]
+    for sig in (None, "", "0" * 64):
+        with pytest.raises(acoes.ErroAcao) as erro:
+            acoes.confirmar(store, acao["id"], sig, TZ, AGORA)
+        assert erro.value.codigo == "eden_acao_assinatura"
+    assert store.acao(acao["id"])["estado"] == "pendente"
+    assert store.listar_memorias("pessoal") == []
+
+
+def test_expired_action_is_refused(store):
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "memoria.criar", "texto": "x"}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    acao = criadas[0]
+    depois = AGORA + acoes.VALIDADE_MS + 1
+    assert store.acao(acao["id"])["estado"] == "pendente"
+    with pytest.raises(acoes.ErroAcao) as erro:
+        acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, depois)
+    assert erro.value.status == 410
+
+
+def test_refusing(store):
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "memoria.criar", "texto": "x"}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    acao = acoes.recusar(store, criadas[0]["id"], AGORA)
+    assert acao["estado"] == "recusada"
+    with pytest.raises(acoes.ErroAcao):
+        acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA)
+
+
+def test_target_deleted_before_confirming_marks_failure(store):
+    t = store.criar_tarefa({"titulo": "Lavar carro", "espaco": "pessoal"}, TZ)
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "tarefa.concluir", "id": t["id"]}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    acao = criadas[0]
+    assert acao["resumo"].startswith("Marcar como feita a tarefa “Lavar carro”")
+    store.apagar_tarefa(t["id"])
+    with pytest.raises(acoes.ErroAcao) as erro:
+        acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA)
+    assert erro.value.codigo == "eden_acao_falhou"
+    assert store.acao(acao["id"])["estado"] == "falhou"
+
+
+@pytest.mark.parametrize(
+    "bloco, motivo",
+    [
+        ("{nao e json", "JSON"),
+        ('["lista"]', "objeto"),
+        ('{"tipo": "conta.apagar_tudo"}', "desconhecido"),
+        (
+            '{"tipo": "tarefa.criar", "titulo": "x", "url": "http://x"}',
+            "campos desconhecidos",
+        ),
+        ('{"tipo": "tarefa.criar", "titulo": ""}', "vazio"),
+        ('{"tipo": "tarefa.criar", "titulo": "x", "espaco": "outro"}', "espaço"),
+        ('{"tipo": "tarefa.concluir", "id": 999}', "não encontrada"),
+        ('{"tipo": "memoria.apagar", "id": "abc"}', "número"),
+    ],
+)
+def test_invalid_proposals_are_refused(store, bloco, motivo):
+    criadas, recusadas = acoes.propor(
+        f"```eden-acao\n{bloco}\n```", store, "pessoal", TZ, None, AGORA
+    )
+    assert criadas == []
+    assert len(recusadas) == 1 and motivo in recusadas[0]
+
+
+def test_at_most_five_actions_per_answer(store):
+    resposta = "\n".join(
+        _bloco({"tipo": "memoria.criar", "texto": f"m{i}"}) for i in range(7)
+    )
+    criadas, recusadas = acoes.propor(resposta, store, "pessoal", TZ, None, AGORA)
+    assert len(criadas) == 5
+    assert "5 primeiras" in recusadas[0]
+
+
+def test_hourly_limit(store, monkeypatch):
+    monkeypatch.setattr(acoes, "MAX_ACOES_POR_HORA", 2)
+    resposta = "\n".join(
+        _bloco({"tipo": "memoria.criar", "texto": f"m{i}"}) for i in range(3)
+    )
+    criadas, recusadas = acoes.propor(resposta, store, "pessoal", TZ, None, AGORA)
+    assert len(criadas) == 2 and "muitas sugestões" in recusadas[0]
+
+
+def test_edit_task_summary_and_execution(store):
+    t = store.criar_tarefa(
+        {
+            "titulo": "Reunião",
+            "espaco": "clientes",
+            "data": "2026-10-16",
+            "hora": "10:00",
+            "lembrete": True,
+        },
+        TZ,
+    )
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "tarefa.editar", "id": t["id"], "data": "2026-10-17"}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    acao = criadas[0]
+    assert (
+        acao["resumo"]
+        == "Mudar a tarefa “Reunião”: para sáb 17/10 10:00; o lembrete acompanha"
+    )
+    acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA)
+    nova = store.tarefa(t["id"])
+    assert nova["data"] == "2026-10-17"
+    assert local(nova["lembrete_em"]) == datetime(2026, 10, 17, 10, 0, tzinfo=TZ)
+
+
+def test_memory_and_note_actions(store):
+    m = store.criar_memoria("Antiga", "pessoal")
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "memoria.apagar", "id": m["id"]})
+        + _bloco(
+            {"tipo": "memoria.criar", "texto": "Vale para tudo", "espaco": "todos"}
+        )
+        + _bloco(
+            {
+                "tipo": "nota.criar",
+                "texto": "Roteiro do vídeo",
+                "tipo_nota": "ideia",
+                "titulo": "Bastidores",
+                "espaco": "ls-visuals",
+            }
+        ),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    assert [a["resumo"] for a in criadas] == [
+        "Apagar da memória: “Antiga”",
+        "Guardar na memória (todos os espaços): “Vale para tudo”",
+        "Guardar ideia “Bastidores” em LS Visuals: “Roteiro do vídeo”",
+    ]
+    for a in criadas:
+        acoes.confirmar(store, a["id"], a["assinatura"], TZ, AGORA)
+    assert [x["texto"] for x in store.listar_memorias("clientes")] == ["Vale para tudo"]
+    [nota] = store.listar_notas("ls-visuals")
+    assert nota["tipo"] == "ideia" and nota["origem"] == "eden"
+
+
+def test_unknown_or_malformed_action_ids(store):
+    for acao_id in ("x", "../../etc", "a" * 100):
+        with pytest.raises(acoes.ErroAcao) as erro:
+            acoes.confirmar(store, acao_id, "0" * 64, TZ, AGORA)
+        assert erro.value.status == 404
+    assert store.acao("../../etc") is None
+
+
+# ── contexto ─────────────────────────────────────────────────────────────
+
+
+def test_context_only_has_the_active_space(store):
+    store.salvar_perfil("Levi, fotógrafo.")
+    store.criar_memoria("Prefere respostas curtas", None)
+    store.criar_memoria("Cliente Y é exigente", "clientes")
+    store.criar_tarefa(
+        {"titulo": "Comprar pão", "espaco": "pessoal", "data": "2026-10-14"}, TZ
+    )
+    store.criar_tarefa({"titulo": "Entregar fotos Y", "espaco": "clientes"}, TZ)
+    store.criar_nota({"texto": "Lista de filmes", "espaco": "pessoal"})
+    texto_ctx = contexto.montar(store, "pessoal", TZ, AGORA)
+    assert "quinta-feira, 2026-10-15 (15/10/2026), 10:00" in texto_ctx
+    assert "Espaço ativo: Pessoal (pessoal)" in texto_ctx
+    assert "Levi, fotógrafo." in texto_ctx
+    assert "Prefere respostas curtas (todos os espaços)" in texto_ctx
+    assert "Comprar pão — ontem (atrasada)" in texto_ctx
+    assert "Lista de filmes" in texto_ctx
+    assert "Cliente Y" not in texto_ctx and "Entregar fotos Y" not in texto_ctx
+    assert "```eden-acao" in texto_ctx
+
+
+def test_context_falls_back_to_first_space(store):
+    assert "Espaço ativo: Pessoal" in contexto.montar(store, "nao-existe", TZ, AGORA)
+
+
+def test_date_summary():
+    assert resumo_data(None, None, HOJE) == "sem data"
+    assert resumo_data("2026-10-15", "18:00", HOJE) == "hoje 18:00"
+    assert resumo_data("2026-10-16", None, HOJE) == "amanhã"
+    assert resumo_data("2026-10-14", None, HOJE) == "ontem"
+    assert resumo_data("2026-10-20", None, HOJE) == "ter 20/10"
+    assert resumo_data("2027-01-02", None, HOJE) == "02/01/2027"

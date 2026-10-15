@@ -41,6 +41,8 @@ _EXTRA_FIELDS = (
     "isResearch",
     "usage",
     "telemetry",
+    # Éden (Parte 2): ações sugeridas nesta resposta (cartões de confirmação).
+    "edenActions",
 )
 
 _SCHEMA = """

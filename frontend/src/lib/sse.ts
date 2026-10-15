@@ -24,11 +24,12 @@ export interface ChatRequest {
 export async function* streamChat(
   request: ChatRequest,
   signal?: AbortSignal,
+  extraHeaders: Record<string, string> = {},
 ): AsyncGenerator<SSEEvent> {
   const base = getBase();
   const response = await fetch(`${base}/v1/chat/completions`, {
     method: 'POST',
-    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    headers: authHeaders({ ...extraHeaders, 'Content-Type': 'application/json' }),
     body: JSON.stringify(request),
     signal,
   });

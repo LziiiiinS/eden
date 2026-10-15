@@ -515,6 +515,13 @@ def create_app(
         app.include_router(eden_router)
     except Exception as exc:
         logger.warning("Éden: rotas de conversas não carregadas: %s", exc)
+    # Éden (Parte 2): espaços, perfil, memórias, tarefas, notas e ações.
+    try:
+        from openjarvis.eden.routes_organizacao import router as eden_org_router
+
+        app.include_router(eden_org_router)
+    except Exception as exc:
+        logger.warning("Éden: rotas da organização não carregadas: %s", exc)
 
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)
