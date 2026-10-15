@@ -213,3 +213,51 @@ def test_pairing_needs_a_server_key(tmp_path):
     assert c.post("/v1/eden/pareamento").status_code == 409
     r = c.post("/v1/eden/pareamento/usar", json={"codigo": "ABCD-EFGH"})
     assert r.status_code == 409
+
+
+def test_pairing_exemption_cannot_be_reached_with_encoded_characters(tmp_path):
+    # Revisão independente de 15/10: "/usar%3Fx" tinha url.path == "/usar" e
+    # pulava a chave, mas era roteado como "/usar?x". Uma rota com parâmetros
+    # pegaria esse pedido sem a chave.
+    from openjarvis.server.auth_middleware import AuthMiddleware
+
+    app = FastAPI()
+    app.state.api_key = CHAVE
+
+    @app.post("/v1/eden/{colecao}/{item}")
+    async def qualquer(colecao: str, item: str):
+        return {"colecao": colecao, "item": item}
+
+    app.add_middleware(AuthMiddleware, api_key=CHAVE)
+    c = TestClient(app)
+    for caminho in (
+        "/v1/eden/pareamento/usar%3Fx",
+        "/v1/eden/pareamento/usar%23x",
+        "/v1/eden/pareamento/usar%3F",
+    ):
+        r = c.post(caminho, json={})
+        assert r.status_code == 401, caminho
+
+
+def test_pairing_reads_at_most_one_kilobyte(tmp_path):
+    c = _app_com_chave(tmp_path)
+    grande = b'{"codigo": "' + b"A" * 2000 + b'"}'
+    r = c.post(
+        "/v1/eden/pareamento/usar",
+        content=grande,
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 413
+
+    def aos_pedacos():
+        yield b'{"codigo": "'
+        for _ in range(50):
+            yield b"A" * 100
+        yield b'"}'
+
+    r = c.post(
+        "/v1/eden/pareamento/usar",
+        content=aos_pedacos(),
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code in (400, 413)

@@ -213,3 +213,49 @@ def test_eden_server_hides_query_strings_in_the_access_log(eden_app):
         isinstance(f, SemConsultaNoRegistro)
         for f in logging.getLogger(ACCESS_LOGGER).filters
     )
+
+
+def test_eden_server_ignores_the_default_dev_origins(tmp_path):
+    """O "jarvis serve" passa a lista padrão de origens do config (localhost
+    3000/5173/5174, Tauri). No Éden nenhuma delas recebe autorização."""
+    settings.set_settings(settings.EdenSettings(enabled=True))
+    ledger = budget.SpendingLedger(tmp_path / "gastos.db")
+    budget.set_ledger(ledger)
+    try:
+        app = create_app(
+            _engine(),
+            "qwen3.5:4b",
+            config=_config(),
+            cors_origins=["http://localhost:5173", "tauri://localhost"],
+        )
+        client = TestClient(app)
+        for origem in ("http://localhost:5173", "tauri://localhost"):
+            res = client.options(
+                "/v1/eden/pareamento/usar",
+                headers={
+                    "Origin": origem,
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "content-type",
+                },
+            )
+            assert "access-control-allow-origin" not in res.headers, origem
+    finally:
+        settings.set_settings(None)
+        budget.set_ledger(None)
+        ledger.close()
+
+
+def test_eden_config_has_no_cors_origins():
+    from pathlib import Path
+
+    from openjarvis.core.config import tomllib
+
+    raiz = Path(__file__).resolve().parents[2]
+    cfg = tomllib.loads((raiz / "eden" / "config.toml").read_text(encoding="utf-8"))
+    assert cfg["server"]["cors_origins"] == []
+
+
+def test_pairing_route_body_limit_is_small():
+    from openjarvis.eden.hardening import LimiteDeCorpo
+
+    assert LimiteDeCorpo.limite("/v1/eden/pareamento/usar") == 1024

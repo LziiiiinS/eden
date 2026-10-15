@@ -77,11 +77,19 @@ def test_five_wrong_tries_kill_the_code(par):
     "texto",
     [None, 12345678, "", "ABC", "ABCDEFGHJ", "ABCD-EFG0", "ABCD-EFGI", "x" * 40],
 )
-def test_malformed_input_counts_as_a_wrong_try(par, texto):
+def test_malformed_input_does_not_burn_the_code(par, texto):
+    # Lixo não é palpite: não apaga o código de quem vai digitar certo
+    # (revisão independente de 15/10). Continua contando no limite por minuto.
     codigo = par.criar()["codigo"]
-    for _ in range(pareamento.MAX_ERROS_POR_CODIGO):
+    for _ in range(pareamento.MAX_ERROS_POR_CODIGO + 2):
         assert par.usar(texto) == pareamento.INVALIDO
-    assert par.usar(codigo) == pareamento.INVALIDO
+    assert par.usar(codigo) == pareamento.OK
+
+
+def test_malformed_input_still_counts_for_the_rate_limit(par):
+    for _ in range(pareamento.MAX_TENTATIVAS_POR_MINUTO):
+        assert par.usar("lixo") == pareamento.INVALIDO
+    assert par.usar("lixo") == pareamento.MUITAS_TENTATIVAS
 
 
 def test_without_an_active_code_nothing_works(par):

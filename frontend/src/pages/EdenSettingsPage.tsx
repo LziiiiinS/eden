@@ -35,6 +35,16 @@ function PairingCodeBlock() {
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const ativoRef = useRef(false);
+  ativoRef.current = code !== null;
+
+  // Saiu da tela com o código à vista: o código deixa de valer.
+  useEffect(
+    () => () => {
+      if (ativoRef.current) void cancelPairingCode();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!code) return;

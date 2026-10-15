@@ -275,7 +275,9 @@ def create_app(
         ]
     # Éden: o app abre pelo próprio endereço do servidor, então nenhuma outra
     # origem precisa chamar a API (sem lista de origens de desenvolvimento).
-    if cors_origins is None and not _env_origins:
+    # Vale também quando o "jarvis serve" passa a lista padrão do config
+    # (revisão independente de 15/10). Só OPENJARVIS_CORS_ORIGINS muda isso.
+    if not _env_origins:
         from openjarvis.eden.hardening import eden_mode_enabled
 
         if eden_mode_enabled():

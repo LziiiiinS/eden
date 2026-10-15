@@ -14,7 +14,8 @@ Como funciona:
 Proteções:
 - só existe um código por vez, e pedir outro apaga o anterior;
 - o código vale 5 minutos e serve uma vez só;
-- 5 tentativas erradas apagam o código, e aí é preciso pedir outro;
+- 5 tentativas erradas (no formato certo) apagam o código, e aí é preciso
+  pedir outro; lixo (texto fora do formato) não conta como tentativa;
 - no máximo 20 tentativas por minuto, somando todas, com ou sem código ativo;
 - o código fica só na memória do servidor, guardado como resumo sha256, nunca
   em disco nem no registro. Se o servidor reiniciar, o código some;
@@ -110,10 +111,10 @@ class Pareamento:
             if self._resumo is None:
                 return INVALIDO
             codigo = normalizar(texto)
-            certo = codigo is not None and secrets.compare_digest(
-                _resumo(codigo), self._resumo
-            )
-            if certo:
+            if codigo is None:
+                # Fora do formato: não é um palpite, não gasta o código.
+                return INVALIDO
+            if secrets.compare_digest(_resumo(codigo), self._resumo):
                 self._apagar()
                 return OK
             self._erros += 1

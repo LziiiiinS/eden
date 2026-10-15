@@ -14,6 +14,8 @@ default = "cloud"
 # "simple" = conversa sem ferramentas. Ferramentas entram uma a uma,
 # depois de testadas e com confirmação.
 agent = "simple"
+# O app abre pelo próprio endereço do servidor: nenhum outro site chama a API.
+cors_origins = []
 # O modelo do dia a dia é definido na implantação, depois de conferir o nome
 # exato do modelo na API e o preço vigente.
 # model = ""
