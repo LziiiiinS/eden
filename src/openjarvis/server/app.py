@@ -522,6 +522,12 @@ def create_app(
         app.include_router(eden_org_router)
     except Exception as exc:
         logger.warning("Éden: rotas da organização não carregadas: %s", exc)
+    try:
+        from openjarvis.eden.push import registrar_lembretes
+
+        registrar_lembretes(app)
+    except Exception as exc:
+        logger.warning("Éden: lembretes não ligados: %s", exc)
 
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)

@@ -58,6 +58,9 @@ _SUFIXOS_SQLITE = (".db", ".sqlite", ".sqlite3")
 # estava neles.
 _SUFIXOS_IGNORADOS = ("-wal", "-shm", "-journal", ".parcial")
 _NOME_SEGURO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+# Segredos do servidor (ex.: chave dos avisos no aparelho): nunca entram no
+# backup; na restauração, os atuais continuam onde estão.
+_SUFIXOS_SEGREDO = (".env", ".key", ".pem")
 _HORA = re.compile(r"^\d{8}-\d{6}$")
 _PASTA_TEMP_RESTAURAR = ".eden-restaurar"
 _PASTA_ANTIGA = ".eden-antigo"
@@ -71,7 +74,9 @@ class ErroBackup(Exception):
 
 
 def _nome_permitido(nome: str) -> bool:
-    return bool(_NOME_SEGURO.match(nome)) and not nome.lower().endswith(".env")
+    return bool(_NOME_SEGURO.match(nome)) and not nome.lower().endswith(
+        _SUFIXOS_SEGREDO
+    )
 
 
 def _ignorado(nome: str) -> bool:
@@ -461,6 +466,16 @@ def restaurar(
             os.replace(nova_eden, atual)
         else:
             atual.mkdir()
+        # Os segredos do servidor (que não vão no backup) continuam valendo.
+        if antiga.is_dir():
+            for segredo in antiga.iterdir():
+                if (
+                    segredo.is_file()
+                    and not segredo.is_symlink()
+                    and segredo.name.lower().endswith(_SUFIXOS_SEGREDO)
+                    and not (atual / segredo.name).exists()
+                ):
+                    os.replace(segredo, atual / segredo.name)
         for nome in ARQUIVOS_RAIZ:
             novo = novos / nome
             if novo.is_file():

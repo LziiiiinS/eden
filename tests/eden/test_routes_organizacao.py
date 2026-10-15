@@ -39,6 +39,9 @@ def app(tmp_path):
     application = create_app(engine, "qwen3.5:4b", config=_config())
     store = Organizacao(tmp_path / "organizacao.db")
     application.state.eden_organizacao = store
+    from openjarvis.eden import push
+
+    application.state.eden_push_chave = push.carregar_chave(tmp_path / "vapid.key")
     yield application
     settings.set_settings(None)
     budget.set_ledger(None)
@@ -287,3 +290,31 @@ def test_organization_routes_survive_eden_hardening(app):
         "/v1/eden/hoje",
     ):
         assert path in paths, path
+
+
+def test_push_subscription_routes(client):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from openjarvis.eden import push
+
+    chave = client.get("/v1/eden/push/chave").json()["chave"]
+    assert len(push.de_b64url(chave)) == 65
+    aparelho = ec.generate_private_key(ec.SECP256R1()).public_key()
+    p256dh = push.b64url(
+        aparelho.public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
+        )
+    )
+    insc = {
+        "endpoint": "https://fcm.googleapis.com/fcm/send/abc",
+        "keys": {"p256dh": p256dh, "auth": push.b64url(b"0123456789abcdef")},
+    }
+    assert client.post("/v1/eden/push/inscricoes", json=insc).status_code == 200
+    ruim = {**insc, "endpoint": "https://169.254.169.254/latest"}
+    assert client.post("/v1/eden/push/inscricoes", json=ruim).status_code == 400
+    lista = client.get("/v1/eden/push/inscricoes").json()["inscricoes"]
+    assert lista[0]["servico"] == "fcm.googleapis.com" and "endpoint" not in lista[0]
+    r = client.post("/v1/eden/push/cancelar", json={"endpoint": insc["endpoint"]})
+    assert r.json() == {"removida": True}
+    assert client.post("/v1/eden/push/teste").json()["enviados"] == 0

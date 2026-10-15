@@ -341,3 +341,14 @@ def test_command_line(dados, backups, capsys):
         == 1
     )
     assert "não encontrado" in capsys.readouterr().err
+
+
+def test_server_secrets_never_go_to_backup_and_survive_restore(dados, backups):
+    (dados / "eden").mkdir(exist_ok=True)
+    (dados / "eden" / "push-vapid.key").write_text("SEGREDO", encoding="utf-8")
+    _banco(dados / "eden" / "conversations.db", ["c1"]).close()
+    arquivo = backup.criar(backups, dados)
+    assert "dados/eden/push-vapid.key" not in _nomes(arquivo)
+    backup.restaurar(arquivo, dados)
+    # A chave do servidor continua lá depois de restaurar.
+    assert (dados / "eden" / "push-vapid.key").read_text(encoding="utf-8") == "SEGREDO"

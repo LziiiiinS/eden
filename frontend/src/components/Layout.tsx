@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar/Sidebar';
 import { SystemPulse } from './SystemPulse';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
+import { EdenReminders } from './Eden/EdenReminders';
 
 export function Layout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
@@ -29,6 +30,8 @@ export function Layout() {
       <div className="hud-backdrop" aria-hidden="true" />
       <SystemPulse apiReachable={apiReachable} />
       <ApprovalBell />
+      {/* Éden: avisos de lembrete com o app aberto. */}
+      <EdenReminders />
 
       {/* Health check banner */}
       {apiReachable === false && (
