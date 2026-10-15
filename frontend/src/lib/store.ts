@@ -17,6 +17,7 @@ import type {
 import type { ManagedAgent } from './api';
 import { isEmbedOnlyModel } from './model-capabilities';
 import { serializeToolCallArguments } from './tool-call';
+import type { EdenActionRef } from './eden-acoes';
 
 export interface CachedConnector {
   connector_id: string;
@@ -205,7 +206,10 @@ interface AppState {
     audio?: { url: string },
     researchTraces?: ResearchSearchTrace[],
     researchSources?: ResearchSource[],
+    edenActions?: EdenActionRef[],
   ) => void;
+  /** Éden: atualiza o estado de um cartão de ação na conversa aberta. */
+  updateEdenAction: (messageId: string, actionId: string, patch: Partial<EdenActionRef>) => void;
   setStreamState: (state: Partial<StreamState>) => void;
   resetStream: () => void;
 
@@ -452,6 +456,7 @@ export const useAppStore = create<AppState>((set, get) => {
       audio?: { url: string },
       researchTraces?: ResearchSearchTrace[],
       researchSources?: ResearchSource[],
+      edenActions?: EdenActionRef[],
     ) => {
       const store = loadConversations();
       const conv = store.conversations[conversationId];
@@ -465,11 +470,34 @@ export const useAppStore = create<AppState>((set, get) => {
         if (audio) lastMsg.audio = audio;
         if (researchTraces) lastMsg.researchTraces = researchTraces;
         if (researchSources) lastMsg.researchSources = researchSources;
+        if (edenActions) lastMsg.edenActions = edenActions;
         conv.updatedAt = Date.now();
         saveConversations(store);
         if (get().activeId === conversationId) {
           set({ messages: [...conv.messages] });
         }
+      }
+    },
+
+    updateEdenAction: (messageId: string, actionId: string, patch: Partial<EdenActionRef>) => {
+      const conversationId = get().activeId;
+      if (!conversationId) return;
+      const store = loadConversations();
+      const conv = store.conversations[conversationId];
+      if (!conv) return;
+      const msg = conv.messages.find((m) => m.id === messageId);
+      const ref = msg?.edenActions?.find((a) => a.id === actionId);
+      if (!msg || !ref) return;
+      const changed = Object.entries(patch).some(
+        ([k, v]) => (ref as unknown as Record<string, unknown>)[k] !== v,
+      );
+      if (!changed) return;
+      Object.assign(ref, patch);
+      msg.edenActions = [...(msg.edenActions ?? [])];
+      conv.updatedAt = Date.now();
+      saveConversations(store);
+      if (get().activeId === conversationId) {
+        set({ messages: [...conv.messages] });
       }
     },
 

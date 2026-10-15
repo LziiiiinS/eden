@@ -1,3 +1,4 @@
+import type { EdenActionRef } from '../lib/eden-acoes';
 // --- SSE Event Types ---
 
 export interface SSEEvent {
@@ -131,6 +132,8 @@ export interface ChatMessage {
   usage?: TokenUsage;
   telemetry?: MessageTelemetry;
   audio?: { url: string };
+  /** Éden: ações sugeridas nesta resposta (cartões de confirmação). */
+  edenActions?: EdenActionRef[];
 }
 
 export interface Conversation {

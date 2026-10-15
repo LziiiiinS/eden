@@ -16,6 +16,8 @@ import type { ChatMessage } from '../../types';
 import { stripThinkTags } from '../../lib/message-text';
 import { EdenSyncBadge } from './EdenSyncBadge';
 import { EdenAiLabel } from './EdenAiLabel';
+import { EdenActionCards } from './EdenActionCards';
+import { removeActionBlocks } from '../../lib/eden-acoes';
 
 interface Props {
   message: ChatMessage;
@@ -102,7 +104,11 @@ function CopyMessageButton({ content }: { content: string }) {
 export function MessageBubble({ message, isLive = false }: Props) {
   const isUser = message.role === 'user';
 
-  const cleanContent = useMemo(() => stripThinkTags(message.content), [message.content]);
+  // Éden: os blocos de ação (eden-acao) viram cartões; o texto deles some.
+  const cleanContent = useMemo(
+    () => removeActionBlocks(stripThinkTags(message.content)),
+    [message.content],
+  );
 
   // Build a ref→source lookup once per render. Memoized so the rehype plugin
   // identity stays stable until the source list actually changes.
@@ -178,6 +184,9 @@ export function MessageBubble({ message, isLive = false }: Props) {
           </ReactMarkdown>
         </div>
       )}
+
+      {/* Éden: sugestões para a pessoa confirmar. */}
+      {!isLive && <EdenActionCards messageId={message.id} actions={message.edenActions} />}
 
       {/* Footer: copy + read aloud + x-ray */}
       <div className="flex items-center gap-2 mt-1.5">

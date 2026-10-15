@@ -17,6 +17,7 @@ import {
   Loader2,
   ScrollText,
   Database,
+  Brain,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { EdenSyncStatus } from './EdenSyncStatus';
@@ -25,7 +26,7 @@ import { friendlyModelName, isEdenModel } from '../../lib/eden-ai';
 import { useAppStore } from '../../lib/store';
 
 // Éden: páginas que aparecem no menu durante o piloto.
-const EDEN_PILOT_PAGES = ['/', '/settings'];
+const EDEN_PILOT_PAGES = ['/', '/memoria', '/settings'];
 
 // Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
 const THEME_LABEL: Record<string, string> = {
@@ -71,6 +72,7 @@ export function Sidebar() {
 
   const allNavItems = [
     { path: '/', icon: MessageSquare, label: 'Conversa' },
+    { path: '/memoria', icon: Brain, label: 'Perfil e memória' },
     { path: '/dashboard', icon: BarChart3, label: 'Painel' },
     { path: '/data-sources', icon: Database, label: 'Fontes de dados' },
     { path: '/agents', icon: Bot, label: 'Agentes' },
@@ -231,7 +233,13 @@ export function Sidebar() {
               return (
                 <button
                   key={item.path}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => {
+                    navigate(item.path);
+                    // Éden: no celular, o menu fecha ao abrir uma página.
+                    if (window.matchMedia?.('(max-width: 767px)').matches) {
+                      useAppStore.getState().setSidebarOpen(false);
+                    }
+                  }}
                   className="relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left cursor-pointer"
                   style={{
                     background: isActive ? 'var(--color-accent-subtle)' : 'transparent',
