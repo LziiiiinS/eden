@@ -281,3 +281,68 @@ def test_missing_key_explains_where_to_put_it(ledger):
             )
         )
     assert "OPENAI_API_KEY" in str(err.value)
+
+
+def test_interrupted_claude_after_message_start_is_not_undercounted(ledger):
+    # Revisão de segurança (Codex, 15/10): 18.000 caracteres recebidos eram
+    # anotados como 1 token de saída quando o usuário parava a resposta.
+    settings = EdenSettings()
+    lines = _sse(
+        {
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 7, "output_tokens": 1}},
+        },
+        {
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": "x" * 18000},
+        },
+    )
+
+    async def take_first():
+        gen = stream_eden(
+            "claude-sonnet-5-5",
+            _messages(),
+            0.7,
+            "anthropic",
+            settings=settings,
+            ledger=ledger,
+            client_factory=lambda: _FakeClient(_FakeResponse(200, lines), {}),
+            api_key="k",
+        )
+        first = await gen.__anext__()
+        await gen.aclose()
+        return first
+
+    asyncio.run(take_first())
+    spent = ledger.summary(settings)["providers"]["anthropic"]["spentUsd"]
+    # 7 de entrada + 6.000 de saída estimados a US$ 2/10 por 1M ≈ US$ 0,06.
+    assert spent == pytest.approx(0.06, abs=0.001)
+
+
+def test_refused_request_releases_its_reservation(ledger):
+    settings = EdenSettings(monthly_limits_usd={"openai": 1.0, "anthropic": 0.1})
+    body = json.dumps({"error": {"message": "invalid x-api-key"}}).encode()
+    with pytest.raises(ProviderError):
+        _collect(
+            stream_eden(
+                "claude-sonnet-5-5",
+                _messages(),
+                0.7,
+                "anthropic",
+                settings=settings,
+                ledger=ledger,
+                client_factory=lambda: _FakeClient(_FakeResponse(401, [], body), {}),
+                api_key="k",
+            )
+        )
+    # Nada ficou preso: dá para reservar o limite inteiro de novo.
+    ledger.release(ledger.reserve("anthropic", settings, 0.1))
+
+
+def test_provider_errors_never_carry_keys():
+    body = json.dumps(
+        {"error": {"message": "Incorrect API key provided: sk-proj-abcd1234efgh5678"}}
+    ).encode()
+    text = str(ProviderError(explain_http_error("openai", 401, body)))
+    assert "sk-proj-abcd1234efgh5678" not in text
+    assert "chave da OpenAI foi recusada" in text

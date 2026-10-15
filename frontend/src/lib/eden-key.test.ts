@@ -36,12 +36,28 @@ describe('phone link (QR code)', () => {
     expect(readKeyFromHash('#outra=coisa')).toBeNull();
   });
 
-  it('accepts only https addresses outside localhost for the phone', () => {
+  it('accepts only the Tailscale https address for the phone', () => {
     expect(isPhoneReachableUrl('https://eden-notebook.tail1234.ts.net')).toBe(true);
+    expect(isPhoneReachableUrl('https://eden-notebook.tail1234.ts.net/')).toBe(true);
     expect(isPhoneReachableUrl('http://eden-notebook.tail1234.ts.net')).toBe(false);
     expect(isPhoneReachableUrl('https://localhost:8000')).toBe(false);
     expect(isPhoneReachableUrl('http://localhost:8000')).toBe(false);
     expect(isPhoneReachableUrl('não é endereço')).toBe(false);
+  });
+
+  it('refuses disguised addresses that would leak the key', () => {
+    expect(isPhoneReachableUrl('https://eden.tail1234.ts.net@evil.example')).toBe(false);
+    expect(isPhoneReachableUrl('https://user:pw@eden.tail1234.ts.net')).toBe(false);
+    expect(isPhoneReachableUrl('https://eden.tail1234.ts.net.evil.example')).toBe(false);
+    expect(isPhoneReachableUrl('https://evil.example/?x=.ts.net')).toBe(false);
+    expect(isPhoneReachableUrl('https://eden.tail1234.ts.net:4443')).toBe(false);
+    expect(isPhoneReachableUrl('https://eden.tail1234.ts.net/caminho')).toBe(false);
+  });
+
+  it('builds the link from the origin only', () => {
+    expect(buildPhoneLink('https://eden.tail1234.ts.net/', KEY)).toBe(
+      `https://eden.tail1234.ts.net/#chave=${KEY}`,
+    );
   });
 });
 

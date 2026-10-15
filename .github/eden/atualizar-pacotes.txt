@@ -1,10 +1,3 @@
-# Éden: bibliotecas apontadas pelos verificadores de segurança em 15/10/2026
-# (pip-audit e Trivy). Um pacote por linha.
-anyio
-urllib3
-requests
-lxml
-fsspec
-multidict
-pygments
-datasets
+# Éden: bibliotecas Python a atualizar no uv.lock (um pacote por linha).
+# 15/10/2026: anyio, urllib3, requests, lxml, fsspec, multidict, pygments e
+# datasets já foram atualizados (PR #8).

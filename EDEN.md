@@ -22,7 +22,10 @@ do OpenJarvis nem de Stanford.
   - `hardening.py`: no servidor do Éden, só ficam ligadas as rotas que o Éden
     usa (conversa com streaming, modelos, informações, economia, transcrição,
     `/v1/eden/...`); agentes, ferramentas, conectores, memória, pesquisa,
-    voz falada, webhooks, painéis e documentação da API são desligados.
+    voz falada, webhooks, painéis e documentação da API são desligados. A
+    imagem do Éden (`EDEN_IMAGEM=1`) se recusa a ligar sem a seção `[eden]`;
+  - `redact.py`: apaga qualquer coisa com cara de chave das mensagens de
+    erro e dos registros.
 - `frontend/src/lib/eden-sync.ts` e `eden-sync-merge.ts`: sincronização das
   conversas entre os aparelhos.
 - `frontend/src/components/Chat/EdenSyncBadge.tsx` e
@@ -77,8 +80,12 @@ do OpenJarvis nem de Stanford.
   no começo da mensagem força o modo.
 - Embaixo de cada resposta aparece qual IA respondeu (e o motivo, ao tocar).
 - Limite por mês e por empresa em `[eden.limites]` (US$). Antes de cada pedido
-  o servidor confere o gasto do mês mais uma reserva; se passar, recusa antes
-  de chamar a IA. O gasto vem dos números de tokens que a empresa informa; sem
+  o servidor separa (reserva) o custo máximo do pedido junto com a conferência,
+  com trava: pedidos simultâneos de vários aparelhos não passam do limite
+  somados. Se passar, recusa antes de chamar a IA.
+- No servidor do Éden a conversa só aceita os modos do Éden, com streaming,
+  sem ferramentas e com modelo que tenha preço em `[eden.precos]`; o tamanho
+  da resposta nunca passa de `max_saida_tokens`. O gasto vem dos números de tokens que a empresa informa; sem
   eles, de uma estimativa conservadora. A transcrição de voz também entra.
 - O mês vira à meia-noite do dia 1, horário de Brasília.
 - O limite cobre a conversa e a transcrição. Funções do OpenJarvis fora do

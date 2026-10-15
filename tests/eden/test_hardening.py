@@ -120,3 +120,15 @@ def test_plain_openjarvis_server_is_untouched(plain_app):
     paths = _paths(plain_app)
     assert "/api/research" in paths
     assert "/api/digest" in paths
+
+
+def test_eden_image_without_eden_config_refuses_to_start(monkeypatch):
+    # Revisão de segurança (Codex, 15/10): a imagem ligada sem o iniciar do
+    # Éden subiria o OpenJarvis completo.
+    monkeypatch.setenv("EDEN_IMAGEM", "1")
+    settings.set_settings(settings.EdenSettings(enabled=False))
+    try:
+        with pytest.raises(RuntimeError):
+            create_app(_engine(), "qwen3.5:4b", config=_config())
+    finally:
+        settings.set_settings(None)

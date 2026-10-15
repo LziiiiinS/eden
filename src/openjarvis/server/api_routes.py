@@ -997,12 +997,24 @@ async def transcribe_speech(request: Request):
     if backend is None:
         raise HTTPException(status_code=501, detail="Speech backend not configured")
 
+    # Éden: tamanho máximo do áudio (o da OpenAI), conferido antes de ler.
+    from openjarvis.eden.speech_budget import MAX_AUDIO_BYTES
+
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_AUDIO_BYTES + 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Áudio grande demais (máx. 25 MB)")
+
     form = await request.form()
     audio_file = form.get("file")
     if audio_file is None:
         raise HTTPException(status_code=400, detail="Missing 'file' field")
 
-    audio_bytes = await audio_file.read()
+    size = getattr(audio_file, "size", None)
+    if isinstance(size, int) and size > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Áudio grande demais (máx. 25 MB)")
+    audio_bytes = await audio_file.read(MAX_AUDIO_BYTES + 1)
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Áudio grande demais (máx. 25 MB)")
     language = form.get("language")
     if not language:
         # Éden: o app web não informa o idioma; usa o da configuração
@@ -1019,11 +1031,13 @@ async def transcribe_speech(request: Request):
     # Éden: a transcrição pela OpenAI entra no limite de gastos do mês.
     from openjarvis.eden import speech_budget
     from openjarvis.eden.budget import BudgetExceeded
+    from openjarvis.eden.redact import redact_secrets
 
     client_ms = speech_budget.parse_client_ms(form.get("duration_ms"))
+    reservation = None
     if speech_budget.tracked(backend):
         try:
-            speech_budget.check(backend, len(audio_bytes), client_ms)
+            reservation = speech_budget.check(backend, len(audio_bytes), client_ms)
         except BudgetExceeded as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
 
@@ -1035,15 +1049,20 @@ async def transcribe_speech(request: Request):
             language=language or None,
         )
     except Exception as exc:
-        logger.exception("Speech transcription failed")
+        speech_budget.release(reservation)
+        logger.error("Speech transcription failed: %s", redact_secrets(exc))
         raise HTTPException(
             status_code=500,
-            detail=f"Speech transcription failed: {exc}",
+            detail=f"Speech transcription failed: {redact_secrets(exc)}",
         ) from exc
 
     if speech_budget.tracked(backend):
         speech_budget.record(
-            backend, result.duration_seconds, len(audio_bytes), client_ms
+            backend,
+            result.duration_seconds,
+            len(audio_bytes),
+            client_ms,
+            reservation=reservation,
         )
 
     return {

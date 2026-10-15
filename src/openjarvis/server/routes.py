@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from openjarvis.core.paths import get_config_dir
 from openjarvis.core.types import Message, Role, ToolCall
+from openjarvis.eden.redact import redact_secrets as _redact_secrets
 from openjarvis.server.model_capabilities import is_embed_only_model
 from openjarvis.server.models import (
     ChatCompletionChunk,
@@ -882,7 +883,10 @@ async def _handle_stream_tools(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"\n\n**Não foi possível responder:** {exc}",
+                            content=(
+                                "\n\n**Não foi possível responder:** "
+                                f"{_redact_secrets(exc)}"
+                            ),
                         ),
                         finish_reason="stop",
                     )
@@ -1041,8 +1045,7 @@ async def _handle_stream(
 
             logging.getLogger("openjarvis.server").error(
                 "Stream error: %s",
-                exc,
-                exc_info=True,
+                _redact_secrets(exc),
             )
             error_chunk = ChatCompletionChunk(
                 id=chunk_id,
@@ -1050,7 +1053,10 @@ async def _handle_stream(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"\n\n**Não foi possível responder:** {exc}",
+                            content=(
+                                "\n\n**Não foi possível responder:** "
+                                f"{_redact_secrets(exc)}"
+                            ),
                         ),
                         finish_reason="stop",
                     )
@@ -1157,6 +1163,10 @@ async def list_models(request: Request) -> ModelListResponse:
         if get_settings().enabled
         else []
     )
+    if eden_models:
+        # No servidor do Éden, só os modos do Éden (outros modelos são
+        # recusados na conversa, porque escapariam do limite de gastos).
+        return ModelListResponse(data=eden_models)
 
     return ModelListResponse(
         data=eden_models

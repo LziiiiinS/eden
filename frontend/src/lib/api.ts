@@ -89,9 +89,8 @@ export const getApiKey = (): string => {
       if (parsed.apiKey) return String(parsed.apiKey);
     }
   } catch {}
-  if (import.meta.env.VITE_OPENJARVIS_API_KEY) {
-    return import.meta.env.VITE_OPENJARVIS_API_KEY as string;
-  }
+  // Éden: sem chave vinda do build (VITE_*): ela iria parar no JavaScript que
+  // qualquer um baixa sem chave. A chave só vem do aparelho (configurações).
   return '';
 };
 

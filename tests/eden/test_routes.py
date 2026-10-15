@@ -83,3 +83,17 @@ def test_eden_routes_require_api_key_when_configured(tmp_path):
         "/v1/eden/conversations", headers={"Authorization": "Bearer chave-de-teste"}
     )
     assert ok.status_code == 200
+
+
+def test_big_upload_without_length_is_refused(client):
+    # Revisão de segurança (Codex, 15/10): sem Content-Length, o corpo era
+    # lido inteiro na memória antes de conferir o limite.
+    from openjarvis.eden.routes import MAX_BODY_BYTES
+
+    def chunks():
+        piece = b"x" * (1024 * 1024)
+        for _ in range(MAX_BODY_BYTES // len(piece) + 2):
+            yield piece
+
+    r = client.put("/v1/eden/conversations/c1", content=chunks())
+    assert r.status_code == 413

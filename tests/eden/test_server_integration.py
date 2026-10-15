@@ -48,8 +48,8 @@ def eden(tmp_path):
 def test_models_list_starts_with_eden_modes(eden):
     client, _ = eden
     ids = [m["id"] for m in client.get("/v1/models").json()["data"]]
-    assert ids[:3] == ["eden-auto", "eden-dia", "eden-missao"]
-    assert "qwen3.5:4b" in ids
+    # No servidor do Éden, só os modos do Éden aparecem.
+    assert ids == ["eden-auto", "eden-dia", "eden-missao"]
 
 
 def test_chat_routes_daily_request_to_chatgpt(eden):

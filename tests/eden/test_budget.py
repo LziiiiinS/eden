@@ -172,3 +172,36 @@ def test_env_overrides_limits_and_models():
     assert settings.monthly_limits_usd["anthropic"] == 15.0
     assert settings.daily_model == "gpt-6-luna"
     assert settings.mission_model == "claude-sonnet-5-5"
+
+
+def test_reservations_stop_simultaneous_requests_from_passing_the_limit(ledger):
+    # Revisão de segurança (Codex, 15/10): dez pedidos de US$ 0,60 ao mesmo
+    # tempo passavam todos contra um limite de US$ 1.
+    settings = EdenSettings(monthly_limits_usd={"openai": 1.0, "anthropic": 1.0})
+    first = ledger.reserve("openai", settings, 0.6)
+    with pytest.raises(BudgetExceeded):
+        ledger.reserve("openai", settings, 0.6)
+    with pytest.raises(BudgetExceeded):
+        ledger.check("openai", settings, 0.6)
+    # Terminou de verdade gastando menos: a reserva vira o gasto real.
+    ledger.record(
+        provider="openai",
+        model="gpt-6.1-sol",
+        kind="conversa",
+        cost_usd=0.1,
+        settings=settings,
+        reservation=first,
+    )
+    second = ledger.reserve("openai", settings, 0.6)
+    ledger.release(second)
+    ledger.reserve("openai", settings, 0.85)
+    assert ledger.summary(settings)["providers"]["openai"]["spentUsd"] == 0.1
+
+
+def test_speech_record_does_not_trust_a_tiny_client_duration(tmp_path):
+    from openjarvis.eden import speech_budget
+
+    # Áudio de 1,6 MB dizendo ter 1 ms: anota pelo menos 100 s (128 kbit/s).
+    assert speech_budget.estimate_seconds(1_600_000, 1) >= 100
+    # Para reservar, supõe áudio mais longo ainda (32 kbit/s).
+    assert speech_budget.reserve_seconds(1_600_000, 1) == 400

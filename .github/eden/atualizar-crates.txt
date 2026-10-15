@@ -1,0 +1,5 @@
+# Éden: bibliotecas Rust a atualizar no rust/Cargo.lock (uma por linha).
+# 15/10/2026 (revisão do Codex): avisos de segurança RustSec.
+h2
+rustls
+rustls-webpki

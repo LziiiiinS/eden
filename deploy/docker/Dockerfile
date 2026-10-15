@@ -9,8 +9,11 @@ FROM node:22.23.0-slim@sha256:d9f850096136edbc402debdd8729579a288aac64574ada0ff4
 ARG OPENJARVIS_LEADERBOARD_PUBLIC_ANON=
 
 WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --ignore-scripts 2>/dev/null || npm install
+# Éden: npm do projeto (11) e .npmrc antes de instalar; só "npm ci" com o
+# lockfile e sem scripts de instalação (sem cair num "npm install" solto).
+RUN npm install --global npm@11.19.0
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
+RUN npm ci --ignore-scripts
 COPY frontend/ .
 RUN VITE_SUPABASE_ANON_KEY="${OPENJARVIS_LEADERBOARD_PUBLIC_ANON}" npm run build
 
@@ -91,6 +94,9 @@ RUN apt-get update && \
 COPY eden/ /app/eden/
 COPY deploy/eden/iniciar-no-conteiner.sh /app/deploy/eden/iniciar-no-conteiner.sh
 RUN mkdir -p /dados && chown openjarvis:openjarvis /dados
+# Marca a imagem como Éden: sem a seção [eden] na configuração, o servidor se
+# recusa a ligar (em vez de subir o OpenJarvis completo).
+ENV EDEN_IMAGEM=1
 ENV HOME=/home/openjarvis
 USER openjarvis
 

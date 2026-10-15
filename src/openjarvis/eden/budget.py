@@ -14,9 +14,10 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from openjarvis.eden.settings import TRACKED_PROVIDERS, EdenSettings
 
@@ -76,6 +77,9 @@ class SpendingLedger:
         db_path = Path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        # Reservas dos pedidos em andamento: id -> (empresa, mês, US$). Ficam
+        # só na memória: se o servidor reiniciar, nenhum pedido está em curso.
+        self._reservations: Dict[str, Tuple[str, str, float]] = {}
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
@@ -87,12 +91,57 @@ class SpendingLedger:
 
     def spent(self, provider: str, month: str) -> float:
         with self._lock:
-            row = self._conn.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0) FROM spending "
-                "WHERE month = ? AND provider = ?",
-                (month, provider),
-            ).fetchone()
+            return self._spent_locked(provider, month)
+
+    def _spent_locked(self, provider: str, month: str) -> float:
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM spending "
+            "WHERE month = ? AND provider = ?",
+            (month, provider),
+        ).fetchone()
         return float(row[0])
+
+    def _pending_locked(self, provider: str, month: str) -> float:
+        return sum(
+            amount
+            for (p, m, amount) in self._reservations.values()
+            if p == provider and m == month
+        )
+
+    def reserve(
+        self,
+        provider: str,
+        settings: EdenSettings,
+        amount_usd: float,
+        *,
+        at_ms: Optional[int] = None,
+    ) -> str:
+        """Separa o valor máximo do pedido antes de chamar a IA.
+
+        Conferir e separar acontecem juntos (com trava): vários pedidos ao
+        mesmo tempo, de aparelhos diferentes, não passam do limite somados.
+        Devolve o id da reserva, que é liberada em record() ou release().
+        """
+        month = month_key(settings, at_ms)
+        amount = max(0.0, float(amount_usd))
+        limit = settings.limit_for(provider)
+        with self._lock:
+            if limit is not None:
+                committed = self._spent_locked(provider, month) + self._pending_locked(
+                    provider, month
+                )
+                if committed + amount > limit:
+                    raise BudgetExceeded(provider, committed, limit)
+            reservation = uuid.uuid4().hex
+            self._reservations[reservation] = (provider, month, amount)
+            return reservation
+
+    def release(self, reservation: Optional[str]) -> None:
+        """Libera uma reserva (pedido terminou sem cobrança)."""
+        if not reservation:
+            return
+        with self._lock:
+            self._reservations.pop(reservation, None)
 
     def check(
         self,
@@ -108,9 +157,13 @@ class SpendingLedger:
             # Só OpenAI e Anthropic têm limite (sempre há um padrão); limite 0
             # desliga a IA daquela empresa.
             return
-        spent = self.spent(provider, month_key(settings, at_ms))
-        if spent + max(0.0, reserve_usd) > limit:
-            raise BudgetExceeded(provider, spent, limit)
+        month = month_key(settings, at_ms)
+        with self._lock:
+            committed = self._spent_locked(provider, month) + self._pending_locked(
+                provider, month
+            )
+        if committed + max(0.0, reserve_usd) > limit:
+            raise BudgetExceeded(provider, committed, limit)
 
     def record(
         self,
@@ -125,9 +178,12 @@ class SpendingLedger:
         audio_seconds: float = 0.0,
         estimated: bool = False,
         at_ms: Optional[int] = None,
+        reservation: Optional[str] = None,
     ) -> None:
         now = at_ms if at_ms is not None else int(time.time() * 1000)
         with self._lock:
+            if reservation:
+                self._reservations.pop(reservation, None)
             self._conn.execute(
                 "INSERT INTO spending (at_ms, month, provider, model, kind, "
                 "input_tokens, output_tokens, audio_seconds, cost_usd, estimated) "

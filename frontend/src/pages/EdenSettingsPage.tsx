@@ -68,8 +68,8 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
       </Row>
       {!reachable && phoneUrl.trim() !== '' && (
         <p className="text-xs mt-2" role="alert" style={{ color: 'var(--color-warning)' }}>
-          Precisa começar com https:// e não pode ser localhost: o celular não abre o Éden sem
-          cadeado.
+          Use o endereço com cadeado do Tailscale, como https://eden-notebook.tailxxxx.ts.net
+          (sem nada depois do .ts.net). Por segurança, a chave só vai para esse tipo de endereço.
         </p>
       )}
       <div className="pt-3 flex flex-col items-start gap-3">

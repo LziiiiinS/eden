@@ -60,15 +60,26 @@ def test_mission_over_limit_is_refused_before_calling_claude(eden):
     assert refusal.headers["X-Eden-Mode"] == "missao"
 
 
-def test_plain_models_are_also_limited(eden):
-    _, refusal = prepare_chat(_request("claude-opus-5-5", "oi"))
-    assert refusal is not None and refusal.status_code == 429
+def test_plain_models_are_refused_in_eden(eden):
+    # No servidor do Éden, só os modos do Éden (com limite de gastos).
+    for model in ("claude-opus-5-5", "qwen3.5:4b"):
+        _, refusal = prepare_chat(_request(model, "oi"))
+        assert refusal is not None and refusal.status_code == 400
+        assert json.loads(refusal.body)["code"] == "eden_modelo"
 
 
-def test_local_models_are_untouched(eden):
-    req = _request("qwen3.5:4b", "oi")
-    decision, refusal = prepare_chat(req)
-    assert decision is None and refusal is None and req.model == "qwen3.5:4b"
+def test_local_models_are_untouched_outside_eden(tmp_path):
+    settings.set_settings(settings.EdenSettings(enabled=False))
+    ledger = budget.SpendingLedger(tmp_path / "gastos.db")
+    budget.set_ledger(ledger)
+    try:
+        req = _request("qwen3.5:4b", "oi")
+        decision, refusal = prepare_chat(req)
+        assert decision is None and refusal is None and req.model == "qwen3.5:4b"
+    finally:
+        settings.set_settings(None)
+        budget.set_ledger(None)
+        ledger.close()
 
 
 def test_stream_response_gets_route_headers(eden):
@@ -106,3 +117,29 @@ def test_non_stream_response_is_charged_and_tagged(eden):
     assert response.headers["X-Eden-Mode"] == "dia"
     spent = ledger.summary(cfg)["providers"]["openai"]["spentUsd"]
     assert spent == pytest.approx(0.003)
+
+
+def test_eden_refuses_tools_unknown_models_and_unpriced_models(eden):
+    # Revisão de segurança (Codex, 15/10): "tools" e modelos fora do Éden
+    # escapavam da conta de gastos.
+    with_tools = _request("eden-dia", "oi")
+    with_tools.tools = [{"type": "function", "function": {"name": "x"}}]
+    _, refusal = prepare_chat(with_tools)
+    assert json.loads(refusal.body)["code"] == "eden_sem_ferramentas"
+
+    _, refusal = prepare_chat(_request("o3", "oi"))
+    assert json.loads(refusal.body)["code"] == "eden_modelo"
+
+    cfg, _ = eden
+    cfg.prices = {"claude-sonnet-5-5": (2.0, 10.0)}  # sem o modelo do dia a dia
+    _, refusal = prepare_chat(_request("eden-dia", "oi"))
+    assert json.loads(refusal.body)["code"] == "eden_preco"
+
+
+def test_eden_caps_the_answer_size(eden):
+    cfg, _ = eden
+    req = _request("eden-dia", "oi")
+    req.max_tokens = 999_999
+    _, refusal = prepare_chat(req)
+    assert refusal is None
+    assert req.max_tokens == cfg.max_output_tokens

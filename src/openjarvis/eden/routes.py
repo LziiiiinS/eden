@@ -80,9 +80,16 @@ async def put_conversation(conv_id: str, request: Request):
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail="Conversa grande demais")
-    body = await request.body()
-    if len(body) > MAX_BODY_BYTES:
-        raise HTTPException(status_code=413, detail="Conversa grande demais")
+    # Lê aos pedaços e para no limite (vale também para envios sem
+    # Content-Length, que antes eram lidos inteiros na memória).
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Conversa grande demais")
+        chunks.append(chunk)
+    body = b"".join(chunks)
     try:
         payload = json.loads(body or b"{}")
         conv = validate_conversation(conv_id, payload)
