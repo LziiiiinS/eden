@@ -5,6 +5,12 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import { apiFetch, isTauri } from '../lib/api';
 import { normalizeAccessKey } from '../lib/eden-key';
+import {
+  formatPairingInput,
+  isCompletePairingCode,
+  isHomeScreenApp,
+  redeemPairingCode,
+} from '../lib/eden-pareamento';
 import { useAppStore } from '../lib/store';
 
 type GateState = 'checking' | 'ok' | 'needs-key' | 'offline';
@@ -28,6 +34,10 @@ export function EdenAccessGate() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
+  // Éden: no app da tela de início (iPhone) a chave do QR code não chega;
+  // lá o mais fácil é o código curto que o notebook mostra.
+  const [mode, setMode] = useState<'key' | 'code'>(() => (isHomeScreenApp() ? 'code' : 'key'));
+  const [code, setCode] = useState('');
 
   useEffect(() => {
     if (isTauri()) return;
@@ -65,6 +75,113 @@ export function EdenAccessGate() {
       setError('Não consegui falar com o servidor agora. Tente de novo em instantes.');
     }
   };
+
+  const submitCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isCompletePairingCode(code)) return;
+    setBusy(true);
+    setError('');
+    const result = await redeemPairingCode(code);
+    if (!result.ok) {
+      setBusy(false);
+      setError(
+        result.reason === 'invalid'
+          ? 'Código errado ou vencido. No notebook, toque em "Mostrar código" de novo e digite o código novo.'
+          : result.reason === 'too-many'
+            ? 'Muitas tentativas. Espere 1 minuto e tente de novo.'
+            : 'Não consegui falar com o servidor agora. Confira se o Tailscale está ligado e tente de novo.',
+      );
+      return;
+    }
+    const previous = apiKey;
+    updateSettings({ apiKey: result.key });
+    const ok = await probe();
+    setBusy(false);
+    if (ok === 'ok') {
+      setCode('');
+      window.location.reload();
+    } else {
+      updateSettings({ apiKey: previous });
+      setError('O código funcionou, mas a chave não foi aceita. Peça um código novo no notebook.');
+    }
+  };
+
+  const switchMode = () => {
+    setMode((m) => (m === 'key' ? 'code' : 'key'));
+    setError('');
+  };
+
+  const switchButton = (
+    <button
+      type="button"
+      onClick={switchMode}
+      className="text-xs underline cursor-pointer self-center"
+      style={{ color: 'var(--color-text-secondary)' }}
+    >
+      {mode === 'key' ? 'Tenho um código do notebook' : 'Prefiro digitar a chave'}
+    </button>
+  );
+
+  if (mode === 'code') {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: 'color-mix(in srgb, var(--color-bg) 92%, transparent)' }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="eden-gate-title"
+      >
+        <form
+          onSubmit={submitCode}
+          className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4"
+          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)' }}
+        >
+          <div className="flex items-center gap-2">
+            <KeyRound size={18} style={{ color: 'var(--color-accent)' }} />
+            <h2 id="eden-gate-title" className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+              Ligar este aparelho
+            </h2>
+          </div>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
+            No notebook, abra o Éden e vá em Configurações → Conectar um celular → Mostrar código.
+            Digite aqui o código que aparecer. Ele vale 5 minutos e serve uma vez só.
+          </p>
+          <input
+            type="text"
+            name="eden-codigo"
+            value={code}
+            onChange={(e) => setCode(formatPairingInput(e.target.value))}
+            autoComplete="off"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            inputMode="text"
+            maxLength={12}
+            data-1p-ignore
+            data-lpignore="true"
+            placeholder="ABCD-EFGH"
+            aria-label="Código do notebook"
+            className="w-full text-center text-2xl tracking-widest px-3 py-3 rounded-lg outline-none font-mono"
+            style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+          />
+          {error && (
+            <p className="text-xs" role="alert" style={{ color: 'var(--color-error)' }}>
+              {error}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={busy || !isCompletePairingCode(code)}
+            className="w-full py-2.5 rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50 disabled:cursor-default"
+            style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent, white)' }}
+          >
+            {busy ? 'Conferindo…' : 'Entrar'}
+          </button>
+          {switchButton}
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -133,6 +250,7 @@ export function EdenAccessGate() {
         >
           {busy ? 'Conferindo…' : 'Entrar'}
         </button>
+        {switchButton}
       </form>
     </div>
   );

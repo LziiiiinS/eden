@@ -170,3 +170,35 @@ def test_eden_server_refuses_huge_request_bodies(eden_app):
     )
     # O FastAPI transforma o corte da leitura em "corpo inválido" (400).
     assert r.status_code in (400, 413)
+
+
+def test_pairing_code_works_on_the_real_eden_server(tmp_path):
+    """Servidor do Éden completo, com chave: o código troca pela chave e só a
+    rota do código fica aberta sem a chave."""
+    chave = "oj_sk_teste_servidor_completo"
+    settings.set_settings(settings.EdenSettings(enabled=True))
+    ledger = budget.SpendingLedger(tmp_path / "gastos.db")
+    budget.set_ledger(ledger)
+    try:
+        app = create_app(_engine(), "qwen3.5:4b", config=_config(), api_key=chave)
+        app.state.eden_conversations = ConversationStore(tmp_path / "conversas.db")
+        client = TestClient(app)
+        auth = {"Authorization": f"Bearer {chave}"}
+        assert client.get("/v1/eden/conversations").status_code == 401
+        codigo = client.post("/v1/eden/pareamento", headers=auth).json()["codigo"]
+        r = client.post("/v1/eden/pareamento/usar", json={"codigo": codigo})
+        assert r.status_code == 200 and r.json() == {"chave": chave}
+        # Um site de fora não recebe autorização para mandar o pedido.
+        pre = client.options(
+            "/v1/eden/pareamento/usar",
+            headers={
+                "Origin": "https://site-estranho.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert "access-control-allow-origin" not in pre.headers
+    finally:
+        settings.set_settings(None)
+        budget.set_ledger(None)
+        ledger.close()

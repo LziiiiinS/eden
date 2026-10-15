@@ -115,3 +115,101 @@ def test_phone_address_comes_only_from_a_tailscale_https_address(client, monkeyp
     ):
         monkeypatch.setenv("EDEN_ENDERECO_CELULAR", ruim)
         assert client.get("/v1/eden/info").json() == {"endereco_celular": None}
+
+
+# ── código curto para ligar um aparelho ─────────────────────────────────
+
+CHAVE = "oj_sk_teste_do_pareamento_123"
+
+
+def _app_com_chave(tmp_path, chave=CHAVE):
+    from openjarvis.server.auth_middleware import AuthMiddleware
+
+    app = FastAPI()
+    app.state.api_key = chave
+    app.state.eden_conversations = ConversationStore(tmp_path / "conv.db")
+    app.include_router(router)
+    if chave:
+        app.add_middleware(AuthMiddleware, api_key=chave)
+    return TestClient(app)
+
+
+def test_pairing_code_gives_the_key_once(tmp_path):
+    c = _app_com_chave(tmp_path)
+    auth = {"Authorization": f"Bearer {CHAVE}"}
+    # Criar o código exige a chave.
+    assert c.post("/v1/eden/pareamento").status_code == 401
+    criado = c.post("/v1/eden/pareamento", headers=auth)
+    assert criado.status_code == 200
+    assert criado.headers["cache-control"] == "no-store"
+    codigo = criado.json()["codigo"]
+    # O aparelho sem chave troca o código pela chave.
+    r = c.post("/v1/eden/pareamento/usar", json={"codigo": codigo.lower()})
+    assert r.status_code == 200
+    assert r.json() == {"chave": CHAVE}
+    assert r.headers["cache-control"] == "no-store"
+    # Uso único.
+    r = c.post("/v1/eden/pareamento/usar", json={"codigo": codigo})
+    assert r.status_code == 400
+    assert r.json()["code"] == "eden_codigo_invalido"
+    assert CHAVE not in r.text
+
+
+def test_pairing_only_opens_that_exact_route(tmp_path):
+    c = _app_com_chave(tmp_path)
+    # As outras rotas continuam exigindo a chave.
+    assert c.get("/v1/eden/conversations").status_code == 401
+    assert c.get("/v1/eden/info").status_code == 401
+    assert c.delete("/v1/eden/pareamento").status_code == 401
+    # Outro método ou caminho parecido também não passa.
+    assert c.get("/v1/eden/pareamento/usar").status_code == 401
+    assert c.post("/v1/eden/pareamento/usar/", json={}).status_code == 401
+    assert c.post("/v1/eden/pareamento/usar2", json={}).status_code == 401
+
+
+def test_pairing_requires_json_and_a_live_code(tmp_path):
+    c = _app_com_chave(tmp_path)
+    # Sem código ativo.
+    r = c.post("/v1/eden/pareamento/usar", json={"codigo": "ABCD-EFGH"})
+    assert r.status_code == 400
+    # Formulário ou texto puro (o que um site de fora conseguiria mandar).
+    r = c.post(
+        "/v1/eden/pareamento/usar",
+        content=b'{"codigo":"ABCD-EFGH"}',
+        headers={"Content-Type": "text/plain"},
+    )
+    assert r.status_code == 415
+    r = c.post("/v1/eden/pareamento/usar", data={"codigo": "ABCD-EFGH"})
+    assert r.status_code == 415
+    r = c.post(
+        "/v1/eden/pareamento/usar",
+        content=b"{nao e json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 400
+
+
+def test_pairing_wrong_tries_and_rate_limit(tmp_path):
+    from openjarvis.eden import pareamento
+
+    c = _app_com_chave(tmp_path)
+    auth = {"Authorization": f"Bearer {CHAVE}"}
+    codigo = c.post("/v1/eden/pareamento", headers=auth).json()["codigo"]
+    errado = "AAAA-AAAA" if codigo != "AAAA-AAAA" else "BBBB-BBBB"
+    for _ in range(pareamento.MAX_ERROS_POR_CODIGO):
+        c.post("/v1/eden/pareamento/usar", json={"codigo": errado})
+    # Depois de 5 erros o código certo não vale mais.
+    r = c.post("/v1/eden/pareamento/usar", json={"codigo": codigo})
+    assert r.status_code == 400
+    for _ in range(pareamento.MAX_TENTATIVAS_POR_MINUTO):
+        c.post("/v1/eden/pareamento/usar", json={"codigo": errado})
+    r = c.post("/v1/eden/pareamento/usar", json={"codigo": errado})
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "60"
+
+
+def test_pairing_needs_a_server_key(tmp_path):
+    c = _app_com_chave(tmp_path, chave="")
+    assert c.post("/v1/eden/pareamento").status_code == 409
+    r = c.post("/v1/eden/pareamento/usar", json={"codigo": "ABCD-EFGH"})
+    assert r.status_code == 409

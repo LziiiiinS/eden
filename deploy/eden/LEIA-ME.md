@@ -40,6 +40,15 @@ Cada janela funciona como um aparelho diferente. Na InPrivate o Éden pede a
 chave de acesso de novo. Escreva numa janela e veja a conversa aparecer na outra
 (na hora em que você volta para ela, ou em até 30 segundos).
 
+## Ligar o celular
+
+- No Éden do computador: **Configurações → Conectar um celular → Mostrar QR
+  code**. Com o Tailscale ligado no celular, aponte a câmera para o QR code.
+- **iPhone com o Éden na tela de início**: o ícone não enxerga a chave que o QR
+  code salvou no Safari e pede a chave de novo. No computador, toque em
+  **Mostrar código**; no iPhone, toque em **Tenho um código do notebook** e
+  digite o código (vale 5 minutos e serve uma vez só).
+
 ## Segurança
 
 - O `.env` tem as chaves. Não mande esse arquivo para ninguém, não cole as
