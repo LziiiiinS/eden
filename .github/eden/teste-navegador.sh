@@ -11,6 +11,8 @@ AQUI="$(cd "$(dirname "$0")" && pwd)"
 
 docker volume create eden-navegador >/dev/null
 docker run -d --name eden-navegador -p 127.0.0.1:8000:8000 \
+  --read-only --tmpfs /tmp:rw,size=128m \
+  --cap-drop ALL --security-opt no-new-privileges:true \
   -e OPENJARVIS_HOME=/dados \
   -e OPENJARVIS_API_KEY="$KEY" \
   -e OPENAI_API_KEY=sk-teste-falsa \
