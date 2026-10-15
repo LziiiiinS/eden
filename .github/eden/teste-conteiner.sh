@@ -10,7 +10,10 @@ KEY="oj_sk_teste_$(date +%s)"
 BASE="http://127.0.0.1:8000"
 
 docker volume create eden-teste >/dev/null
+# Igual ao docker-compose: programa só-leitura, /tmp na memória.
 docker run -d --name eden-teste -p 127.0.0.1:8000:8000 \
+  --read-only --tmpfs /tmp:rw,size=128m \
+  --cap-drop ALL --security-opt no-new-privileges:true \
   -e OPENJARVIS_HOME=/dados \
   -e OPENJARVIS_API_KEY="$KEY" \
   -e OPENAI_API_KEY=sk-teste-falsa \
@@ -70,6 +73,13 @@ echo "ok: avisos no aparelho (chave do servidor protegida)"
 docker exec eden-teste sh -c 'test -s /dados/SOUL.md && test -f /dados/USER.md && grep -q "^\[eden" /dados/config.toml' \
   || { echo "error: configuração/personalidade do Éden não estão em /dados"; exit 1; }
 echo "ok: configuração e personalidade em /dados"
+
+if docker exec eden-teste sh -c 'touch /app/eden/teste 2>/dev/null'; then
+  echo "error: o programa do Éden devia ser só-leitura"; exit 1
+fi
+docker exec eden-teste sh -c 'touch /tmp/teste && touch /dados/teste && rm /tmp/teste /dados/teste' \
+  || { echo "error: /tmp e /dados deviam aceitar gravação"; exit 1; }
+echo "ok: programa só-leitura; dados e /tmp graváveis"
 
 docker restart eden-teste >/dev/null
 esperar

@@ -32,6 +32,12 @@ services:
     pids_limit: 256
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # Programa só-leitura: dá para gravar só nos dados (/dados) e numa pasta
+    # temporária na memória (/tmp). Mesmo que algo dê errado, ninguém muda o
+    # código do Éden dentro do contêiner.
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m
 
   # Backup e restauração. Não liga junto com o Éden: só roda quando o
   # backup-eden / restaurar-eden chamam ("docker compose run --rm backup ...").
@@ -52,6 +58,9 @@ services:
     pids_limit: 64
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m
 
 volumes:
   eden-dados:
