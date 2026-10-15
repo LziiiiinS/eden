@@ -384,6 +384,56 @@ def conferir(arquivo: Path) -> dict:
     return manifesto
 
 
+# Tabelas que cada banco do Éden pode ter. Um backup com outra coisa é
+# recusado: gatilhos (triggers) e visões rodariam sozinhos dentro do Éden
+# depois de restaurar (ex.: zerar a conta de gastos, trocar o resumo de um
+# cartão de confirmação).
+ESQUEMA_PERMITIDO = {
+    "conversations.db": {"conversations", "messages"},
+    "gastos.db": {"spending"},
+    "organizacao.db": {
+        "espacos",
+        "perfil",
+        "memorias",
+        "tarefas",
+        "notas",
+        "acoes",
+        "registro",
+        "push_inscricoes",
+        "ajustes",
+    },
+}
+
+
+def _conferir_esquema(caminho: Path) -> None:
+    permitidas = ESQUEMA_PERMITIDO.get(caminho.name)
+    if permitidas is None or caminho.parent.name != PASTA_EDEN:
+        raise ErroBackup(f"banco desconhecido no backup: {caminho.name}")
+    try:
+        conn = sqlite3.connect(f"file:{caminho}?mode=ro", uri=True)
+        try:
+            itens = conn.execute(
+                "SELECT type, name, tbl_name, COALESCE(sql, '') FROM sqlite_master"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise ErroBackup(f"banco danificado no backup: {caminho.name} ({exc})") from exc
+    for tipo, nome, tabela, sql in itens:
+        interna = nome.startswith("sqlite_")
+        if tipo == "table":
+            ok = (interna or nome in permitidas) and "VIRTUAL" not in sql.upper()
+        elif tipo == "index":
+            ok = tabela in permitidas or tabela.startswith("sqlite_")
+        else:  # trigger, view
+            ok = False
+        if not ok:
+            raise ErroBackup(
+                f"o backup tem algo que o Éden não cria ({tipo} {nome!r} em "
+                f"{caminho.name}); recusado"
+            )
+
+
 def _conferir_banco(caminho: Path) -> None:
     try:
         conn = sqlite3.connect(f"file:{caminho}?mode=ro", uri=True)
@@ -448,6 +498,7 @@ def restaurar(
                 raise ErroBackup(f"conteúdo diferente do esperado: {nome}")
             if _e_sqlite(extraido.name):
                 _conferir_banco(extraido)
+                _conferir_esquema(extraido)
 
         seguranca = None
         if pasta_seguranca is not None:

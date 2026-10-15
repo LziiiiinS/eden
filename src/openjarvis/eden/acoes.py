@@ -37,8 +37,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from openjarvis.eden.organizacao import (
     MAX_MEMORIA,
-    MAX_NOTAS_TAREFA,
-    MAX_TEXTO_NOTA,
     MAX_TITULO,
     TIPOS_NOTA,
     ErroOrganizacao,
@@ -54,6 +52,10 @@ from openjarvis.eden.organizacao import (
 
 VALIDADE_MS = 15 * 60 * 1000
 MAX_ACOES_POR_RESPOSTA = 5
+# Textos que o Éden propõe precisam caber inteiros no cartão (a pessoa vê
+# tudo o que será gravado). Pela tela, os limites são maiores.
+MAX_IA_NOTAS_TAREFA = 1000
+MAX_IA_TEXTO_NOTA = 4000
 MAX_ACOES_POR_HORA = 60
 MAX_BLOCO = 8000
 
@@ -99,11 +101,12 @@ def remover_blocos(resposta: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", sem).rstrip()
 
 
-def assinatura(tipo: str, parametros: Dict[str, Any]) -> str:
+def assinatura(tipo: str, parametros: Dict[str, Any], resumo: str = "") -> str:
+    """sha256 do tipo, dos parâmetros e do resumo que o cartão mostra."""
     canonico = json.dumps(
         parametros, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
-    return hashlib.sha256(f"{tipo}\n{canonico}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{tipo}\n{canonico}\n{resumo}".encode("utf-8")).hexdigest()
 
 
 def _nome_espaco(store: Organizacao, espaco_id: Optional[str]) -> str:
@@ -113,11 +116,9 @@ def _nome_espaco(store: Organizacao, espaco_id: Optional[str]) -> str:
     return e["nome"] if e else espaco_id
 
 
-def _aspas(valor: str, maximo: int = 120) -> str:
-    curto = " ".join(valor.split())
-    if len(curto) > maximo:
-        curto = curto[: maximo - 1] + "…"
-    return f"“{curto}”"
+def _aspas(valor: str) -> str:
+    # Texto inteiro, sem cortar: o cartão mostra exatamente o que será gravado.
+    return f"“{valor}”"
 
 
 def _so_campos(dados: Dict[str, Any], permitidos: Tuple[str, ...]) -> None:
@@ -170,7 +171,7 @@ def validar(
 
     if tipo == "memoria.criar":
         _so_campos(bruto, ("texto", "espaco"))
-        txt = texto(bruto.get("texto"), "texto", MAX_MEMORIA)
+        txt = texto(bruto.get("texto"), "texto", MAX_MEMORIA, uma_linha=True)
         valor_espaco = bruto.get("espaco", espaco_ativo)
         esp = (
             None
@@ -178,7 +179,7 @@ def validar(
             else store.espaco_valido(valor_espaco)
         )
         params = {"texto": txt, "espaco": esp}
-        resumo = f"Guardar na memória ({_nome_espaco(store, esp)}): {_aspas(txt, 200)}"
+        resumo = f"Guardar na memória ({_nome_espaco(store, esp)}): {_aspas(txt)}"
         return Proposta(tipo, params, resumo)
 
     if tipo == "memoria.apagar":
@@ -187,17 +188,23 @@ def validar(
         mem = store.memoria(mid)
         if mem is None:
             raise ErroOrganizacao("memória não encontrada")
+        if mem["espaco"] not in (None, espaco_ativo):
+            # Só o espaço ativo (e as memórias de todos): sem isso, um pedido
+            # com ids "chutados" traria para cá o texto de outro espaço.
+            raise ErroOrganizacao("essa memória não está no espaço ativo")
         params = {"id": mid, "texto": mem["texto"]}
-        return Proposta(tipo, params, f"Apagar da memória: {_aspas(mem['texto'], 200)}")
+        return Proposta(tipo, params, f"Apagar da memória: {_aspas(mem['texto'])}")
 
     if tipo == "tarefa.criar":
         _so_campos(bruto, ("titulo", "data", "hora", "lembrete", "notas", "espaco"))
-        titulo = texto(bruto.get("titulo"), "titulo", MAX_TITULO)
+        titulo = texto(bruto.get("titulo"), "titulo", MAX_TITULO, uma_linha=True)
         data = data_iso(bruto.get("data"))
         hora = hora_hhmm(bruto.get("hora"))
         if hora and not data:
             raise ErroOrganizacao("para ter horário, a tarefa precisa de uma data")
-        notas = texto(bruto.get("notas"), "notas", MAX_NOTAS_TAREFA, obrigatorio=False)
+        notas = texto(
+            bruto.get("notas"), "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False
+        )
         esp = espaco_de()
         lembrete = _lembrete_param(bruto.get("lembrete"), data, hora)
         params = {
@@ -213,7 +220,7 @@ def validar(
             f"{resumo_data(data, hora, hoje)}{_texto_lembrete(lembrete, hoje)}"
         )
         if notas:
-            resumo += f" · notas: {_aspas(notas, 80)}"
+            resumo += f" · notas: {_aspas(notas)}"
         return Proposta(tipo, params, resumo)
 
     if tipo in ("tarefa.concluir", "tarefa.apagar"):
@@ -222,6 +229,8 @@ def validar(
         tarefa = store.tarefa(tid)
         if tarefa is None:
             raise ErroOrganizacao("tarefa não encontrada")
+        if tarefa["espaco"] != espaco_ativo:
+            raise ErroOrganizacao("essa tarefa não está no espaço ativo")
         if tipo == "tarefa.concluir" and tarefa["feita"]:
             raise ErroOrganizacao("essa tarefa já está feita")
         params = {"id": tid, "titulo": tarefa["titulo"]}
@@ -241,16 +250,20 @@ def validar(
         tarefa = store.tarefa(tid)
         if tarefa is None:
             raise ErroOrganizacao("tarefa não encontrada")
+        if tarefa["espaco"] != espaco_ativo:
+            raise ErroOrganizacao("essa tarefa não está no espaço ativo")
         mudancas: Dict[str, Any] = {}
         if "titulo" in bruto:
-            mudancas["titulo"] = texto(bruto["titulo"], "titulo", MAX_TITULO)
+            mudancas["titulo"] = texto(
+                bruto["titulo"], "titulo", MAX_TITULO, uma_linha=True
+            )
         if "data" in bruto:
             mudancas["data"] = data_iso(bruto["data"])
         if "hora" in bruto:
             mudancas["hora"] = hora_hhmm(bruto["hora"])
         if "notas" in bruto:
             mudancas["notas"] = texto(
-                bruto["notas"], "notas", MAX_NOTAS_TAREFA, obrigatorio=False
+                bruto["notas"], "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False
             )
         if "espaco" in bruto:
             mudancas["espaco"] = store.espaco_valido(bruto["espaco"])
@@ -280,7 +293,7 @@ def validar(
             )
         if "notas" in mudancas:
             partes.append(
-                f"notas {_aspas(mudancas['notas'], 80)}"
+                f"notas {_aspas(mudancas['notas'])}"
                 if mudancas["notas"]
                 else "sem notas"
             )
@@ -291,8 +304,10 @@ def validar(
 
     # nota.criar
     _so_campos(bruto, ("texto", "titulo", "tipo_nota", "espaco"))
-    txt = texto(bruto.get("texto"), "texto", MAX_TEXTO_NOTA)
-    titulo = texto(bruto.get("titulo"), "titulo", MAX_TITULO, obrigatorio=False)
+    txt = texto(bruto.get("texto"), "texto", MAX_IA_TEXTO_NOTA)
+    titulo = texto(
+        bruto.get("titulo"), "titulo", MAX_TITULO, obrigatorio=False, uma_linha=True
+    )
     tipo_nota = bruto.get("tipo_nota") or "nota"
     if tipo_nota not in TIPOS_NOTA:
         raise ErroOrganizacao("'tipo_nota' precisa ser nota ou ideia")
@@ -300,9 +315,7 @@ def validar(
     params = {"texto": txt, "titulo": titulo, "tipo_nota": tipo_nota, "espaco": esp}
     rotulo = "ideia" if tipo_nota == "ideia" else "nota"
     cabeca = f" {_aspas(titulo)}" if titulo else ""
-    resumo = (
-        f"Guardar {rotulo}{cabeca} em {_nome_espaco(store, esp)}: {_aspas(txt, 160)}"
-    )
+    resumo = f"Guardar {rotulo}{cabeca} em {_nome_espaco(store, esp)}: {_aspas(txt)}"
     return Proposta(tipo, params, resumo)
 
 
@@ -348,6 +361,10 @@ def propor(
         except ErroOrganizacao as exc:
             recusadas.append(str(exc))
             continue
+        except (ValueError, TypeError, OverflowError):
+            # Um bloco estranho não derruba os outros.
+            recusadas.append("não deu para entender a ação")
+            continue
         criadas.append(_gravar(store, proposta, conversa_id, agora))
     return criadas, recusadas
 
@@ -357,7 +374,7 @@ def _gravar(
 ) -> Dict[str, Any]:
     acao_id = secrets.token_urlsafe(18)
     params_json = json.dumps(proposta.parametros, sort_keys=True, ensure_ascii=False)
-    sig = assinatura(proposta.tipo, proposta.parametros)
+    sig = assinatura(proposta.tipo, proposta.parametros, proposta.resumo)
 
     def fazer(conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -379,6 +396,28 @@ def _gravar(
     return store.acao(acao_id)  # type: ignore[return-value]
 
 
+def _alvo_igual(
+    store: Organizacao, conn: sqlite3.Connection, tipo: str, params: Dict[str, Any]
+) -> None:
+    """O item que o cartão mostrou continua igual? Se foi editado pela tela
+    no meio tempo, a confirmação não vale para a versão nova."""
+    if tipo == "memoria.apagar":
+        row = conn.execute(
+            "SELECT texto FROM memorias WHERE id = ? AND apagado_em IS NULL",
+            (params["id"],),
+        ).fetchone()
+        if row is None:
+            raise ErroOrganizacao("memória não encontrada")
+        if row["texto"] != params["texto"]:
+            raise ErroOrganizacao("a memória mudou depois da sugestão; peça de novo")
+    elif tipo in ("tarefa.concluir", "tarefa.apagar", "tarefa.editar"):
+        tarefa = store.tarefa(params["id"], conn)
+        if tarefa is None:
+            raise ErroOrganizacao("tarefa não encontrada")
+        if tarefa["titulo"] != params.get("titulo", params.get("titulo_atual")):
+            raise ErroOrganizacao("a tarefa mudou depois da sugestão; peça de novo")
+
+
 def _executar(
     store: Organizacao,
     conn: sqlite3.Connection,
@@ -388,6 +427,7 @@ def _executar(
     acao_id: str,
 ) -> Dict[str, Any]:
     """Executa com os parâmetros GUARDADOS no servidor."""
+    _alvo_igual(store, conn, tipo, params)
     quem = "eden"
     if tipo == "memoria.criar":
         mem = store.criar_memoria(
@@ -471,7 +511,7 @@ def _decidir(
             )
         params = json.loads(row["parametros"])
         # Confere de novo a assinatura do que está gravado.
-        if assinatura(row["tipo"], params) != row["assinatura"]:
+        if assinatura(row["tipo"], params, row["resumo"]) != row["assinatura"]:
             raise ErroAcao("ação guardada inconsistente", 409, "eden_acao_assinatura")
         cur = conn.execute(
             "UPDATE acoes SET estado = 'feita', decidido_em = ? "

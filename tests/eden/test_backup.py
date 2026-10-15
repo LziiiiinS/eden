@@ -19,8 +19,8 @@ def _banco(caminho: Path, valores) -> sqlite3.Connection:
     caminho.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(caminho))
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("CREATE TABLE IF NOT EXISTS t (v TEXT)")
-    conn.executemany("INSERT INTO t VALUES (?)", [(v,) for v in valores])
+    conn.execute("CREATE TABLE IF NOT EXISTS conversations (v TEXT)")
+    conn.executemany("INSERT INTO conversations VALUES (?)", [(v,) for v in valores])
     conn.commit()
     return conn
 
@@ -28,7 +28,7 @@ def _banco(caminho: Path, valores) -> sqlite3.Connection:
 def _valores(caminho: Path):
     conn = sqlite3.connect(str(caminho))
     try:
-        return sorted(r[0] for r in conn.execute("SELECT v FROM t"))
+        return sorted(r[0] for r in conn.execute("SELECT v FROM conversations"))
     finally:
         conn.close()
 
@@ -133,7 +133,7 @@ def test_restore_puts_everything_back_and_keeps_the_current_state(dados, backups
     # Depois do backup: conversa nova, perfil mudado e um arquivo novo.
     _banco(dados / "eden" / "conversations.db", ["c2"]).close()
     (dados / "USER.md").write_text("perfil novo", encoding="utf-8")
-    (dados / "eden" / "tarefas.db").write_bytes(b"")
+    (dados / "eden" / "novo.txt").write_text("x", encoding="utf-8")
 
     seguranca = backup.restaurar(
         arquivo, dados, pasta_seguranca=backups, hora="20261015-040000"
@@ -141,7 +141,7 @@ def test_restore_puts_everything_back_and_keeps_the_current_state(dados, backups
 
     assert _valores(dados / "eden" / "conversations.db") == ["c1"]
     assert (dados / "USER.md").read_text(encoding="utf-8") == "Levi, perfil de teste"
-    assert not (dados / "eden" / "tarefas.db").exists()
+    assert not (dados / "eden" / "novo.txt").exists()
     # O que não é do backup fica como estava.
     assert (dados / "config.toml").exists() and (dados / "SOUL.md").exists()
     assert not (dados / ".eden-restaurar").exists()
@@ -352,3 +352,52 @@ def test_server_secrets_never_go_to_backup_and_survive_restore(dados, backups):
     backup.restaurar(arquivo, dados)
     # A chave do servidor continua lá depois de restaurar.
     assert (dados / "eden" / "push-vapid.key").read_text(encoding="utf-8") == "SEGREDO"
+
+
+def _banco_bytes(tmp_path, sql: str) -> bytes:
+    caminho = tmp_path / "montado.db"
+    conn = sqlite3.connect(str(caminho))
+    conn.executescript(sql)
+    conn.commit()
+    conn.close()
+    dados = caminho.read_bytes()
+    caminho.unlink()
+    return dados
+
+
+@pytest.mark.parametrize(
+    "nome, sql",
+    [
+        # Gatilho que zera a conta de gastos a cada gasto anotado.
+        (
+            "gastos.db",
+            "CREATE TABLE spending (x); CREATE TRIGGER z AFTER INSERT ON spending "
+            "BEGIN DELETE FROM spending; END;",
+        ),
+        ("organizacao.db", "CREATE TABLE acoes (x); CREATE VIEW v AS SELECT 1;"),
+        ("organizacao.db", "CREATE TABLE desconhecida (x);"),
+        ("outro.db", "CREATE TABLE spending (x);"),
+    ],
+)
+def test_databases_with_unexpected_objects_are_refused(tmp_path, dados, nome, sql):
+    arquivo = _tar(
+        tmp_path / "ruim.tar.gz", [(f"dados/eden/{nome}", _banco_bytes(tmp_path, sql))]
+    )
+    antes = _estado(dados)
+    with pytest.raises(ErroBackup, match="não cria|desconhecido"):
+        backup.restaurar(arquivo, dados)
+    assert _estado(dados) == antes
+
+
+def test_real_eden_databases_pass_the_schema_check(tmp_path, dados, backups):
+    from openjarvis.eden.budget import SpendingLedger
+    from openjarvis.eden.conversations import ConversationStore
+    from openjarvis.eden.organizacao import Organizacao
+
+    eden = dados / "eden"
+    eden.mkdir(exist_ok=True)
+    SpendingLedger(eden / "gastos.db").close()
+    ConversationStore(eden / "conversations.db").close()
+    Organizacao(eden / "organizacao.db").close()
+    arquivo = backup.criar(backups, dados)
+    backup.restaurar(arquivo, dados)

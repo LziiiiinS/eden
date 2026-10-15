@@ -132,3 +132,41 @@ def test_eden_image_without_eden_config_refuses_to_start(monkeypatch):
             create_app(_engine(), "qwen3.5:4b", config=_config())
     finally:
         settings.set_settings(None)
+
+
+def test_eden_config_turns_off_conversation_traces():
+    # Revisão de segurança (15/10): o registro técnico (traces.db) guardava
+    # cada pergunta e resposta inteiras, fora do banco de conversas.
+    from pathlib import Path
+
+    from openjarvis.core.config import load_config
+
+    caminho = Path(__file__).resolve().parents[2] / "eden" / "config.toml"
+    cfg = load_config(caminho)
+    assert cfg.traces.enabled is False
+    assert cfg.agent_manager.enabled is False
+
+
+def test_eden_server_refuses_huge_request_bodies(eden_app):
+    client = TestClient(eden_app)
+    grande = b"x" * (5 * 1024 * 1024)
+    r = client.post(
+        "/v1/chat/completions",
+        content=grande,
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 413
+    assert r.json()["code"] == "eden_grande_demais"
+
+    # Sem Content-Length (enviado aos pedaços): também conta.
+    def pedacos():
+        for _ in range(5):
+            yield b"x" * (1024 * 1024)
+
+    r = client.post(
+        "/v1/chat/completions",
+        content=pedacos(),
+        headers={"Content-Type": "application/json"},
+    )
+    # O FastAPI transforma o corte da leitura em "corpo inválido" (400).
+    assert r.status_code in (400, 413)

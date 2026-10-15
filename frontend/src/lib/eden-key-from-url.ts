@@ -14,7 +14,18 @@ function consumeKeyFromUrl(): void {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const settings = raw ? JSON.parse(raw) : {};
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, apiKey: key }));
+    const atual = typeof settings.apiKey === 'string' ? settings.apiKey : '';
+    // Um link (por exemplo, escrito pela IA numa resposta) não troca a chave
+    // que já está salva sem a pessoa concordar.
+    const trocar =
+      !atual ||
+      atual === key ||
+      window.confirm(
+        'Este link quer trocar a chave de acesso salva neste aparelho. Só aceite se o link veio do QR code do seu Éden. Trocar?',
+      );
+    if (trocar) {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, apiKey: key }));
+    }
   } catch {
     // Sem armazenamento: a tela de chave aparece e a pessoa digita.
   }

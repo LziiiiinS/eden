@@ -90,8 +90,91 @@ def restrict_routes_for_eden(app, settings: Optional[EdenSettings] = None) -> No
     app.docs_url = None
     app.redoc_url = None
     app.state.eden_removed_routes = removed
+    # Teto de tamanho para o corpo de todos os pedidos (a conversa não tinha).
+    app.add_middleware(LimiteDeCorpo)
     logger.info(
         "Éden: %d rotas ligadas, %d desligadas (só o que o Éden usa)",
         len(kept),
         len(removed),
     )
+
+
+# ── teto de tamanho dos pedidos ──────────────────────────────────────────
+
+LIMITE_PADRAO = 4 * 1024 * 1024
+LIMITES_POR_CAMINHO: Tuple[Tuple[str, int], ...] = (
+    ("/v1/speech/transcribe", 26 * 1024 * 1024),  # áudio até 25 MB
+    ("/v1/eden/conversations/", 9 * 1024 * 1024),  # conversa inteira até 8 MB
+)
+
+
+class _CorpoGrande(Exception):
+    pass
+
+
+class LimiteDeCorpo:
+    """Recusa (413) pedidos com corpo maior que o teto do caminho — pelo
+    Content-Length e também contando o que chega (envio sem tamanho)."""
+
+    def __init__(self, app) -> None:  # noqa: ANN001
+        self.app = app
+
+    @staticmethod
+    def limite(caminho: str) -> int:
+        for prefixo, teto in LIMITES_POR_CAMINHO:
+            if caminho.startswith(prefixo):
+                return teto
+        return LIMITE_PADRAO
+
+    @staticmethod
+    async def _recusar(send) -> None:  # noqa: ANN001
+        corpo = b'{"detail":"Pedido grande demais","code":"eden_grande_demais"}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(corpo)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": corpo})
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        teto = self.limite(scope.get("path", ""))
+        for nome, valor in scope.get("headers") or []:
+            if nome == b"content-length":
+                try:
+                    if int(valor) > teto:
+                        await self._recusar(send)
+                        return
+                except ValueError:
+                    await self._recusar(send)
+                    return
+        recebido = 0
+        respondeu = False
+
+        async def receber():
+            nonlocal recebido
+            mensagem = await receive()
+            if mensagem.get("type") == "http.request":
+                recebido += len(mensagem.get("body", b""))
+                if recebido > teto:
+                    raise _CorpoGrande()
+            return mensagem
+
+        async def enviar(mensagem):
+            nonlocal respondeu
+            if mensagem.get("type") == "http.response.start":
+                respondeu = True
+            await send(mensagem)
+
+        try:
+            await self.app(scope, receber, enviar)
+        except _CorpoGrande:
+            if not respondeu:
+                await self._recusar(send)

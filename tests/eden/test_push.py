@@ -225,3 +225,34 @@ def test_reminders_without_devices_are_still_marked(store, tmp_path):
     assert asyncio.run(push.enviar_lembretes_vencidos(store, chave, client, agora)) == 1
     assert client.pedidos == []
     assert store.tarefa(t["id"])["lembrete_enviado_em"] == agora
+
+
+def test_new_access_key_drops_old_push_devices(store):
+    _, p256dh, auth = _aparelho()
+    push.salvar_inscricao(
+        store,
+        {
+            "endpoint": "https://fcm.googleapis.com/x",
+            "keys": {"p256dh": p256dh, "auth": auth},
+        },
+    )
+    # Primeira vez: só guarda a marca da chave.
+    assert push.conferir_troca_de_chave(store, "oj_sk_chave_1") is False
+    assert push.conferir_troca_de_chave(store, "oj_sk_chave_1") is False
+    assert len(push.listar_inscricoes(store)) == 1
+    # Chave trocada: quem tinha a antiga deixa de receber.
+    assert push.conferir_troca_de_chave(store, "oj_sk_chave_2") is True
+    assert push.listar_inscricoes(store) == []
+
+
+def test_remove_device_by_id(store):
+    _, p256dh, auth = _aparelho()
+    salva = push.salvar_inscricao(
+        store,
+        {
+            "endpoint": "https://fcm.googleapis.com/y",
+            "keys": {"p256dh": p256dh, "auth": auth},
+        },
+    )
+    assert push.remover_inscricao_id(store, salva["id"]) is True
+    assert push.remover_inscricao_id(store, salva["id"]) is False
