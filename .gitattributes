@@ -2,3 +2,6 @@
 deploy/eden/*.sh text eol=lf
 deploy/eden/*.ps1 text eol=crlf
 deploy/eden/*.cmd text eol=crlf
+deploy/eden/servidor/*.sh text eol=lf
+deploy/eden/servidor/*.service text eol=lf
+deploy/eden/servidor/*.timer text eol=lf

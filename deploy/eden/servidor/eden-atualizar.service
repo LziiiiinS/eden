@@ -1,0 +1,11 @@
+[Unit]
+Description=Éden: atualizar para a versão mais nova (com backup e volta automática)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=EDEN_DIR=/opt/eden
+ExecStart=/opt/eden/atualizar-eden.sh
+TimeoutStartSec=2h

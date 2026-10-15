@@ -1,0 +1,9 @@
+[Unit]
+Description=Éden: backup diário dos dados
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=EDEN_DIR=/opt/eden
+ExecStart=/opt/eden/backup-eden.sh --tipo diario --manter 14

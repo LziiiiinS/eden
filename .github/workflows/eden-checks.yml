@@ -103,6 +103,12 @@ jobs:
           bash .github/eden/anotar.sh "Compose" docker compose -f deploy/eden/docker-compose.yml config -q
       - name: Backup e restauração (docker-compose do notebook, chaves de teste)
         run: bash .github/eden/anotar.sh "Backup" bash .github/eden/teste-backup.sh eden:teste
+      - name: Scripts do notebook e do servidor (shellcheck)
+        run: |
+          bash .github/eden/anotar.sh "shellcheck" shellcheck -S warning deploy/eden/servidor/*.sh .github/eden/teste-backup.sh .github/eden/teste-servidor.sh
+          bash .github/eden/anotar.sh "shellcheck" shellcheck -S error deploy/eden/*.sh .github/eden/*.sh
+      - name: Pacote do servidor (Ubuntu do GitHub, modo de teste)
+        run: bash .github/eden/anotar.sh "Servidor" bash .github/eden/teste-servidor.sh eden:teste
       # No main, monta do jeito que o notebook monta: direto do GitHub.
       - name: Montar pelo docker-compose a partir do GitHub (só no main)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

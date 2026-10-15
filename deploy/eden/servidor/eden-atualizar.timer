@@ -1,0 +1,12 @@
+# Desligado por padrão. Para ligar a atualização automática (todo dia às 04:15):
+#   sudo systemctl enable --now eden-atualizar.timer
+[Unit]
+Description=Éden: atualização automática às 04:15
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
