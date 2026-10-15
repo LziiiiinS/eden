@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { Send, Square, Paperclip, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
@@ -118,6 +119,21 @@ export function InputArea() {
     if (edenServer && deepResearch) setDeepResearch(false);
   }, [edenServer, deepResearch, setDeepResearch]);
   const corpusSync = useResearchCorpusSync(deepResearch);
+
+  // Éden: pedido vindo de outra tela (ex.: "Pedir um plano ao Éden" no Hoje).
+  // Abre uma conversa nova com o texto na caixa; a pessoa confere e envia.
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const pedido = searchParams.get('pedir');
+    if (!pedido) return;
+    if (useAppStore.getState().messages.length > 0 && selectedModel) {
+      createConversation(selectedModel);
+    }
+    setInput(pedido.slice(0, 2000));
+    navigate('/', { replace: true });
+    textareaRef.current?.focus();
+  }, [searchParams, navigate, createConversation, selectedModel]);
   const isCurrentChatStreaming = streamState.isStreaming && streamState.conversationId === activeId;
 
   const {
