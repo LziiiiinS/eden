@@ -437,6 +437,47 @@ def test_hourly_limit(store, monkeypatch):
     assert len(criadas) == 2 and "muitas sugestões" in recusadas[0]
 
 
+def test_one_conversation_cannot_use_up_the_limit_of_the_others(store, monkeypatch):
+    # Achado 17: texto injetado numa conversa não trava as sugestões das outras.
+    monkeypatch.setattr(acoes, "MAX_ACOES_POR_CONVERSA_HORA", 2)
+    monkeypatch.setattr(acoes, "MAX_ACOES_POR_HORA", 5)
+    resposta = "\n".join(
+        _bloco({"tipo": "memoria.criar", "texto": f"m{i}"}) for i in range(4)
+    )
+    criadas, recusadas = acoes.propor(resposta, store, "pessoal", TZ, "conv-a", AGORA)
+    assert len(criadas) == 2 and "nesta conversa" in recusadas[0]
+    # Nova resposta na mesma conversa: continua travada.
+    criadas, recusadas = acoes.propor(
+        _bloco({"tipo": "memoria.criar", "texto": "outra"}),
+        store,
+        "pessoal",
+        TZ,
+        "conv-a",
+        AGORA + 1000,
+    )
+    assert criadas == [] and "nesta conversa" in recusadas[0]
+    # Outra conversa ainda consegue.
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "memoria.criar", "texto": "da outra conversa"}),
+        store,
+        "pessoal",
+        TZ,
+        "conv-b",
+        AGORA + 2000,
+    )
+    assert len(criadas) == 1
+    # Uma hora depois, a primeira volta a funcionar.
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "memoria.criar", "texto": "depois"}),
+        store,
+        "pessoal",
+        TZ,
+        "conv-a",
+        AGORA + 3600 * 1000 + 1,
+    )
+    assert len(criadas) == 1
+
+
 def test_edit_task_summary_and_execution(store):
     t = store.criar_tarefa(
         {

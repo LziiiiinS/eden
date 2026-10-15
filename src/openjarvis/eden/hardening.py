@@ -92,6 +92,8 @@ def restrict_routes_for_eden(app, settings: Optional[EdenSettings] = None) -> No
     app.state.eden_removed_routes = removed
     # Teto de tamanho para o corpo de todos os pedidos (a conversa não tinha).
     app.add_middleware(LimiteDeCorpo)
+    # O registro de acesso não mostra o que vem depois do "?" (ex.: busca).
+    esconder_consultas_no_registro()
     logger.info(
         "Éden: %d rotas ligadas, %d desligadas (só o que o Éden usa)",
         len(kept),
@@ -178,3 +180,36 @@ class LimiteDeCorpo:
         except _CorpoGrande:
             if not respondeu:
                 await self._recusar(send)
+
+
+# ── registro de acesso sem o que vem depois do "?" ──────────────────────
+#
+# O servidor anota cada pedido ("GET /v1/eden/notas?busca=... 200"). O que vem
+# depois do "?" pode ter o que a pessoa procurou nas notas ou o espaço que
+# abriu; isso não precisa ficar no registro (revisão de segurança de 15/10,
+# achado 18). Fica só o caminho, com "?…" no lugar.
+
+ACCESS_LOGGER = "uvicorn.access"
+
+
+class SemConsultaNoRegistro(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if (
+            isinstance(args, tuple)
+            and len(args) >= 3
+            and isinstance(args[2], str)
+            and "?" in args[2]
+        ):
+            caminho = args[2].split("?", 1)[0]
+            record.args = args[:2] + (caminho + "?…",) + args[3:]
+        return True
+
+
+def esconder_consultas_no_registro() -> None:
+    """Liga o filtro no registro de acesso (uma vez só). O filtro fica no
+    "logger", então continua valendo depois que o uvicorn configura o
+    registro (ele troca só os "handlers")."""
+    registro = logging.getLogger(ACCESS_LOGGER)
+    if not any(isinstance(f, SemConsultaNoRegistro) for f in registro.filters):
+        registro.addFilter(SemConsultaNoRegistro())

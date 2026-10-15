@@ -57,6 +57,9 @@ MAX_ACOES_POR_RESPOSTA = 5
 MAX_IA_NOTAS_TAREFA = 1000
 MAX_IA_TEXTO_NOTA = 4000
 MAX_ACOES_POR_HORA = 60
+# Uma conversa com texto colado "mandando" a IA sugerir coisas não pode gastar
+# o limite de todas as outras (revisão de segurança de 15/10, achado 17).
+MAX_ACOES_POR_CONVERSA_HORA = 20
 MAX_BLOCO = 8000
 
 TIPOS = (
@@ -342,8 +345,19 @@ def propor(
             f"{MAX_ACOES_POR_RESPOSTA} primeiras foram consideradas"
         )
         blocos = blocos[:MAX_ACOES_POR_RESPOSTA]
+    uma_hora_atras = agora - 3600 * 1000
     for bloco in blocos:
-        if store.acoes_recentes(agora - 3600 * 1000) >= MAX_ACOES_POR_HORA:
+        if (
+            conversa_id
+            and store.acoes_recentes(uma_hora_atras, conversa_id)
+            >= MAX_ACOES_POR_CONVERSA_HORA
+        ):
+            recusadas.append(
+                "muitas sugestões nesta conversa na última hora; comece uma "
+                "conversa nova ou tente de novo mais tarde"
+            )
+            break
+        if store.acoes_recentes(uma_hora_atras) >= MAX_ACOES_POR_HORA:
             recusadas.append(
                 "muitas sugestões na última hora; tente de novo mais tarde"
             )
