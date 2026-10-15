@@ -22,7 +22,11 @@ HOJE = date(2026, 10, 15)
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, monkeypatch):
+    # Relógio fixo em AGORA: os testes não dependem da hora em que rodam.
+    from openjarvis.eden import organizacao
+
+    monkeypatch.setattr(organizacao, "agora_ms", lambda: AGORA)
     s = Organizacao(tmp_path / "organizacao.db")
     yield s
     s.close()
@@ -515,3 +519,36 @@ def test_date_summary():
     assert resumo_data("2026-10-14", None, HOJE) == "ontem"
     assert resumo_data("2026-10-20", None, HOJE) == "ter 20/10"
     assert resumo_data("2027-01-02", None, HOJE) == "02/01/2027"
+
+
+def test_context_knows_confirmed_cards_and_other_spaces(store):
+    # Teste do Levi (15/10): o lembrete foi criado no Pessoal e confirmado;
+    # depois ele trocou para LS Visuals e perguntou o que tinha para hoje.
+    criadas, _ = acoes.propor(
+        _bloco(
+            {
+                "tipo": "tarefa.criar",
+                "titulo": "Mandar mensagem",
+                "data": "2026-10-15",
+                "hora": "10:02",
+                "lembrete": True,
+            }
+        ),
+        store,
+        "pessoal",
+        TZ,
+        "conv-1",
+        AGORA,
+    )
+    acoes.confirmar(store, criadas[0]["id"], criadas[0]["assinatura"], TZ, AGORA)
+    ctx = contexto.montar(store, "ls-visuals", TZ, AGORA + 60_000, conversa_id="conv-1")
+    assert "Espaço ativo: LS Visuals" in ctx
+    assert "- Pessoal: 1 para hoje, 0 atrasada(s)" in ctx
+    assert "Mandar mensagem" in ctx  # no resumo do cartão desta conversa
+    assert "CONFIRMADA pela pessoa e gravada (sugerida às 10:00 de 15/10)" in ctx
+    # Outra conversa não vê os cartões desta.
+    outra = contexto.montar(store, "ls-visuals", TZ, AGORA, conversa_id="conv-2")
+    assert "## Sugestões feitas nesta conversa" not in outra
+    # No próprio espaço, a tarefa aparece com o horário do lembrete.
+    pessoal = contexto.montar(store, "pessoal", TZ, AGORA)
+    assert "Mandar mensagem — hoje 10:02 · lembrete 10:02" in pessoal

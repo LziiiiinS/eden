@@ -105,7 +105,8 @@ def test_openai_payload_uses_responses_api_without_storing():
 def test_anthropic_payload():
     payload = build_anthropic_payload("claude-sonnet-5-5", _messages(), 8000, 1.7)
     assert payload["system"].startswith("Você é o Éden.")
-    assert payload["temperature"] == 1.0
+    # Os modelos Claude atuais recusam "temperature" (erro 400).
+    assert "temperature" not in payload
     assert payload["messages"][0] == {"role": "user", "content": "Oi"}
 
 
