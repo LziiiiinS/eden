@@ -1,0 +1,47 @@
+# Éden: atualiza no uv.lock só as bibliotecas pedidas (as que os verificadores
+# de segurança apontaram), porque o ambiente do Claude não acessa o PyPI.
+#
+# Como usar: criar um branch "eden-deps-…" com a lista de pacotes em
+# .github/eden/atualizar-pacotes.txt (um por linha). Este fluxo roda o
+# "uv lock --upgrade-package" e grava o uv.lock novo no mesmo branch. Depois
+# o PR desse branch passa pelos testes normais antes de ir para o main.
+name: Éden — atualizar bibliotecas
+
+on:
+  push:
+    branches: ["eden-deps-*"]
+    paths: [".github/eden/atualizar-pacotes.txt"]
+
+permissions:
+  contents: write
+
+jobs:
+  atualizar:
+    name: Atualizar uv.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.12.19"
+      - name: Atualizar só os pacotes pedidos
+        run: |
+          args=""
+          for p in $(grep -Ev '^\s*(#|$)' .github/eden/atualizar-pacotes.txt); do
+            args="$args --upgrade-package $p"
+          done
+          echo "uv lock$args"
+          bash .github/eden/anotar.sh "uv lock" uv lock $args
+      - name: Gravar no branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock
+          if git diff --cached --quiet; then
+            echo "::notice title=uv.lock::nada mudou"
+            exit 0
+          fi
+          git diff --cached --stat
+          git commit -m "Éden: atualiza bibliotecas com falhas conhecidas (uv.lock)"
+          git push

@@ -1,0 +1,10 @@
+# Éden: bibliotecas apontadas pelos verificadores de segurança em 15/10/2026
+# (pip-audit e Trivy). Um pacote por linha.
+anyio
+urllib3
+requests
+lxml
+fsspec
+multidict
+pygments
+datasets
