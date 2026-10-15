@@ -1,0 +1,19 @@
+# Temporário: descobre o digest das imagens base (este ambiente não acessa o
+# Docker Hub). Sai antes do merge.
+name: Éden — resolver digest
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Digests
+        run: |
+          for img in node:22.23.2-slim node:22-slim; do
+            d=$(docker buildx imagetools inspect "$img" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])' || echo "nao-encontrado")
+            v=$(docker run --rm "$img" node --version 2>/dev/null || echo "?")
+            echo "::notice title=digest $img::$img $v $d"
+          done
