@@ -134,3 +134,6 @@ oj-debug.*.json
 
 # Éden: o modelo do .env vai para o GitHub; o .env de verdade, nunca.
 !deploy/eden/.env.exemplo
+
+# Éden: backups feitos pelo backup-eden (têm conversas pessoais).
+deploy/eden/backups/

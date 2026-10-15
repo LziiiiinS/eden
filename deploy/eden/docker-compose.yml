@@ -30,5 +30,23 @@ services:
     mem_limit: 2g
     pids_limit: 256
 
+  # Backup e restauração. Não liga junto com o Éden: só roda quando o
+  # backup-eden / restaurar-eden chamam ("docker compose run --rm backup ...").
+  # Usa a mesma imagem, vê só os dados (/dados) e a pasta "backups" desta
+  # pasta (/backups), e fica sem rede e sem as chaves do .env.
+  backup:
+    image: eden:local
+    pull_policy: never
+    profiles: ["ferramentas"]
+    entrypoint: ["python", "-m", "openjarvis.eden.backup"]
+    environment:
+      OPENJARVIS_HOME: /dados
+    volumes:
+      - eden-dados:/dados
+      - ./backups:/backups
+    network_mode: none
+    mem_limit: 1g
+    pids_limit: 64
+
 volumes:
   eden-dados:

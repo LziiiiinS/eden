@@ -27,7 +27,10 @@ versão mais nova do Éden no GitHub e monta.
 ## No dia a dia
 
 - **Ligar** (e atualizar para a versão mais nova): `iniciar-eden.cmd`.
+  Antes de atualizar, ele faz sozinho um backup (ficam os 5 mais novos).
 - **Parar**: `parar-eden.cmd`.
+- **Backup**: `backup-eden.cmd`. Pode rodar com o Éden ligado.
+- **Voltar um backup**: `restaurar-eden.cmd`.
 - O Docker Desktop precisa estar aberto.
 
 ## Testar a sincronização sem celular
@@ -54,6 +57,27 @@ chave de acesso de novo. Escreva numa janela e veja a conversa aparecer na outra
 Conversas, gastos do mês e o seu perfil (`USER.md`) ficam no volume
 **eden-dados** do Docker. Parar, desligar o computador ou atualizar o Éden não
 apaga nada. Só apaga se o volume for removido no Docker Desktop.
+
+## Backup (cópia de segurança)
+
+- **Fazer**: dois cliques em `backup-eden.cmd`. O arquivo vai para a pasta
+  `backups`, com data e hora no nome (ex.:
+  `eden-backup-manual-20261015-221500.tar.gz`).
+- **O que entra**: conversas, gastos do mês, perfil (`USER.md`) e memória
+  (`MEMORY.md`). **Não entram chaves** (o `.env` nunca vai para o backup).
+- **Guarde uma cópia fora do computador** (pendrive, HD externo) de vez em
+  quando: se o computador estragar, o backup da pasta `backups` vai junto.
+- O backup tem as suas conversas: trate como documento pessoal e não mande
+  para ninguém.
+- **Voltar um backup**: dois cliques em `restaurar-eden.cmd`, escolha o número
+  e digite `SIM`. Ele confere o arquivo, para o Éden, guarda o estado atual
+  num backup `antes-de-restaurar` (para dar para desfazer), troca os dados e
+  liga de novo. Um arquivo danificado ou que não seja do Éden é recusado sem
+  mexer em nada.
+- **Backup de outro computador** (ex.: levar para o servidor): copie o arquivo
+  para a pasta `backups` do outro lado e use o `restaurar-eden` de lá.
+- Depois de voltar um backup, celulares e navegadores que ainda tiverem
+  conversas que não estavam nele mandam essas conversas de volta sozinhos.
 
 ## Problemas comuns
 

@@ -4,8 +4,9 @@
 #   1. confere se o Docker Desktop está aberto;
 #   2. cria o arquivo .env (se ainda não existir) e a chave de acesso do Éden;
 #   3. confere se há chave de pelo menos uma IA (sem mostrar nenhuma chave);
-#   4. monta a versão mais nova do Éden (do GitHub) e liga;
-#   5. espera o Éden responder e abre no navegador.
+#   4. faz um backup automático dos dados (se o Éden já existia);
+#   5. monta a versão mais nova do Éden (do GitHub) e liga;
+#   6. espera o Éden responder e abre no navegador.
 #
 # Ele nunca mostra chaves na tela. Para ver a chave de acesso, abra o .env
 # no Bloco de Notas.
@@ -67,7 +68,23 @@ if (-not $temOpenAI -and -not $temAnthropic) {
 if (-not $temOpenAI) { Falar 'Aviso: sem chave da OpenAI. O ChatGPT (dia a dia) e o microfone não vão funcionar.' }
 if (-not $temAnthropic) { Falar 'Aviso: sem chave da Anthropic. O Claude (missões) não vai funcionar.' }
 
-# 4. Montar e ligar
+# 4. Backup automático antes de atualizar (só se o Éden já foi montado antes).
+#    Ficam os 5 mais novos, na pasta "backups". Se falhar, avisa e segue.
+$null = docker image inspect eden:local 2>$null
+if ($LASTEXITCODE -eq 0) {
+    $null = docker volume inspect eden_eden-dados 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot 'backups') | Out-Null
+        $hora = Get-Date -Format 'yyyyMMdd-HHmmss'
+        Falar 'Fazendo um backup antes de atualizar…'
+        docker compose run --rm backup criar /backups --tipo auto --manter 5 --hora $hora
+        if ($LASTEXITCODE -ne 0) {
+            Falar 'Aviso: não consegui fazer o backup automático (é normal na primeira vez depois desta atualização). Seguindo.'
+        }
+    }
+}
+
+# 5. Montar e ligar
 Falar ''
 Falar 'Montando e ligando o Éden. Na primeira vez demora bastante (vários minutos); depois fica mais rápido.'
 docker compose up -d --build
@@ -77,7 +94,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 5. Esperar responder
+# 6. Esperar responder
 Falar 'Esperando o Éden responder…'
 $pronto = $false
 for ($i = 0; $i -lt 90; $i++) {

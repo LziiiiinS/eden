@@ -91,6 +91,11 @@ export interface PullPlan {
   toRemove: string[];
   /** Conversas que já estão iguais nos dois lados. */
   alreadySynced: Record<string, number>;
+  /**
+   * Conversas deste aparelho que o servidor não conhece (nem como apagadas):
+   * o servidor perdeu ou voltou um backup. Precisam ser enviadas de novo.
+   */
+  missingOnServer: string[];
 }
 
 /** Compara a lista do servidor com o que está no aparelho. */
@@ -99,7 +104,11 @@ export function planPull(
   remote: RemoteConversationMeta[],
   pendingDeletes: Record<string, number>,
 ): PullPlan {
-  const plan: PullPlan = { toFetch: [], toRemove: [], alreadySynced: {} };
+  const plan: PullPlan = { toFetch: [], toRemove: [], alreadySynced: {}, missingOnServer: [] };
+  const known = new Set(remote.map((meta) => meta.id));
+  for (const id of Object.keys(local)) {
+    if (!known.has(id) && pendingDeletes[id] === undefined) plan.missingOnServer.push(id);
+  }
   for (const meta of remote) {
     const mine = local[meta.id];
     if (meta.deleted) {
