@@ -26,8 +26,10 @@ do OpenJarvis nem de Stanford.
 - `frontend/src/lib/eden-ai.ts`, `components/Chat/EdenModeSwitch.tsx`,
   `components/Chat/EdenAiLabel.tsx` e `components/Sidebar/EdenSpending.tsx`:
   escolha da IA, aviso de qual IA respondeu e gastos do mês.
-- `frontend/src/components/EdenAccessGate.tsx`: pede a chave de acesso do
-  servidor na primeira vez que o aparelho abre o Éden.
+- `frontend/src/components/EdenAccessGate.tsx` e `frontend/src/lib/eden-key.ts`:
+  pedem a chave de acesso do servidor na primeira vez que o aparelho abre o
+  Éden (sem preenchimento automático do navegador, com botão de mostrar, e
+  aceitando a linha inteira do `.env`).
 - `frontend/src/pages/EdenSettingsPage.tsx`: configurações do Éden em português.
 - `deploy/eden/`: rodar o Éden com Docker (notebook Windows agora; servidor
   depois). Passo a passo em `deploy/eden/LEIA-ME.md`.

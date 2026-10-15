@@ -6,6 +6,7 @@ import { Sun, Moon, Monitor } from 'lucide-react';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
+import { normalizeAccessKey } from '../lib/eden-key';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -106,7 +107,7 @@ export function EdenSettingsPage() {
   }, [settings.apiKey, settings.apiUrl]);
 
   const saveKey = () => {
-    const key = newKey.trim();
+    const key = normalizeAccessKey(newKey);
     if (!key) return;
     updateSettings({ apiKey: key });
     setNewKey('');
