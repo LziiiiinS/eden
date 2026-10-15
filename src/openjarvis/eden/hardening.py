@@ -105,6 +105,8 @@ def restrict_routes_for_eden(app, settings: Optional[EdenSettings] = None) -> No
 
 LIMITE_PADRAO = 4 * 1024 * 1024
 LIMITES_POR_CAMINHO: Tuple[Tuple[str, int], ...] = (
+    # Rota sem chave (código do iPhone): o pedido tem poucos bytes.
+    ("/v1/eden/pareamento/usar", 1024),
     ("/v1/speech/transcribe", 26 * 1024 * 1024),  # áudio até 25 MB
     ("/v1/eden/conversations/", 9 * 1024 * 1024),  # conversa inteira até 8 MB
 )

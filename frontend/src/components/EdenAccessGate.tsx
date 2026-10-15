@@ -97,13 +97,15 @@ export function EdenAccessGate() {
     updateSettings({ apiKey: result.key });
     const ok = await probe();
     setBusy(false);
-    if (ok === 'ok') {
-      setCode('');
-      window.location.reload();
-    } else {
+    if (ok === 'needs-key') {
       updateSettings({ apiKey: previous });
       setError('O código funcionou, mas a chave não foi aceita. Peça um código novo no notebook.');
+      return;
     }
+    // A chave veio do próprio servidor: mesmo se a conferência falhar por
+    // falta de conexão, ela fica salva (o código já foi usado).
+    setCode('');
+    window.location.reload();
   };
 
   const switchMode = () => {

@@ -194,9 +194,15 @@ async def usar_pareamento(request: Request):
     tipo = request.headers.get("content-type", "").split(";")[0].strip().lower()
     if tipo != "application/json":
         raise HTTPException(status_code=415, detail="Envie em JSON")
-    corpo = await request.body()
-    if len(corpo) > 1024:
+    # Rota sem chave: lê no máximo 1 KB (o pedido real tem poucos bytes).
+    declarado = request.headers.get("content-length", "")
+    if declarado and (not declarado.isdigit() or int(declarado) > 1024):
         raise HTTPException(status_code=413, detail="Pedido grande demais")
+    corpo = b""
+    async for pedaco in request.stream():
+        corpo += pedaco
+        if len(corpo) > 1024:
+            raise HTTPException(status_code=413, detail="Pedido grande demais")
     try:
         dados = json.loads(corpo)
     except (ValueError, UnicodeDecodeError):
