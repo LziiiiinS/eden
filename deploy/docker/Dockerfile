@@ -3,7 +3,7 @@
 # safe rollbacks (#563).
 
 # Stage 1: Build frontend SPA
-FROM node:22.23.0-slim@sha256:d9f850096136edbc402debdd8729579a288aac64574ada0ff4db26b6ae58b0b2 AS frontend
+FROM node:22.23.3-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS frontend
 # Public Supabase anon key for the savings leaderboard; empty by default so
 # the image's leaderboard stays disabled (#589). Pass --build-arg to enable.
 ARG OPENJARVIS_LEADERBOARD_PUBLIC_ANON=
