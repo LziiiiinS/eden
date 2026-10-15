@@ -122,7 +122,9 @@ def eden_system_extra() -> str:
     if not settings.enabled or pedido is None or pedido.store is None:
         return ""
     try:
-        return montar(pedido.store, pedido.espaco, settings.tz)
+        return montar(
+            pedido.store, pedido.espaco, settings.tz, conversa_id=pedido.conversa_id
+        )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui montar o contexto")
         return ""

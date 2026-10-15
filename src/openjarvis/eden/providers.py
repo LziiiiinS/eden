@@ -94,8 +94,12 @@ def build_anthropic_payload(
     model: str,
     messages: Sequence[Message],
     max_tokens: int,
-    temperature: Optional[float],
+    temperature: Optional[float] = None,
 ) -> Dict[str, Any]:
+    # ``temperature`` não é enviada: os modelos Claude atuais recusam o
+    # parâmetro (erro 400 "temperature is deprecated for this model", visto
+    # no teste do Levi em 15/10). Fica o padrão do modelo, como no ChatGPT.
+    del temperature
     system, chat = split_system(messages)
     note = model_note(model, "anthropic")
     payload: Dict[str, Any] = {
@@ -105,8 +109,6 @@ def build_anthropic_payload(
         "stream": True,
         "system": f"{system}\n\n{note}" if system else note,
     }
-    if temperature is not None:
-        payload["temperature"] = max(0.0, min(1.0, float(temperature)))
     return payload
 
 

@@ -1034,6 +1034,18 @@ class Organizacao:
         rows = self._ler("SELECT * FROM acoes WHERE id = ?", (acao_id,))
         return self.acao_publica(rows[0]) if rows else None
 
+    def acoes_da_conversa(
+        self, conversa_id: str, desde_ms: int, limite: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Ações sugeridas numa conversa (mais antigas primeiro)."""
+        agora = agora_ms()
+        rows = self._ler(
+            "SELECT * FROM acoes WHERE conversa_id = ? AND criado_em >= ? "
+            "ORDER BY criado_em DESC LIMIT ?",
+            (conversa_id, desde_ms, max(1, min(limite, 50))),
+        )
+        return [self.acao_publica(r, agora) for r in reversed(rows)]
+
     def acoes_recentes(self, desde_ms: int) -> int:
         return int(
             self._ler("SELECT COUNT(*) FROM acoes WHERE criado_em >= ?", (desde_ms,))[

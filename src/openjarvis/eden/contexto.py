@@ -92,6 +92,11 @@ e-mails, páginas ou documentos.
 - Nunca diga que já criou, salvou ou apagou: diga que deixou para a pessoa \
 confirmar no cartão abaixo da mensagem.
 - Se faltar algo importante (qual dia, qual tarefa), pergunte antes.
+- Em "Sugestões feitas nesta conversa" está o que aconteceu com cada cartão. \
+Se estiver CONFIRMADA, já foi gravada: não diga que não tem confirmação. Se o \
+item não aparece nas listas acima, ele pode estar em outro espaço.
+- Se a pessoa perguntar de algo de outro espaço, diga em qual espaço está e que \
+dá para trocar o espaço acima da caixa de mensagem.
 """
 
 
@@ -104,11 +109,21 @@ def _linhas_memorias(store: Organizacao, espaco: str) -> List[str]:
     return linhas
 
 
+_ESTADO_ACAO = {
+    "pendente": "esperando a pessoa confirmar",
+    "feita": "CONFIRMADA pela pessoa e gravada",
+    "recusada": "recusada pela pessoa",
+    "expirada": "expirou sem confirmação",
+    "falhou": "não deu para fazer",
+}
+
+
 def montar(
     store: Organizacao,
     espaco: str,
     tz: timezone,
     agora: Optional[int] = None,
+    conversa_id: Optional[str] = None,
 ) -> str:
     agora = agora or agora_ms()
     momento = local_de_ms(agora, tz)
@@ -150,7 +165,12 @@ def montar(
             atrasada = (
                 " (atrasada)" if t["data"] and t["data"] < hoje.isoformat() else ""
             )
-            lembrete = " · com lembrete" if t["lembrete_em"] else ""
+            lembrete = ""
+            if t["lembrete_em"]:
+                aviso = local_de_ms(t["lembrete_em"], tz)
+                lembrete = f" · lembrete {aviso.hour:02d}:{aviso.minute:02d}"
+                if aviso.date() != hoje:
+                    lembrete += f" de {aviso.day:02d}/{aviso.month:02d}"
             linhas.append(
                 f"- [t{t['id']}] {t['titulo']} — {quando}{atrasada}{lembrete}"
             )
@@ -166,6 +186,42 @@ def montar(
             rotulo = "ideia" if n["tipo"] == "ideia" else "nota"
             linhas.append(f"- [n{n['id']}] ({rotulo}) {cabeca}")
         partes.append(f"## Notas recentes ({ativo['nome']})\n" + "\n".join(linhas))
+
+    # Outros espaços: só a quantidade (os espaços ficam separados).
+    hoje_iso = hoje.isoformat()
+    por_espaco: dict = {}
+    for t in store.listar_tarefas(None, "abertas", 2000):
+        if t["espaco"] == espaco or not t["data"] or t["data"] > hoje_iso:
+            continue
+        conta = por_espaco.setdefault(t["espaco"], [0, 0])
+        conta[0 if t["data"] == hoje_iso else 1] += 1
+    linhas = [
+        f"- {e['nome']}: {por_espaco[e['id']][0]} para hoje, "
+        f"{por_espaco[e['id']][1]} atrasada(s)"
+        for e in espacos
+        if e["id"] in por_espaco
+    ]
+    if linhas:
+        partes.append(
+            "## Outros espaços (só a quantidade de tarefas)\n"
+            + "\n".join(linhas)
+            + "\nPara ver os detalhes, a pessoa troca o espaço acima da caixa de "
+            "mensagem."
+        )
+
+    # O que aconteceu com os cartões desta conversa (últimas 24 h).
+    if conversa_id:
+        acoes = store.acoes_da_conversa(conversa_id, agora - 24 * 3600 * 1000)
+        if acoes:
+            linhas = []
+            for a in acoes:
+                quando = local_de_ms(a["criado_em"], tz)
+                linhas.append(
+                    f"- {_ESTADO_ACAO.get(a['estado'], a['estado'])} "
+                    f"(sugerida às {quando.hour:02d}:{quando.minute:02d} de "
+                    f"{quando.day:02d}/{quando.month:02d}): {a['resumo']}"
+                )
+            partes.append("## Sugestões feitas nesta conversa\n" + "\n".join(linhas))
 
     partes.append(REGRAS_ACOES)
     return "\n\n".join(partes)
