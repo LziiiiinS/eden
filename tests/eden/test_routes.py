@@ -97,3 +97,21 @@ def test_big_upload_without_length_is_refused(client):
 
     r = client.put("/v1/eden/conversations/c1", content=chunks())
     assert r.status_code == 413
+
+
+def test_phone_address_comes_only_from_a_tailscale_https_address(client, monkeypatch):
+    monkeypatch.setenv(
+        "EDEN_ENDERECO_CELULAR", "https://eden-notebook.tail1234.ts.net/"
+    )
+    assert client.get("/v1/eden/info").json() == {
+        "endereco_celular": "https://eden-notebook.tail1234.ts.net"
+    }
+    for ruim in (
+        "http://eden-notebook.tail1234.ts.net",
+        "https://evil.example",
+        "https://eden.ts.net.evil.example",
+        "https://eden.tail1234.ts.net:4443",
+        "",
+    ):
+        monkeypatch.setenv("EDEN_ENDERECO_CELULAR", ruim)
+        assert client.get("/v1/eden/info").json() == {"endereco_celular": None}

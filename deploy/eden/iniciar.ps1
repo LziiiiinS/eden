@@ -5,8 +5,9 @@
 #   2. cria o arquivo .env (se ainda não existir) e a chave de acesso do Éden;
 #   3. confere se há chave de pelo menos uma IA (sem mostrar nenhuma chave);
 #   4. faz um backup automático dos dados (se o Éden já existia);
-#   5. monta a versão mais nova do Éden (do GitHub) e liga;
-#   6. espera o Éden responder e abre no navegador.
+#   5. descobre o endereço do Tailscale (para o QR code do celular);
+#   6. monta a versão mais nova do Éden (do GitHub) e liga;
+#   7. espera o Éden responder e abre no navegador.
 #
 # Ele nunca mostra chaves na tela. Para ver a chave de acesso, abra o .env
 # no Bloco de Notas.
@@ -84,7 +85,50 @@ if ($LASTEXITCODE -eq 0) {
     }
 }
 
-# 5. Montar e ligar
+# 5. Endereço do Éden no celular (Tailscale). Descobre o endereço com cadeado
+#    deste computador, liga o "tailscale serve" (fica ligado mesmo depois de
+#    reiniciar) e guarda o endereço no .env, para o QR code aparecer sozinho
+#    nas Configurações. Se o Tailscale não estiver ligado, só avisa.
+function Achar-Tailscale {
+    $cmd = Get-Command tailscale -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $padrao = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
+    if (Test-Path $padrao) { return $padrao }
+    return $null
+}
+$ts = Achar-Tailscale
+$endereco = $null
+if ($ts) {
+    $estado = $null
+    try { $estado = (& $ts status --json 2>$null | Out-String) | ConvertFrom-Json } catch { $estado = $null }
+    $nome = ''
+    if ($estado -and $estado.Self -and $estado.Self.DNSName) { $nome = ([string]$estado.Self.DNSName).TrimEnd('.').ToLower() }
+    if ($estado -and $estado.BackendState -eq 'Running' -and $nome -match '^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$') {
+        $endereco = "https://$nome"
+        # Liga o 'tailscale serve' (espera no máximo 20 s, para nunca travar aqui).
+        try {
+            $proc = Start-Process -FilePath $ts -ArgumentList 'serve', '--bg', '8000' -WindowStyle Hidden -PassThru
+            if (-not $proc.WaitForExit(20000)) { $proc.Kill() }
+        } catch { }
+    }
+}
+if ($endereco) {
+    $texto = [System.IO.File]::ReadAllText($envPath)
+    $linha = "EDEN_ENDERECO_CELULAR=$endereco"
+    if ([regex]::IsMatch($texto, '(?m)^\s*EDEN_ENDERECO_CELULAR=[^\r\n]*')) {
+        $texto = [regex]::Replace($texto, '(?m)^\s*EDEN_ENDERECO_CELULAR=[^\r\n]*', $linha)
+    } else {
+        if ($texto.Length -gt 0 -and -not $texto.EndsWith("`n")) { $texto += "`r`n" }
+        $texto += "`r`n# Endereço do Éden no celular (o iniciar-eden preenche sozinho).`r`n$linha`r`n"
+    }
+    [System.IO.File]::WriteAllText($envPath, $texto, $utf8)
+    Falar "Endereço para o celular: $endereco"
+} else {
+    Falar 'Aviso: não achei o Tailscale ligado neste computador. O Éden funciona aqui, mas o celular não vai conseguir entrar.'
+    Falar 'Abra o Tailscale (ícone perto do relógio), confira que está conectado e rode o iniciar-eden de novo.'
+}
+
+# 6. Montar e ligar
 Falar ''
 Falar 'Montando e ligando o Éden. Na primeira vez demora bastante (vários minutos); depois fica mais rápido.'
 docker compose up -d --build
@@ -94,7 +138,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 6. Esperar responder
+# 7. Esperar responder
 Falar 'Esperando o Éden responder…'
 $pronto = $false
 for ($i = 0; $i -lt 90; $i++) {
