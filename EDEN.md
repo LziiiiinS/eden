@@ -18,7 +18,11 @@ do OpenJarvis nem de Stanford.
   - `settings.py`: seção `[eden]` do `config.toml` (modelos, limites, preços);
   - `routing.py`: qual IA responde (dia a dia x missão);
   - `providers.py`: conversa com a OpenAI (Responses API) e a Anthropic, anotando o gasto;
-  - `budget.py`, `speech_budget.py` e `chat_hooks.py`: limite de gastos do mês.
+  - `budget.py`, `speech_budget.py` e `chat_hooks.py`: limite de gastos do mês;
+  - `hardening.py`: no servidor do Éden, só ficam ligadas as rotas que o Éden
+    usa (conversa com streaming, modelos, informações, economia, transcrição,
+    `/v1/eden/...`); agentes, ferramentas, conectores, memória, pesquisa,
+    voz falada, webhooks, painéis e documentação da API são desligados.
 - `frontend/src/lib/eden-sync.ts` e `eden-sync-merge.ts`: sincronização das
   conversas entre os aparelhos.
 - `frontend/src/components/Chat/EdenSyncBadge.tsx` e
@@ -123,7 +127,7 @@ em cada linha.
 | `src/openjarvis/speech/_discovery.py` | Passa o modelo de transcrição escolhido |
 | `src/openjarvis/speech/openai_whisper.py` | Aceita modelos de transcrição novos, além do whisper-1; lê a duração do áudio |
 | `src/openjarvis/server/api_routes.py` | Usa o idioma da configuração quando o app não informa; limite de gastos na transcrição |
-| `src/openjarvis/server/app.py` | Registra as rotas de conversas do Éden |
+| `src/openjarvis/server/app.py` | Registra as rotas de conversas do Éden; no servidor do Éden, desliga as rotas que o Éden não usa e não libera outras origens (CORS) |
 | `src/openjarvis/server/routes.py` | Conversa passa pela escolha de IA e pelo limite do Éden; modos do Éden na lista de modelos; erro de geração em português |
 | `src/openjarvis/server/cloud_router.py` | OpenAI e Anthropic passam pelo Éden (Responses API + limite) |
 | `deploy/docker/Dockerfile` | Rust 1.89 (a 1.88 não montava mais); SDKs da OpenAI e da Anthropic; arquivos do Éden e pasta `/dados` na imagem |

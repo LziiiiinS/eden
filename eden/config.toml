@@ -40,6 +40,11 @@ Se perguntarem qual modelo está respondendo, diga qual é.
 [tools]
 enabled = ""
 
+[agent_manager]
+# Éden: sem agentes gerenciados (agentes com ferramentas rodando sozinhos).
+# As rotas deles também ficam desligadas no servidor do Éden.
+enabled = false
+
 [analytics]
 # Telemetria anônima do OpenJarvis (envia uso para a equipe do projeto):
 # desligada no Éden.

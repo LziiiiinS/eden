@@ -83,10 +83,20 @@ def test_stream_response_gets_route_headers(eden):
     assert response.headers["X-Eden-Reason"] == "escolha"
 
 
+def test_non_stream_request_is_refused_in_eden(eden):
+    req = _request("eden-dia", "oi", stream=False)
+    decision, refusal = prepare_chat(req)
+    assert decision is None
+    assert isinstance(refusal, JSONResponse)
+    assert refusal.status_code == 400
+    assert json.loads(refusal.body)["code"] == "eden_somente_streaming"
+
+
 def test_non_stream_response_is_charged_and_tagged(eden):
     cfg, ledger = eden
-    req = _request("eden-dia", "oi", stream=False)
+    req = _request("eden-dia", "oi")
     decision, _ = prepare_chat(req)
+    req.stream = False
     result = ChatCompletionResponse(
         model=req.model,
         usage=UsageInfo(prompt_tokens=1000, completion_tokens=100, total_tokens=1100),

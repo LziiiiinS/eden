@@ -43,6 +43,18 @@ def prepare_chat(
 ) -> Tuple[Optional[RouteDecision], Optional[Response]]:
     """Escolhe a IA e confere o limite. Devolve (decisão, resposta de erro)."""
     settings = get_settings()
+    if settings.enabled and not request_body.stream:
+        # Éden: sem streaming, a conversa iria pelo motor antigo do OpenJarvis
+        # (sem store=false e fora do caminho do Éden). O app sempre usa
+        # streaming; outros clientes recebem um aviso claro.
+        return None, JSONResponse(
+            status_code=400,
+            content={
+                "detail": "No servidor do Éden, a conversa usa streaming "
+                "(stream: true).",
+                "code": "eden_somente_streaming",
+            },
+        )
     last_user = _last_user(request_body)
     decision = resolve(
         request_body.model, last_user.content if last_user else "", settings
