@@ -60,15 +60,26 @@ def test_mission_over_limit_is_refused_before_calling_claude(eden):
     assert refusal.headers["X-Eden-Mode"] == "missao"
 
 
-def test_plain_models_are_also_limited(eden):
-    _, refusal = prepare_chat(_request("claude-opus-5-5", "oi"))
-    assert refusal is not None and refusal.status_code == 429
+def test_plain_models_are_refused_in_eden(eden):
+    # No servidor do Éden, só os modos do Éden (com limite de gastos).
+    for model in ("claude-opus-5-5", "qwen3.5:4b"):
+        _, refusal = prepare_chat(_request(model, "oi"))
+        assert refusal is not None and refusal.status_code == 400
+        assert json.loads(refusal.body)["code"] == "eden_modelo"
 
 
-def test_local_models_are_untouched(eden):
-    req = _request("qwen3.5:4b", "oi")
-    decision, refusal = prepare_chat(req)
-    assert decision is None and refusal is None and req.model == "qwen3.5:4b"
+def test_local_models_are_untouched_outside_eden(tmp_path):
+    settings.set_settings(settings.EdenSettings(enabled=False))
+    ledger = budget.SpendingLedger(tmp_path / "gastos.db")
+    budget.set_ledger(ledger)
+    try:
+        req = _request("qwen3.5:4b", "oi")
+        decision, refusal = prepare_chat(req)
+        assert decision is None and refusal is None and req.model == "qwen3.5:4b"
+    finally:
+        settings.set_settings(None)
+        budget.set_ledger(None)
+        ledger.close()
 
 
 def test_stream_response_gets_route_headers(eden):
