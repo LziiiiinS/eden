@@ -19,6 +19,8 @@ import {
   Database,
   Brain,
   ListTodo,
+  CalendarCheck,
+  StickyNote,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { EdenSyncStatus } from './EdenSyncStatus';
@@ -27,7 +29,7 @@ import { friendlyModelName, isEdenModel } from '../../lib/eden-ai';
 import { useAppStore } from '../../lib/store';
 
 // Éden: páginas que aparecem no menu durante o piloto.
-const EDEN_PILOT_PAGES = ['/', '/tarefas', '/memoria', '/settings'];
+const EDEN_PILOT_PAGES = ['/', '/hoje', '/tarefas', '/notas', '/memoria', '/settings'];
 
 // Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
 const THEME_LABEL: Record<string, string> = {
@@ -73,7 +75,9 @@ export function Sidebar() {
 
   const allNavItems = [
     { path: '/', icon: MessageSquare, label: 'Conversa' },
+    { path: '/hoje', icon: CalendarCheck, label: 'Hoje' },
     { path: '/tarefas', icon: ListTodo, label: 'Tarefas' },
+    { path: '/notas', icon: StickyNote, label: 'Notas e ideias' },
     { path: '/memoria', icon: Brain, label: 'Perfil e memória' },
     { path: '/dashboard', icon: BarChart3, label: 'Painel' },
     { path: '/data-sources', icon: Database, label: 'Fontes de dados' },

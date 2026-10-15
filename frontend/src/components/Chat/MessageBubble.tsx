@@ -79,6 +79,23 @@ function CodeBlockPre({ children, ...props }: any) {
   );
 }
 
+// Éden: imagens que a IA escreve na resposta (![...](https://...)) não são
+// carregadas. Carregar faria o aparelho chamar um site de fora — e um texto
+// malicioso colado na conversa poderia fazer a IA esconder dados pessoais no
+// endereço da imagem. Fica só o texto, com o endereço à vista.
+function SafeImage({ src, alt }: { src?: unknown; alt?: string }) {
+  const endereco = typeof src === 'string' ? src : '';
+  return (
+    <span
+      className="inline-block text-xs px-2 py-1 rounded"
+      style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
+      title={endereco}
+    >
+      [imagem não carregada{alt ? `: ${alt}` : ''}]
+    </span>
+  );
+}
+
 function CopyMessageButton({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -178,6 +195,7 @@ export function MessageBubble({ message, isLive = false }: Props) {
             rehypePlugins={rehypePlugins}
             components={{
               pre: CodeBlockPre,
+              img: SafeImage,
             }}
           >
             {cleanContent}

@@ -159,7 +159,7 @@ function EditarTarefa({ tarefa, onFechar, onMudou }: { tarefa: Tarefa; onFechar:
   );
 }
 
-function LinhaTarefa({ tarefa, mostrarEspaco, onMudou }: { tarefa: Tarefa; mostrarEspaco: boolean; onMudou: () => void }) {
+export function LinhaTarefa({ tarefa, mostrarEspaco, onMudou }: { tarefa: Tarefa; mostrarEspaco: boolean; onMudou: () => void }) {
   const espacos = useEdenOrg((s) => s.espacos);
   const [aberta, setAberta] = useState(false);
   const hoje = hojeIso();

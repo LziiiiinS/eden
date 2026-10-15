@@ -7,6 +7,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { EdenSettingsPage } from './pages/EdenSettingsPage';
 import { EdenMemoryPage } from './pages/EdenMemoryPage';
 import { EdenTasksPage } from './pages/EdenTasksPage';
+import { EdenNotesPage } from './pages/EdenNotesPage';
+import { EdenTodayPage } from './pages/EdenTodayPage';
 import { EdenAccessGate } from './components/EdenAccessGate';
 import { GetStartedPage } from './pages/GetStartedPage';
 import { AgentsPage } from './pages/AgentsPage';
@@ -209,6 +211,8 @@ export default function App() {
           {/* Éden (Parte 2): organização pessoal. */}
           <Route path="memoria" element={<EdenMemoryPage />} />
           <Route path="tarefas" element={<EdenTasksPage />} />
+          <Route path="notas" element={<EdenNotesPage />} />
+          <Route path="hoje" element={<EdenTodayPage />} />
           <Route path="settings/avancado" element={<SettingsPage />} />
           <Route path="get-started" element={<GetStartedPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />
