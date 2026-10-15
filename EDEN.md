@@ -42,6 +42,11 @@ do OpenJarvis nem de Stanford.
 - `.github/workflows/eden-checks.yml` e `.github/eden/`: testes automáticos
   (sem segredos, não publica nada), incluindo ligar a imagem do Éden e
   conferir o básico.
+- `.github/workflows/eden-seguranca.yml` e `.github/eden/resumo-seguranca.py`:
+  verificadores de segurança (bandit bloqueia erros graves no código Python;
+  pip-audit, npm audit e Trivy apontam bibliotecas e imagem com falhas
+  conhecidas; confere que nenhuma chave ou `.env` foi parar na imagem).
+- `.github/workflows/eden-codeql.yml`: análise de código do GitHub (CodeQL).
 - `.gitattributes`: finais de linha certos para os scripts de Windows e Linux.
 - `tests/eden/`: testes do código do Éden.
 

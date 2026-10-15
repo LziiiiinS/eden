@@ -1,0 +1,96 @@
+# Éden: verificadores automáticos de segurança.
+#
+# Roda a cada mudança no main, em cada PR, toda segunda-feira e quando pedido.
+# Não usa segredos e não publica nada. O "bandit" (erros graves no código
+# Python) bloqueia; os outros são relatórios: cada problema vira um aviso na
+# página do PR, para revisar e corrigir o que for real.
+name: Éden — segurança
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eden-seguranca-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codigo:
+    name: Código Python (bandit, graves)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "bandit==1.9.4"
+      - name: Procurar erros graves (alta gravidade e alta confiança)
+        run: bash .github/eden/anotar.sh "bandit" bandit -r src/openjarvis -lll -iii -f screen
+
+  bibliotecas:
+    name: Bibliotecas com falhas conhecidas
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Python (as mesmas bibliotecas da imagem do Éden)
+        run: |
+          python -m pip install "pip-audit==2.10.1"
+          uv export --frozen --no-dev --no-emit-project --no-header --extra server --extra inference-cloud > requirements.txt
+          set +e
+          pip-audit -r requirements.txt --disable-pip --require-hashes \
+            --progress-spinner off --format json --output pip-audit.json
+          set -e
+          python .github/eden/resumo-seguranca.py pip-audit pip-audit.json
+      - name: App (bibliotecas que vão para o navegador)
+        working-directory: frontend
+        run: |
+          npm install --global npm@11.19.0
+          npm audit --omit=dev --json > ../npm-audit.json || true
+          python ../.github/eden/resumo-seguranca.py npm-audit ../npm-audit.json
+
+  imagem:
+    name: Imagem Docker (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Montar a imagem (sem publicar)
+        run: bash .github/eden/anotar.sh "Docker" docker build --progress=plain -f deploy/docker/Dockerfile -t eden:seguranca .
+      - name: Procurar falhas conhecidas na imagem (altas e críticas, com correção disponível)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/out" \
+            aquasec/trivy:0.75.0 image --quiet --scanners vuln \
+            --severity HIGH,CRITICAL --ignore-unfixed \
+            --format json --output /out/trivy.json eden:seguranca || true
+          python .github/eden/resumo-seguranca.py trivy trivy.json
+      - name: Conferir que nenhuma chave foi parar na imagem
+        run: |
+          docker history --no-trunc eden:seguranca > historico.txt
+          if grep -Eq 'sk-[A-Za-z0-9_-]{20,}|oj_sk_[A-Za-z0-9_-]{20,}|sk-ant-' historico.txt; then
+            echo "::error title=Chave na imagem::o histórico da imagem contém algo com cara de chave"
+            exit 1
+          fi
+          docker run --rm --entrypoint sh eden:seguranca -c \
+            'find / -xdev \( -name ".env" -o -name "cloud-keys.env" \) -not -path "/proc/*" 2>/dev/null' > envs.txt
+          if [ -s envs.txt ]; then
+            echo "::error title=Arquivo .env na imagem::$(tr '\n' ' ' < envs.txt)"
+            exit 1
+          fi
+          echo "Nenhuma chave ou .env encontrado na imagem."
