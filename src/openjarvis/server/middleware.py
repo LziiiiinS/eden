@@ -52,10 +52,12 @@ def create_security_middleware() -> Any:
             )
             # media-src blob: lets the UI play synthesized speech, which arrives
             # as a blob URL; default-src alone refused it.
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-                "media-src 'self' blob:"
-            )
+            # Éden: o app traz fontes (KaTeX) e uma textura de fundo embutidas
+            # como data: — o teste no navegador (Chromium) mostrou que a regra
+            # bloqueava as duas. data: não busca nada fora do Éden.
+            response.headers["Content-Security-Policy"] = SECURITY_HEADERS[
+                "Content-Security-Policy"
+            ]
             return response
 
     return SecurityHeadersMiddleware
@@ -70,6 +72,8 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(self), geolocation=()",
     "Content-Security-Policy": (
-        "default-src 'self' 'unsafe-inline' 'unsafe-eval'; media-src 'self' blob:"
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "img-src 'self' data: blob:; font-src 'self' data:; "
+        "media-src 'self' blob:"
     ),
 }

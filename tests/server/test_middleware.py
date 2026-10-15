@@ -138,3 +138,14 @@ class TestSpeechHeaders:
         policy = SECURITY_HEADERS["Permissions-Policy"]
         assert "camera=()" in policy
         assert "geolocation=()" in policy
+
+
+class TestEdenEmbeddedAssets:
+    """Éden: fontes e imagens embutidas no app (data:) carregam; nada de fora."""
+
+    def test_csp_allows_data_fonts_and_images_but_no_outside_sites(self):
+        csp = SECURITY_HEADERS["Content-Security-Policy"]
+        assert "font-src 'self' data:" in csp
+        assert "img-src 'self' data: blob:" in csp
+        assert "http" not in csp
+        assert "*" not in csp
