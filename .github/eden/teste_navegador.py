@@ -117,9 +117,11 @@ def main() -> int:
         pg = ctx.new_page()
         vigiar(pg, "notebook")
         pg.goto(BASE)
-        pg.get_by_label("Chave de acesso").fill(CHAVE)
+        pg.get_by_label("Chave de acesso", exact=True).fill(CHAVE)
         pg.get_by_role("button", name="Entrar").click()
-        expect(pg.get_by_label("Chave de acesso")).to_have_count(0, timeout=30_000)
+        expect(pg.get_by_label("Chave de acesso", exact=True)).to_have_count(
+            0, timeout=30_000
+        )
         passo("tela da chave aceitou a chave")
 
         conversa = pg.get_by_text("Teste da página").first
@@ -191,7 +193,7 @@ def main() -> int:
         expect(cel.get_by_label("Código do notebook")).to_have_value(codigo)
         cel.get_by_role("button", name="Entrar").click()
         expect(cel.get_by_text("Ligar este aparelho")).to_have_count(0, timeout=30_000)
-        expect(cel.get_by_label("Chave de acesso")).to_have_count(0)
+        expect(cel.get_by_label("Chave de acesso", exact=True)).to_have_count(0)
         cel.screenshot(path=str(FOTOS / "celular.png"), full_page=True)
         passo("aparelho novo entrou com o código curto")
         ctx2.close()
