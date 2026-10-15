@@ -110,4 +110,22 @@ describe('planPull', () => {
     const plan = planPull({}, [meta('c1', 300)], { c1: 350 });
     expect(plan.toFetch).toEqual([]);
   });
+
+  it('marks for sending again what the server lost (restored backup)', () => {
+    const local = {
+      c1: { ...conv(200, []), id: 'c1' },
+      c2: { ...conv(300, []), id: 'c2' },
+      c3: { ...conv(300, []), id: 'c3' },
+    };
+    // c2 não existe no servidor; c3 está sendo apagada aqui.
+    const plan = planPull(local, [meta('c1', 200)], { c3: 400 });
+    expect(plan.missingOnServer).toEqual(['c2']);
+    expect(plan.alreadySynced).toEqual({ c1: 200 });
+  });
+
+  it('does not treat conversations deleted on the server as lost', () => {
+    const local = { c1: { ...conv(500, []), id: 'c1' } };
+    const plan = planPull(local, [meta('c1', 400, true)], {});
+    expect(plan.missingOnServer).toEqual([]);
+  });
 });

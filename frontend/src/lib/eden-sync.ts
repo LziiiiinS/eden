@@ -221,6 +221,9 @@ async function pull(): Promise<void> {
   const removals = plan.toRemove.filter((id) => id !== skip);
   applyRemote([], removals);
   removals.forEach(forget);
+  // O servidor não conhece estas conversas (perdeu os dados ou voltou um
+  // backup antigo): esquecer a confirmação faz este aparelho enviá-las de novo.
+  plan.missingOnServer.forEach(forget);
 }
 
 async function pushDeletes(): Promise<void> {
