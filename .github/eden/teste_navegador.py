@@ -4,7 +4,8 @@ confere, como uma pessoa faria:
 1. a tela da chave aceita a chave e some;
 2. a conversa guardada no servidor aparece e abre;
 3. o ícone de folha abre a resposta como folha e como slides, o texto pode
-   ser editado e o arquivo salvo não tem scripts;
+   ser editado e o arquivo salvo não tem scripts; as páginas da organização
+   (tarefas, notas, hoje, memória) e as Configurações abrem;
 4. um "aparelho novo" entra com o código curto (iPhone pela tela de início),
    e o código não vale uma segunda vez;
 5. nenhuma regra de segurança da página (CSP) bloqueou nada e não houve erro
@@ -19,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 import urllib.error
@@ -176,6 +178,49 @@ def main() -> int:
         expect(folha).to_have_count(0)
         expect(pg.locator(".eden-slide")).to_have_count(0)
         passo("página fechou")
+
+        # ── organização pessoal (Parte 2) e Configurações ─────────────────
+        status, _ = api(
+            "POST",
+            "/v1/eden/tarefas",
+            {"titulo": "Tarefa do teste do navegador", "espaco": "pessoal"},
+        )
+        assert status == 200, f"tarefa de teste não foi criada ({status})"
+        status, _ = api(
+            "POST",
+            "/v1/eden/notas",
+            {
+                "titulo": "Nota do teste do navegador",
+                "texto": "texto da nota",
+                "tipo": "ideia",
+                "espaco": "pessoal",
+            },
+        )
+        assert status == 200, f"nota de teste não foi criada ({status})"
+        for caminho, texto in (
+            ("/tarefas", "Tarefa do teste do navegador"),
+            ("/notas", "Nota do teste do navegador"),
+            ("/hoje", None),
+            ("/memoria", None),
+        ):
+            pg.goto(BASE + caminho)
+            expect(pg.get_by_label("Chave de acesso", exact=True)).to_have_count(0)
+            if texto:
+                expect(pg.get_by_text(texto).first).to_be_visible(timeout=30_000)
+            else:
+                pg.wait_for_load_state("networkidle")
+            passo(f"página {caminho} abriu")
+
+        pg.goto(BASE + "/settings")
+        expect(pg.get_by_role("heading", name="Configurações")).to_be_visible(
+            timeout=30_000
+        )
+        pg.get_by_role("button", name="Mostrar código").click()
+        codigo_tela = pg.get_by_label("Código para digitar no aparelho")
+        expect(codigo_tela).to_have_text(re.compile(r"^[A-Z0-9]{4}-[A-Z0-9]{4}$"))
+        pg.get_by_role("button", name="Esconder código").click()
+        expect(codigo_tela).to_have_count(0)
+        passo("Configurações: mostrar e esconder o código curto")
         ctx.close()
 
         # ── aparelho novo: código curto ────────────────────────────────────
