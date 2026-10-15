@@ -122,6 +122,14 @@ def _ensure_identity_prompt(messages: list[Message], app_config) -> list[Message
                 exc_info=True,
             )
 
+        # Éden: data/hora, espaço ativo, perfil, memórias, tarefas e as regras
+        # para propor ações (só nos pedidos do app do Éden).
+        from openjarvis.eden.chat_hooks import eden_system_extra
+
+        eden_extra = eden_system_extra()
+        if eden_extra:
+            prompt = f"{prompt}\n\n{eden_extra}" if prompt else eden_extra
+
     system_parts = []
     if prompt:
         system_parts.append(prompt)
@@ -165,7 +173,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     """
     from openjarvis.eden.chat_hooks import finish_chat, prepare_chat
 
-    decision, refusal = prepare_chat(request_body)
+    decision, refusal = prepare_chat(request_body, request)
     if refusal is not None:
         return refusal
     response = await _chat_completions_impl(request_body, request)
