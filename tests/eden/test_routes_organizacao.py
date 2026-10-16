@@ -51,7 +51,7 @@ def app(tmp_path):
 
 @pytest.fixture
 def client(app):
-    return TestClient(app)
+    return TestClient(app, base_url="http://localhost")
 
 
 def _eventos(texto_sse: str):

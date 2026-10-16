@@ -95,7 +95,7 @@ def test_eden_server_drops_dangerous_inherited_routes(eden_app):
 
 
 def test_eden_server_keeps_what_the_app_uses(eden_app):
-    client = TestClient(eden_app)
+    client = TestClient(eden_app, base_url="http://localhost")
     assert client.get("/health").status_code == 200
     ids = [m["id"] for m in client.get("/v1/models").json()["data"]]
     assert ids[0] == "eden-auto"
@@ -105,7 +105,7 @@ def test_eden_server_keeps_what_the_app_uses(eden_app):
 
 
 def test_eden_server_answers_no_cross_origin_requests(eden_app):
-    client = TestClient(eden_app)
+    client = TestClient(eden_app, base_url="http://localhost")
     res = client.options(
         "/v1/models",
         headers={
@@ -148,7 +148,7 @@ def test_eden_config_turns_off_conversation_traces():
 
 
 def test_eden_server_refuses_huge_request_bodies(eden_app):
-    client = TestClient(eden_app)
+    client = TestClient(eden_app, base_url="http://localhost")
     grande = b"x" * (5 * 1024 * 1024)
     r = client.post(
         "/v1/chat/completions",
@@ -182,7 +182,7 @@ def test_pairing_code_works_on_the_real_eden_server(tmp_path):
     try:
         app = create_app(_engine(), "qwen3.5:4b", config=_config(), api_key=chave)
         app.state.eden_conversations = ConversationStore(tmp_path / "conversas.db")
-        client = TestClient(app)
+        client = TestClient(app, base_url="http://localhost")
         auth = {"Authorization": f"Bearer {chave}"}
         assert client.get("/v1/eden/conversations").status_code == 401
         codigo = client.post("/v1/eden/pareamento", headers=auth).json()["codigo"]
@@ -228,7 +228,7 @@ def test_eden_server_ignores_the_default_dev_origins(tmp_path):
             config=_config(),
             cors_origins=["http://localhost:5173", "tauri://localhost"],
         )
-        client = TestClient(app)
+        client = TestClient(app, base_url="http://localhost")
         for origem in ("http://localhost:5173", "tauri://localhost"):
             res = client.options(
                 "/v1/eden/pareamento/usar",
@@ -259,3 +259,15 @@ def test_pairing_route_body_limit_is_small():
     from openjarvis.eden.hardening import LimiteDeCorpo
 
     assert LimiteDeCorpo.limite("/v1/eden/pareamento/usar") == 1024
+
+
+def test_eden_server_only_answers_its_own_addresses(eden_app):
+    for host, esperado in (
+        ("localhost:8000", 200),
+        ("127.0.0.1:8000", 200),
+        ("eden-notebook.tail1234.ts.net", 200),
+        ("site-malicioso.example", 400),
+        ("site-malicioso.example:8000", 400),
+    ):
+        client = TestClient(eden_app, base_url=f"http://{host}")
+        assert client.get("/health").status_code == esperado, host
