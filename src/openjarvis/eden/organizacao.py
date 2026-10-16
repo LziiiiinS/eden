@@ -1086,6 +1086,40 @@ class Organizacao:
         )
         return [self.acao_publica(r, agora) for r in reversed(rows)]
 
+    # ── limpeza automática (Levi, 16/10: guardar 90 dias) ──────────────────
+
+    def limpar_antigos(self, agora: int, dias: int = 90) -> Dict[str, int]:
+        """Apaga de vez as sugestões (cartões) e as linhas do registro de ações
+        com mais de ``dias`` dias. Tarefas, notas, memórias e conversas não
+        são tocadas. Sugestão ainda pendente nunca é apagada."""
+        if dias < 1:
+            raise ValueError("dias precisa ser 1 ou mais")
+        limite = agora - dias * 24 * 3600 * 1000
+
+        def fazer(conn: sqlite3.Connection) -> Dict[str, int]:
+            acoes = conn.execute(
+                "DELETE FROM acoes WHERE criado_em < ? AND estado != 'pendente'",
+                (limite,),
+            ).rowcount
+            registro = conn.execute(
+                "DELETE FROM registro WHERE quando < ?", (limite,)
+            ).rowcount
+            conn.execute(
+                "INSERT INTO ajustes (chave, valor) VALUES ('ultima_limpeza', ?) "
+                "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+                (str(agora),),
+            )
+            return {"acoes": acoes, "registro": registro}
+
+        return self.transacao(fazer)
+
+    def ultima_limpeza(self) -> Optional[int]:
+        rows = self._ler("SELECT valor FROM ajustes WHERE chave = 'ultima_limpeza'")
+        try:
+            return int(rows[0][0]) if rows else None
+        except (TypeError, ValueError):
+            return None
+
     def acoes_recentes(self, desde_ms: int, conversa_id: Optional[str] = None) -> int:
         """Quantas sugestões foram criadas desde ``desde_ms`` (em todas as
         conversas ou só numa)."""

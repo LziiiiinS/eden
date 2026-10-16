@@ -413,6 +413,30 @@ async def enviar_lembretes_vencidos(
     return tratados
 
 
+# Limpeza automática: uma vez por dia, apaga sugestões e registro de ações com
+# mais de 90 dias (decisão do Levi em 16/10).
+DIAS_GUARDADOS = 90
+INTERVALO_LIMPEZA_MS = 24 * 3600 * 1000
+
+
+def limpar_se_preciso(store, agora: Optional[int] = None) -> Optional[Dict[str, int]]:
+    """Roda a limpeza se a última foi há mais de um dia (ou nunca)."""
+    agora = agora if agora is not None else int(time.time() * 1000)
+    ultima = store.ultima_limpeza()
+    if ultima is not None and agora - ultima < INTERVALO_LIMPEZA_MS:
+        return None
+    apagados = store.limpar_antigos(agora, DIAS_GUARDADOS)
+    if apagados["acoes"] or apagados["registro"]:
+        logger.info(
+            "Éden: limpeza automática (%d dias): %d sugestões e %d linhas do "
+            "registro apagadas",
+            DIAS_GUARDADOS,
+            apagados["acoes"],
+            apagados["registro"],
+        )
+    return apagados
+
+
 def registrar_lembretes(app) -> None:
     """Liga a verificação de lembretes (a cada 30 s) quando o servidor sobe."""
     from openjarvis.eden.settings import get_settings
@@ -439,6 +463,7 @@ def registrar_lembretes(app) -> None:
                         chave = await asyncio.to_thread(carregar_chave)
                         estado["chave"] = chave
                     await enviar_lembretes_vencidos(store, chave, client)
+                    await asyncio.to_thread(limpar_se_preciso, store)
                 except asyncio.CancelledError:
                     raise
                 except Exception:  # noqa: BLE001

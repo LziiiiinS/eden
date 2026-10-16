@@ -713,3 +713,57 @@ def test_weird_block_does_not_break_the_others(store):
     )
     criadas, recusadas = acoes.propor(resposta, store, "pessoal", TZ, None, AGORA)
     assert len(criadas) == 1 and len(recusadas) == 1
+
+
+# ── limpeza automática (90 dias) ─────────────────────────────────────────
+
+DIA_MS = 24 * 3600 * 1000
+
+
+def _acao_antiga(store, acao_id, criado_em, estado="feita"):
+    store.transacao(
+        lambda c: c.execute(
+            "INSERT INTO acoes (id, tipo, parametros, assinatura, resumo, "
+            "conversa_id, estado, criado_em, expira_em) "
+            "VALUES (?, 'memoria.criar', '{}', 'x', 'r', NULL, ?, ?, ?)",
+            (acao_id, estado, criado_em, criado_em + 15 * 60 * 1000),
+        )
+    )
+
+
+def _registro(store, quando):
+    store.transacao(
+        lambda c: c.execute(
+            "INSERT INTO registro (quando, quem, o_que, alvo) "
+            "VALUES (?, 'pessoa', 'criou', 'tarefa')",
+            (quando,),
+        )
+    )
+
+
+def test_cleanup_removes_only_old_cards_and_log_lines(store):
+    agora = AGORA
+    _acao_antiga(store, "velha", agora - 91 * DIA_MS)
+    _acao_antiga(store, "recente", agora - 89 * DIA_MS)
+    _acao_antiga(store, "pendente-velha", agora - 200 * DIA_MS, estado="pendente")
+    _registro(store, agora - 120 * DIA_MS)
+    _registro(store, agora - 10 * DIA_MS)
+    tarefa = store.criar_tarefa({"titulo": "Fica", "espaco": "pessoal"}, TZ)
+    memoria = store.criar_memoria("fica também")
+
+    apagados = store.limpar_antigos(agora, 90)
+
+    assert apagados == {"acoes": 1, "registro": 1}
+    restantes = {r["id"] for r in store._ler("SELECT id FROM acoes")}
+    assert restantes == {"recente", "pendente-velha"}
+    antigas = store._ler("SELECT id FROM registro WHERE quando < ?", (agora - DIA_MS,))
+    assert len(antigas) == 1
+    # Tarefas e memórias não são tocadas.
+    assert store.tarefa(tarefa["id"]) is not None
+    assert any(m["id"] == memoria["id"] for m in store.listar_memorias(todas=True))
+    assert store.ultima_limpeza() == agora
+
+
+def test_cleanup_rejects_zero_days(store):
+    with pytest.raises(ValueError):
+        store.limpar_antigos(AGORA, 0)

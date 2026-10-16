@@ -256,3 +256,19 @@ def test_remove_device_by_id(store):
     )
     assert push.remover_inscricao_id(store, salva["id"]) is True
     assert push.remover_inscricao_id(store, salva["id"]) is False
+
+
+def test_cleanup_runs_at_most_once_a_day(store):
+    dia = 24 * 3600 * 1000
+    agora = int(datetime(2026, 10, 16, 21, 0, tzinfo=TZ).timestamp() * 1000)
+    store.transacao(
+        lambda c: c.execute(
+            "INSERT INTO registro (quando, quem, o_que, alvo) "
+            "VALUES (?, 'pessoa', 'criou', 'tarefa')",
+            (agora - 100 * dia,),
+        )
+    )
+    assert push.limpar_se_preciso(store, agora) == {"acoes": 0, "registro": 1}
+    # Menos de um dia depois: não roda de novo.
+    assert push.limpar_se_preciso(store, agora + dia - 1) is None
+    assert push.limpar_se_preciso(store, agora + dia) == {"acoes": 0, "registro": 0}
