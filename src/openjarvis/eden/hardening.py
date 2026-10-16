@@ -92,6 +92,8 @@ def restrict_routes_for_eden(app, settings: Optional[EdenSettings] = None) -> No
     app.state.eden_removed_routes = removed
     # Teto de tamanho para o corpo de todos os pedidos (a conversa não tinha).
     app.add_middleware(LimiteDeCorpo)
+    # Só responde a endereços do próprio Éden (contra "DNS rebinding").
+    app.add_middleware(HostPermitido)
     # O registro de acesso não mostra o que vem depois do "?" (ex.: busca).
     esconder_consultas_no_registro()
     logger.info(
@@ -215,3 +217,81 @@ def esconder_consultas_no_registro() -> None:
     registro = logging.getLogger(ACCESS_LOGGER)
     if not any(isinstance(f, SemConsultaNoRegistro) for f in registro.filters):
         registro.addFilter(SemConsultaNoRegistro())
+
+
+# ── endereços aceitos (contra "DNS rebinding") ───────────────────────────
+#
+# Um site malicioso aberto no notebook pode fazer o próprio nome dele apontar
+# para 127.0.0.1 e, assim, conversar com o Éden pelo navegador. O navegador
+# manda o nome do site no cabeçalho Host. O Éden só responde quando o Host é
+# um endereço dele: este computador (localhost, 127.0.0.1, ::1) ou o endereço
+# com cadeado do Tailscale (*.ts.net). Revisão independente de 15/10 (P5).
+#
+# Para emergência (ex.: acessar por outro nome), EDEN_HOSTS_EXTRAS aceita uma
+# lista separada por vírgulas, no .env.
+
+HOSTS_PERMITIDOS: Tuple[str, ...] = ("localhost", "127.0.0.1", "::1")
+SUFIXOS_PERMITIDOS: Tuple[str, ...] = (".ts.net",)
+
+
+def nome_do_host(valor: str) -> str:
+    """Tira a porta e os colchetes: "[::1]:8000" -> "::1"; "a.ts.net:443" ->
+    "a.ts.net". Devolve em minúsculas, sem ponto no fim."""
+    valor = valor.strip().lower()
+    if valor.startswith("["):
+        fim = valor.find("]")
+        return valor[1:fim] if fim > 0 else ""
+    nome, sep, porta = valor.rpartition(":")
+    if sep and porta.isdigit() and ":" not in nome:
+        valor = nome
+    return valor.rstrip(".")
+
+
+def host_permitido(valor: str, extras: Iterable[str] = ()) -> bool:
+    nome = nome_do_host(valor)
+    if not nome or any(c in nome for c in "/@ \t"):
+        return False
+    extras_limpos = {e.strip().lower() for e in extras if e.strip()}
+    if nome in HOSTS_PERMITIDOS or nome in extras_limpos:
+        return True
+    return any(
+        nome.endswith(sufixo) and len(nome) > len(sufixo)
+        for sufixo in SUFIXOS_PERMITIDOS
+    )
+
+
+class HostPermitido:
+    """Recusa (400) pedidos cujo Host não é um endereço do Éden."""
+
+    def __init__(self, app) -> None:  # noqa: ANN001
+        self.app = app
+        self.extras = tuple(os.environ.get("EDEN_HOSTS_EXTRAS", "").split(","))
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        if scope.get("type") not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+        host = ""
+        for nome, valor in scope.get("headers") or []:
+            if nome == b"host":
+                host = valor.decode("latin-1")
+                break
+        if host_permitido(host, self.extras):
+            await self.app(scope, receive, send)
+            return
+        logger.warning("Éden: pedido recusado (endereço não permitido)")
+        if scope.get("type") == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        corpo = b'{"detail":"Endere\xc3\xa7o n\xc3\xa3o permitido","code":"eden_host"}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 400,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(corpo)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": corpo})

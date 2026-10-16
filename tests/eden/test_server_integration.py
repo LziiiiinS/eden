@@ -38,7 +38,10 @@ def eden(tmp_path):
     engine.engine_id = "mock"
     engine.health.return_value = True
     engine.list_models.return_value = ["qwen3.5:4b"]
-    client = TestClient(create_app(engine, "qwen3.5:4b", config=_config()))
+    client = TestClient(
+        create_app(engine, "qwen3.5:4b", config=_config()),
+        base_url="http://localhost",
+    )
     yield client, ledger
     settings.set_settings(None)
     budget.set_ledger(None)
