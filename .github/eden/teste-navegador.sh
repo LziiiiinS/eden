@@ -33,4 +33,17 @@ for _ in $(seq 1 90); do
 done
 curl -fsS "$BASE/health" >/dev/null || { echo "error: o Éden não respondeu em /health"; exit 1; }
 
+medir() {
+  # Quanto o Éden usa (aparece como aviso no PR, para planejar o servidor).
+  local uso
+  uso=$(docker stats --no-stream --format '{{.MemUsage}} | CPU {{.CPUPerc}} | processos {{.PIDs}}' eden-navegador)
+  echo "::notice title=Memória do Éden ($1)::$uso"
+}
+
+sleep 20
+medir "ligado, parado"
 EDEN_CHAVE="$KEY" EDEN_BASE="$BASE" python "$AQUI/teste_navegador.py"
+medir "depois do teste no navegador"
+tamanho=$(docker image inspect "$IMAGEM" --format '{{.Size}}')
+echo "::notice title=Tamanho da imagem::$((tamanho / 1024 / 1024)) MB"
+docker exec eden-navegador sh -c 'du -sh /dados' | sed 's/^/::notice title=Dados do teste::/'
