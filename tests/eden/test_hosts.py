@@ -39,6 +39,14 @@ def test_eden_addresses_are_accepted(host):
         "127.0.0.2:8000",
         "user@localhost",
         "testserver",
+        "localhost:",
+        "localhost:8000:1",
+        "localhost:80a",
+        "[::1",
+        "[evil.ts.net]",
+        "a b.ts.net",
+        "eden.ts.net/x",
+        "eden..ts.net",
     ],
 )
 def test_other_addresses_are_refused(host):
@@ -48,6 +56,9 @@ def test_other_addresses_are_refused(host):
 def test_extra_hosts_from_env():
     assert host_permitido("eden-notebook", extras=("eden-notebook", " "))
     assert not host_permitido("outro", extras=("eden-notebook",))
+    # Extras escritos de qualquer jeito no .env valem do mesmo jeito.
+    assert host_permitido("meu-pc:8000", extras=(" Meu-PC:8000 ",))
+    assert not host_permitido("x", extras=("user@x",))
 
 
 def test_host_name_parsing():

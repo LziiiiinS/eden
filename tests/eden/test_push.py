@@ -268,7 +268,15 @@ def test_cleanup_runs_at_most_once_a_day(store):
             (agora - 100 * dia,),
         )
     )
-    assert push.limpar_se_preciso(store, agora) == {"acoes": 0, "registro": 1}
+    assert push.limpar_se_preciso(store, agora) == {
+        "acoes": 0,
+        "registro": 1,
+        "presas": 0,
+    }
     # Menos de um dia depois: não roda de novo.
     assert push.limpar_se_preciso(store, agora + dia - 1) is None
-    assert push.limpar_se_preciso(store, agora + dia) == {"acoes": 0, "registro": 0}
+    assert push.limpar_se_preciso(store, agora + dia) == {
+        "acoes": 0,
+        "registro": 0,
+        "presas": 0,
+    }

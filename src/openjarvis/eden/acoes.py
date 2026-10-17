@@ -28,11 +28,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import secrets
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from openjarvis.eden.organizacao import (
@@ -49,6 +50,8 @@ from openjarvis.eden.organizacao import (
     resumo_data,
     texto,
 )
+
+logger = logging.getLogger(__name__)
 
 VALIDADE_MS = 15 * 60 * 1000
 MAX_ACOES_POR_RESPOSTA = 5
@@ -166,6 +169,7 @@ def validar(
     espaco_ativo: str,
     hoje: date,
     agenda: Optional[Dict[str, Any]] = None,
+    tz: Optional[timezone] = None,
 ) -> Proposta:
     """Confere um bloco (já lido como JSON) e devolve a proposta normalizada."""
     if not isinstance(bruto, dict):
@@ -312,7 +316,7 @@ def validar(
         return Proposta(tipo, params, resumo)
 
     if tipo in ("agenda.criar", "agenda.editar"):
-        return _validar_agenda(tipo, bruto, hoje, agenda)
+        return _validar_agenda(tipo, bruto, hoje, agenda, tz)
 
     # nota.criar
     _so_campos(bruto, ("texto", "titulo", "tipo_nota", "espaco"))
@@ -349,15 +353,36 @@ def _texto_duracao(minutos: int) -> str:
 
 
 def _quando_evento(evento: Dict[str, Any], hoje: date) -> str:
-    from datetime import datetime as _dt
-
-    inicio = _dt.fromisoformat(evento["inicio"])
+    inicio = datetime.fromisoformat(evento["inicio"])
     hora = None if evento.get("dia_inteiro") else inicio.strftime("%H:%M")
     return resumo_data(inicio.date().isoformat(), hora, hoje)
 
 
+def _texto_periodo(corpo: Dict[str, Any], hoje: date, tz: Any) -> str:
+    """Início e fim que vão para o Google, em texto (o cartão mostra o
+    resultado final, não só o que a IA pediu)."""
+    inicio, fim = corpo["start"], corpo["end"]
+    if "date" in inicio:
+        d0 = date.fromisoformat(inicio["date"])
+        d1 = date.fromisoformat(fim["date"]) - timedelta(days=1)
+        txt = resumo_data(d0.isoformat(), None, hoje)
+        if d1 > d0:
+            txt += f" a {resumo_data(d1.isoformat(), None, hoje)}"
+        return txt + " (dia inteiro)"
+    a = datetime.fromisoformat(inicio["dateTime"]).astimezone(tz)
+    b = datetime.fromisoformat(fim["dateTime"]).astimezone(tz)
+    txt = resumo_data(a.date().isoformat(), a.strftime("%H:%M"), hoje)
+    if b.date() == a.date():
+        return f"{txt}–{b:%H:%M}"
+    return f"{txt} até {resumo_data(b.date().isoformat(), b.strftime('%H:%M'), hoje)}"
+
+
 def _validar_agenda(
-    tipo: str, bruto: Dict[str, Any], hoje: date, agenda: Optional[Dict[str, Any]]
+    tipo: str,
+    bruto: Dict[str, Any],
+    hoje: date,
+    agenda: Optional[Dict[str, Any]],
+    tz: Optional[timezone] = None,
 ) -> Proposta:
     if not agenda or not agenda.get("conectado"):
         raise ErroOrganizacao("a Google Agenda não está conectada")
@@ -394,19 +419,23 @@ def _validar_agenda(
         return Proposta(tipo, params, resumo)
 
     # agenda.editar
+    from openjarvis.eden.google import MAX_ID_PARA_IA, mudancas_do_evento
+
     _so_campos(bruto, ("id", "titulo", "data", "hora", "duracao_min", "local"))
     evento_id = bruto.get("id")
     eventos = agenda.get("eventos") or {}
-    if not isinstance(evento_id, str) or evento_id not in eventos:
+    if (
+        not isinstance(evento_id, str)
+        or len(evento_id) > MAX_ID_PARA_IA
+        or evento_id not in eventos
+    ):
         raise ErroOrganizacao("evento não encontrado na agenda dos próximos dias")
     evento = eventos[evento_id]
     mudancas: Dict[str, Any] = {}
-    partes: List[str] = []
     if "titulo" in bruto:
         mudancas["titulo"] = texto(
             bruto["titulo"], "titulo", MAX_TITULO, uma_linha=True
         )
-        partes.append(f"título → {_aspas(mudancas['titulo'])}")
     if "data" in bruto:
         mudancas["data"] = data_iso(bruto["data"])
         if not mudancas["data"]:
@@ -415,18 +444,12 @@ def _validar_agenda(
         mudancas["hora"] = hora_hhmm(bruto["hora"])
         if not mudancas["hora"]:
             raise ErroOrganizacao("'hora' não pode ficar vazia")
-    if "data" in mudancas or "hora" in mudancas:
-        from datetime import datetime as _dt
-
-        inicio = _dt.fromisoformat(evento["inicio"])
-        nova_data = mudancas.get("data") or inicio.date().isoformat()
-        nova_hora = mudancas.get("hora") or (
-            None if evento.get("dia_inteiro") else inicio.strftime("%H:%M")
-        )
-        partes.append(f"para {resumo_data(nova_data, nova_hora, hoje)}")
     if "duracao_min" in bruto:
         mudancas["duracao_min"] = _duracao(bruto["duracao_min"])
-        partes.append(f"duração → {_texto_duracao(mudancas['duracao_min'])}")
+        if evento.get("dia_inteiro") and "hora" not in mudancas:
+            raise ErroOrganizacao(
+                "o evento é de dia inteiro: para mudar a duração, diga também a hora"
+            )
     if "local" in bruto:
         mudancas["local"] = texto(
             bruto["local"],
@@ -435,16 +458,43 @@ def _validar_agenda(
             obrigatorio=False,
             uma_linha=True,
         )
-        partes.append(
-            f"local → {_aspas(mudancas['local'])}" if mudancas["local"] else "sem local"
-        )
     if not mudancas:
         raise ErroOrganizacao("nada para mudar no evento")
-    params = {"id": evento_id, "titulo_atual": evento["titulo"], "mudancas": mudancas}
+    zona = tz or datetime.fromisoformat(evento["inicio"]).tzinfo or timezone.utc
+    # O que vai para o Google é calculado agora e entra na assinatura: o
+    # cartão mostra exatamente o que será gravado.
+    corpo = mudancas_do_evento(evento, mudancas, zona)
+    partes: List[str] = []
+    if "summary" in corpo:
+        partes.append(f"título → {_aspas(corpo['summary'])}")
+    if "start" in corpo:
+        partes.append(f"para {_texto_periodo(corpo, hoje, zona)}")
+    if "location" in corpo:
+        partes.append(
+            f"local → {_aspas(corpo['location'])}" if corpo["location"] else "sem local"
+        )
+    params = {
+        "id": evento_id,
+        "titulo_atual": evento["titulo"],
+        "antes": {
+            "inicio": evento["inicio"],
+            "fim": evento.get("fim"),
+            "dia_inteiro": bool(evento.get("dia_inteiro")),
+        },
+        "corpo": corpo,
+    }
     resumo = (
         f"Mudar na Google Agenda {_aspas(evento['titulo'])} "
         f"({_quando_evento(evento, hoje)}): " + "; ".join(partes)
     )
+    convidados = int(evento.get("convidados") or 0)
+    if convidados:
+        resumo += (
+            f" · evento com {convidados} "
+            f"{'convidado' if convidados == 1 else 'convidados'}"
+        )
+    if evento.get("convite"):
+        resumo += " · convite que você ainda não aceitou"
     return Proposta(tipo, params, resumo)
 
 
@@ -499,7 +549,7 @@ def propor(
                 raise ErroOrganizacao(
                     "não deu para ler a ação (JSON inválido)"
                 ) from exc
-            proposta = validar(bruto, store, espaco_ativo, hoje, agenda)
+            proposta = validar(bruto, store, espaco_ativo, hoje, agenda, tz)
         except ErroOrganizacao as exc:
             recusadas.append(str(exc))
             continue
@@ -715,12 +765,8 @@ def _executar_fora(
 ) -> None:
     from openjarvis.eden.google import ErroGoogle
 
-    try:
-        if externo is None:
-            raise ErroOrganizacao("a Google Agenda não está conectada")
-        resultado = externo(tipo, params)
-    except (ErroOrganizacao, ErroGoogle) as exc:
-        erro = json.dumps({"erro": str(exc)})
+    def falhou(mensagem: str) -> None:
+        erro = json.dumps({"erro": mensagem})
         store.transacao(
             lambda conn: conn.execute(
                 "UPDATE acoes SET estado = 'falhou', resultado = ? "
@@ -728,7 +774,29 @@ def _executar_fora(
                 (erro, acao_id),
             )
         )
-        raise ErroAcao(f"não deu para fazer: {exc}", 409, "eden_acao_falhou") from exc
+
+    try:
+        if externo is None:
+            raise ErroOrganizacao("a Google Agenda não está conectada")
+        resultado = externo(tipo, params)
+    except (ErroOrganizacao, ErroGoogle) as exc:
+        mensagem = str(exc)
+        if getattr(exc, "codigo", "") == "eden_google_rede":
+            mensagem += " Confira na agenda antes de pedir de novo."
+        falhou(mensagem)
+        raise ErroAcao(
+            f"não deu para fazer: {mensagem}", 409, "eden_acao_falhou"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - o cartão nunca fica preso
+        logger.exception("Éden: falha inesperada ao falar com o Google")
+        mensagem = (
+            "algo deu errado ao falar com o Google; confira na agenda antes de "
+            "pedir de novo"
+        )
+        falhou(mensagem)
+        raise ErroAcao(
+            f"não deu para fazer: {mensagem}", 409, "eden_acao_falhou"
+        ) from exc
 
     def gravar(conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -756,19 +824,27 @@ def confirmar(
     agora = agora or agora_ms()
 
     def externo(tipo: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        from openjarvis.eden.google import mudancas_do_evento
+        from openjarvis.eden.google import id_para_criar
 
         if google is None:
             raise ErroOrganizacao("a Google Agenda não está conectada")
         if tipo == "agenda.criar":
-            return google.criar(params, tz)
+            # ID fixo por cartão: se a resposta do Google se perder e o
+            # pedido se repetir, não nasce um segundo evento igual.
+            return google.criar(params, tz, evento_id=id_para_criar(acao_id))
+        if not isinstance(params.get("corpo"), dict) or "antes" not in params:
+            raise ErroOrganizacao("sugestão antiga; peça de novo ao Éden")
         # agenda.editar: o evento que o cartão mostrou continua igual?
         atual = google.evento(params["id"], tz)
-        if atual["titulo"] != params["titulo_atual"]:
+        antes = params["antes"]
+        if (
+            atual["titulo"] != params["titulo_atual"]
+            or atual["inicio"] != antes["inicio"]
+            or atual.get("fim") != antes["fim"]
+            or bool(atual.get("dia_inteiro")) != antes["dia_inteiro"]
+        ):
             raise ErroOrganizacao("o evento mudou depois da sugestão; peça de novo")
-        return google.editar(
-            params["id"], mudancas_do_evento(atual, params["mudancas"], tz), tz
-        )
+        return google.editar(params["id"], params["corpo"], tz)
 
     return _decidir(
         store,

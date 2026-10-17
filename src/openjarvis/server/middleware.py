@@ -44,7 +44,11 @@ def create_security_middleware() -> Any:
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
             )
-            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            # setdefault: uma rota pode pedir algo mais restrito (ex.: a volta
+            # do Google usa "no-referrer" para o código não vazar).
+            response.headers.setdefault(
+                "Referrer-Policy", "strict-origin-when-cross-origin"
+            )
             # microphone=(self): the chat UI records voice input from this same
             # origin. An empty allowlist blocked its own feature.
             response.headers["Permissions-Policy"] = (

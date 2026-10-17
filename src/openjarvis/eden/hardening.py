@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Iterable, List, Optional, Set, Tuple
 
 from openjarvis.eden.settings import EdenSettings, get_settings
@@ -234,24 +235,35 @@ HOSTS_PERMITIDOS: Tuple[str, ...] = ("localhost", "127.0.0.1", "::1")
 SUFIXOS_PERMITIDOS: Tuple[str, ...] = (".ts.net",)
 
 
+_NOME_HOST = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*")
+_IPV6 = re.compile(r"[0-9a-f:.]+")
+_HOST = re.compile(
+    r"(?:\[(?P<v6>[^\]]*)\]|(?P<nome>[^:\[\]]*))(?::(?P<porta>[0-9]{1,5}))?"
+)
+
+
 def nome_do_host(valor: str) -> str:
     """Tira a porta e os colchetes: "[::1]:8000" -> "::1"; "a.ts.net:443" ->
-    "a.ts.net". Devolve em minúsculas, sem ponto no fim."""
+    "a.ts.net". Devolve em minúsculas, sem ponto no fim. Qualquer coisa fora
+    do formato (espaços, "@", barra, dois pontos sobrando) devolve ""."""
     valor = valor.strip().lower()
-    if valor.startswith("["):
-        fim = valor.find("]")
-        return valor[1:fim] if fim > 0 else ""
-    nome, sep, porta = valor.rpartition(":")
-    if sep and porta.isdigit() and ":" not in nome:
-        valor = nome
-    return valor.rstrip(".")
+    if valor and _IPV6.fullmatch(valor) and valor.count(":") >= 2:
+        return valor  # IPv6 sem colchetes (ex.: "::1")
+    m = _HOST.fullmatch(valor)
+    if m is None:
+        return ""
+    if m.group("v6") is not None:
+        v6 = m.group("v6")
+        return v6 if _IPV6.fullmatch(v6) and ":" in v6 else ""
+    nome = (m.group("nome") or "").rstrip(".")
+    return nome if _NOME_HOST.fullmatch(nome) else ""
 
 
 def host_permitido(valor: str, extras: Iterable[str] = ()) -> bool:
     nome = nome_do_host(valor)
-    if not nome or any(c in nome for c in "/@ \t"):
+    if not nome:
         return False
-    extras_limpos = {e.strip().lower() for e in extras if e.strip()}
+    extras_limpos = {n for n in (nome_do_host(e) for e in extras) if n}
     if nome in HOSTS_PERMITIDOS or nome in extras_limpos:
         return True
     return any(
