@@ -555,6 +555,13 @@ def create_app(
         app.include_router(eden_rotas_router)
     except Exception as exc:
         logger.warning("Éden: rotas não ligadas: %s", exc)
+    # Éden (Parte 4): pesquisa na internet com fontes (só quando a pessoa pede).
+    try:
+        from openjarvis.eden.routes_pesquisa import router as eden_pesquisa_router
+
+        app.include_router(eden_pesquisa_router)
+    except Exception as exc:
+        logger.warning("Éden: pesquisa na internet não ligada: %s", exc)
     # Éden (Parte 3): documentos escolhidos pela pessoa para a conversa.
     try:
         from openjarvis.eden.routes_documentos import router as eden_docs_router

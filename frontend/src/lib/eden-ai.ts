@@ -54,6 +54,7 @@ export const REASON_LABEL: Record<string, string> = {
   longo: 'pedido longo',
   continua: 'a conversa já estava em missão',
   padrao: 'dia a dia',
+  pesquisa: 'pesquisa na internet',
 };
 
 export function providerName(provider: string | undefined): string {
@@ -72,6 +73,8 @@ export function requestModelFor(selected: string, history: ChatMessage[]): strin
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i];
     if (m.role !== 'assistant') continue;
+    // Pesquisa na internet sempre usa o Claude, mas não muda o modo da conversa.
+    if (m.edenPesquisa || m.telemetry?.eden_reason === 'pesquisa') continue;
     const mode = m.telemetry?.eden_mode;
     if (mode) return mode === 'missao' ? EDEN_AUTO_IN_MISSION : EDEN_AUTO;
   }

@@ -5,7 +5,8 @@ import { REASON_LABEL, providerName } from '../../lib/eden-ai';
 export function EdenAiLabel({ telemetry }: { telemetry?: MessageTelemetry }) {
   if (!telemetry?.eden_provider) return null;
   const name = providerName(telemetry.eden_provider);
-  const mission = telemetry.eden_mode === 'missao';
+  const pesquisa = telemetry.eden_reason === 'pesquisa';
+  const mission = telemetry.eden_mode === 'missao' && !pesquisa;
   const reason = telemetry.eden_reason ? REASON_LABEL[telemetry.eden_reason] : undefined;
   const detail = [telemetry.model_id, reason].filter(Boolean).join(' · ');
 
@@ -21,6 +22,7 @@ export function EdenAiLabel({ telemetry }: { telemetry?: MessageTelemetry }) {
     >
       {name}
       {mission ? ' · missão' : ''}
+      {pesquisa ? ' · pesquisa na internet' : ''}
     </span>
   );
 }
