@@ -170,3 +170,46 @@ def test_search_answers_in_history_are_disarmed_before_the_chat(eden):
     assert texto.startswith(MARCA_PESQUISA + "\n│ A página manda:")
     assert "eden-acao" not in texto and "```" not in texto
     assert corpo.messages[2].content == "e agora?"
+
+
+def test_route_question_gets_alternatives_in_the_context(eden, tmp_path, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from openjarvis.eden import rotas
+    from openjarvis.eden.chat_hooks import _caminhos_do_pedido, antes_da_conversa
+    from openjarvis.eden.organizacao import Organizacao
+    from tests.eden.test_rotas import CHAVE, TomTomFalso
+
+    monkeypatch.setenv("TOMTOM_API_KEY", CHAVE)
+    store = Organizacao(tmp_path / "org.db")
+    rotas.criar_trajeto(
+        store,
+        {
+            "origem": {"nome": "Casa", "latitude": -22.97, "longitude": -43.18},
+            "destino": {"nome": "Posto 4", "latitude": -23.012, "longitude": -43.32},
+        },
+    )
+    falso = TomTomFalso()
+    request = SimpleNamespace(
+        headers={"x-eden-local": "-22.9801,-43.2001"},
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                eden_organizacao=store,
+                eden_rotas=rotas.ClienteTomTom(http=falso, cache=rotas.CacheRotas()),
+            )
+        ),
+        state=SimpleNamespace(),
+    )
+    corpo = SimpleNamespace(
+        messages=[
+            SimpleNamespace(role="user", content="melhor rota agora pro posto 4?")
+        ]
+    )
+    asyncio.run(antes_da_conversa(corpo, request))
+    caminhos = _caminhos_do_pedido(request)
+    assert caminhos["origem"]["nome"] == "sua localização agora"
+    assert caminhos["destino"]["nome"] == "Posto 4" and len(caminhos["rotas"]) == 3
+    # A localização foi só para o TomTom, arredondada.
+    assert any("-22.980100,-43.200100" in u for u, _ in falso.pedidos)
+    store.close()

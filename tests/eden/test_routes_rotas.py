@@ -71,3 +71,28 @@ def test_save_route_and_get_times(ambiente, monkeypatch):
     assert (
         c.delete(f"/v1/eden/rotas/trajetos/{t['id']}", headers=AUTH).status_code == 404
     )
+
+
+def test_alternatives_endpoint(ambiente, monkeypatch):
+    c, falso = ambiente
+    monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
+    r = c.get(
+        "/v1/eden/rotas/caminhos?origem=-22.97,-43.18&destino=-23,-43.3", headers=AUTH
+    )
+    assert r.status_code == 409
+    monkeypatch.setenv("TOMTOM_API_KEY", CHAVE)
+    trajeto_id = c.post("/v1/eden/rotas/trajetos", json=TRAJETO, headers=AUTH).json()[
+        "trajeto"
+    ]["id"]
+    dados = c.get(f"/v1/eden/rotas/caminhos?trajeto={trajeto_id}", headers=AUTH).json()
+    assert [x["segundos"] for x in dados["rotas"]] == [1680, 1920, 2400]
+    assert dados["rotas"][0]["vias"] == ["Avenida das Américas", "Avenida Ayrton Senna"]
+    dados = c.get(
+        "/v1/eden/rotas/caminhos?origem=-22.97,-43.18&destino=-23.01,-43.32",
+        headers=AUTH,
+    ).json()
+    assert len(dados["rotas"]) == 3
+    assert c.get("/v1/eden/rotas/caminhos?trajeto=999", headers=AUTH).status_code == 404
+    for ruim in ("origem=abc&destino=1,1", "origem=91,0&destino=1,1", ""):
+        assert c.get(f"/v1/eden/rotas/caminhos?{ruim}", headers=AUTH).status_code == 400
+    assert c.get("/v1/eden/rotas/caminhos?trajeto=1").status_code == 401

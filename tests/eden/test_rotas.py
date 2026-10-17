@@ -34,6 +34,56 @@ class Resposta:
         yield self.content
 
 
+def _instr(metros, rua=None, tipo="TURN"):
+    item = {"routeOffsetInMeters": metros, "instructionType": tipo}
+    if rua is not None:
+        item["street"] = rua
+    return item
+
+
+ROTAS_ALTERNATIVAS = [
+    {  # pela Lúcio Costa (mais lento; vem primeiro de propósito)
+        "summary": {
+            "lengthInMeters": 15000,
+            "travelTimeInSeconds": 1920,
+            "trafficDelayInSeconds": 120,
+            "arrivalTime": "2026-10-17T17:32:00-03:00",
+        },
+        "guidance": {
+            "instructions": [
+                _instr(0, "Rua de Casa", "LOCATION_DEPARTURE"),
+                _instr(400, "Avenida Lúcio Costa"),
+                _instr(12000, "Rua do Destino"),
+                _instr(15000, tipo="LOCATION_ARRIVAL"),
+            ]
+        },
+    },
+    {  # pelas Américas (mais rápido)
+        "summary": {
+            "lengthInMeters": 14200,
+            "travelTimeInSeconds": 1680,
+            "trafficDelayInSeconds": 480,
+            "noTrafficTravelTimeInSeconds": 1200,
+            "arrivalTime": "2026-10-17T17:28:00-03:00",
+        },
+        "guidance": {
+            "instructions": [
+                _instr(0, "Rua de Casa", "LOCATION_DEPARTURE"),
+                _instr(300, "Avenida das Américas"),
+                _instr(9300, "Avenida Ayrton Senna"),
+                _instr(13700, "Rua do Destino"),
+                _instr(14200, tipo="LOCATION_ARRIVAL"),
+            ]
+        },
+    },
+    {  # sem instruções (vias vazias)
+        "summary": {"lengthInMeters": 20000, "travelTimeInSeconds": 2400}
+    },
+    {"summary": {"lengthInMeters": 1}},  # sem tempo: ignorado
+    "lixo",
+]
+
+
 class TomTomFalso:
     def __init__(self) -> None:
         self.pedidos = []
@@ -75,6 +125,10 @@ class TomTomFalso:
                     ]
                 },
             )
+        if caminho.startswith("/routing/1/calculateRoute/") and params.get(
+            "maxAlternatives"
+        ):
+            return Resposta(200, {"routes": ROTAS_ALTERNATIVAS})
         if caminho.startswith("/routing/1/calculateRoute/"):
             return Resposta(
                 200,
@@ -279,3 +333,161 @@ def test_texts():
     assert rotas.pergunta_sobre_rotas("Que horas eu saio pra chegar às 9?")
     assert rotas.pergunta_sobre_rotas("como está o TRÂNSITO na ponte")
     assert not rotas.pergunta_sobre_rotas("resume esse documento")
+
+
+# ── caminhos (alternativas) ──────────────────────────────────────────────
+
+CASA = {"nome": "Casa", "latitude": -22.97, "longitude": -43.18}
+POSTO4 = {"nome": "Posto 4", "latitude": -23.012, "longitude": -43.32}
+
+
+def test_alternatives_with_main_roads_and_cache(store, com_chave):
+    falso = TomTomFalso()
+    cliente = _cliente(falso)
+    r = cliente.caminhos(CASA, POSTO4)
+    assert [c["segundos"] for c in r["rotas"]] == [1680, 1920, 2400]
+    assert r["rotas"][0]["vias"] == ["Avenida das Américas", "Avenida Ayrton Senna"]
+    assert r["rotas"][1]["vias"] == ["Avenida Lúcio Costa", "Rua do Destino"]
+    assert r["rotas"][2]["vias"] == []
+    url, params = falso.pedidos[0]
+    assert params["maxAlternatives"] == "2" and params["instructionsType"] == "text"
+    assert params["language"] == "pt-BR" and params["traffic"] == "true"
+    cliente.caminhos(CASA, POSTO4)
+    assert len(falso.pedidos) == 1  # guardado por 5 minutos
+    cliente.caminhos(CASA, POSTO4, forcar=True)
+    assert len(falso.pedidos) == 2
+
+
+def test_main_roads_ignore_short_and_bad_pieces():
+    rota = {
+        "summary": {"lengthInMeters": 10000},
+        "guidance": {
+            "instructions": [
+                _instr(0, "Rua Curta"),
+                _instr(200, "Avenida Longa"),
+                _instr(7000, "  "),
+                _instr(8000, None),
+                {"routeOffsetInMeters": "x", "street": "Errada"},
+                {**_instr(8500), "roadNumbers": ["RJ-071"]},
+                _instr(10000, tipo="LOCATION_ARRIVAL"),
+                "lixo",
+            ]
+        },
+    }
+    assert rotas.vias_principais(rota) == ["Avenida Longa", "RJ-071"]
+    assert rotas.vias_principais({"summary": {}}) == []
+
+
+@pytest.mark.parametrize(
+    "pergunta, lugar",
+    [
+        (
+            "Me dá a melhor rota para ir agora pro posto 4 da Barra da Tijuca "
+            "que eu tinha salvo",
+            "posto 4 da Barra da Tijuca",
+        ),
+        ("qual o melhor caminho para a praia da barra?", "praia da barra"),
+        ("vou pra casa, qual caminho?", "casa"),
+        ("rota até o Shopping Leblon pela Lúcio Costa", "Shopping Leblon"),
+        ("qual o caminho mais rápido para chegar no Recreio", "Recreio"),
+        ("como está o trânsito?", None),
+        ("trânsito na Avenida Brasil", None),
+        ("resume esse documento para o cliente", None),
+    ],
+)
+def test_destination_from_question(pergunta, lugar):
+    assert rotas.destino_da_pergunta(pergunta) == lugar
+
+
+def test_saved_destination_uses_saved_points(store, com_chave):
+    rotas.criar_trajeto(store, {"origem": CASA, "destino": POSTO4})
+    falso = TomTomFalso()
+    pergunta = "Me dá a melhor rota para ir agora pro posto 4 da Barra"
+    r = rotas.preparar_caminhos(store, pergunta, _cliente(falso))
+    assert r["origem"]["nome"] == "Casa" and r["destino"]["nome"] == "Posto 4"
+    assert len(r["rotas"]) == 3
+    assert all("/geocode/" not in u for u, _ in falso.pedidos)  # sem busca
+    texto_ctx = rotas.secao_contexto(store, pergunta, r)
+    assert "## Caminhos agora" in texto_ctx
+    assert (
+        '1) 28 min agora; +8 min de trânsito; 14,2 km; via "Avenida das Américas"'
+        in (texto_ctx)
+    )
+    assert '"Avenida Lúcio Costa"' in texto_ctx and "mais rápido" in texto_ctx
+    # Com a localização do aparelho, sai de lá.
+    local = rotas.ler_local("-23.0001,-43.3655")
+    r2 = rotas.preparar_caminhos(store, pergunta, _cliente(falso), local)
+    assert r2["origem"]["nome"] == "sua localização agora"
+
+
+def test_new_place_is_searched_near_the_origin(store, com_chave):
+    _trajeto(store)  # Casa → Trabalho
+    falso = TomTomFalso()
+    r = rotas.preparar_caminhos(
+        store, "qual o melhor caminho para a praia da barra?", _cliente(falso)
+    )
+    url, params = falso.pedidos[0]
+    assert (
+        "/geocode/" in url and params["lat"] == "-22.970" and params["lon"] == "-43.180"
+    )
+    assert r["origem"]["nome"] == "Casa"
+    assert r["destino"]["endereco"] == "Av. das Américas, 500, Rio"
+    assert len(r["rotas"]) == 3
+
+
+def test_going_home_reverses_the_saved_route(store, com_chave):
+    _trajeto(store)  # Casa → Trabalho
+    r = rotas.preparar_caminhos(
+        store, "vou pra casa, qual caminho?", _cliente(TomTomFalso())
+    )
+    assert r["destino"]["nome"] == "Casa" and r["origem"]["nome"] == "Trabalho"
+
+
+def test_without_origin_or_key(store, com_chave, monkeypatch):
+    falso = TomTomFalso()
+    r = rotas.preparar_caminhos(store, "melhor rota pro Recreio agora", _cliente(falso))
+    assert r["erro"] == "sem_origem"
+    assert "usar minha localização" in rotas.secao_caminhos(r)
+    monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
+    assert (
+        rotas.preparar_caminhos(store, "melhor rota pro Recreio", _cliente(falso))
+        is None
+    )
+
+
+def test_place_not_found_and_same_place(store, com_chave):
+    _trajeto(store)
+    falso = TomTomFalso()
+
+    class Vazio(TomTomFalso):
+        def stream(self, metodo, url, params=None, headers=None):
+            if "/search/" in url or "/geocode/" in url:
+                self.pedidos.append((url, dict(params)))
+                return Resposta(200, {"results": []})
+            return super().stream(metodo, url, params, headers)
+
+    r = rotas.preparar_caminhos(store, "rota pro Lugar Inexistente", _cliente(Vazio()))
+    assert "não achou" in r["erro"]
+    assert "Não invente" in rotas.secao_caminhos(r)
+    local = rotas.ler_local("-22.97,-43.18")
+    r = rotas.preparar_caminhos(store, "rota pro trabalho", _cliente(falso), local)
+    assert r["destino"]["nome"] == "Trabalho"  # local ≠ Trabalho, calcula
+    perto = rotas.ler_local("-23.0,-43.36")
+    r = rotas.preparar_caminhos(store, "rota pro trabalho", _cliente(falso), perto)
+    assert "mesmo lugar" in r["erro"]
+
+
+@pytest.mark.parametrize(
+    "valor, ok",
+    [
+        ("-23.0001,-43.3655", True),
+        ("-23,0001,-43,3655", False),
+        ("91,0", False),
+        ("abc", False),
+        ("", False),
+        (None, False),
+        ("1" * 100, False),
+    ],
+)
+def test_device_location(valor, ok):
+    assert (rotas.ler_local(valor) is not None) is ok

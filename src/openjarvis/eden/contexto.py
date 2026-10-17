@@ -47,6 +47,7 @@ class PedidoEden:
     conversa_id: Optional[str] = None
     store: Any = None  # Organizacao
     pergunta: Optional[str] = None  # última mensagem da pessoa
+    caminhos: Optional[Dict[str, Any]] = None  # rotas.preparar_caminhos
 
 
 _pedido: contextvars.ContextVar[Optional[PedidoEden]] = contextvars.ContextVar(
@@ -181,6 +182,7 @@ def montar(
     conversa_id: Optional[str] = None,
     agenda: Optional[Dict[str, Any]] = None,
     pergunta: Optional[str] = None,
+    caminhos: Optional[Dict[str, Any]] = None,
 ) -> str:
     """``agenda``: retrato da Google Agenda em cache (``google.CACHE``).
     ``pergunta``: última mensagem da pessoa (o clima só entra se for sobre
@@ -312,7 +314,7 @@ def montar(
     # Trânsito (Parte 4): só se a pergunta for sobre caminho ou trânsito.
     from openjarvis.eden.rotas import secao_contexto as secao_rotas
 
-    rotas_txt = secao_rotas(store, pergunta)
+    rotas_txt = secao_rotas(store, pergunta, caminhos)
     if rotas_txt:
         partes.append(rotas_txt)
 

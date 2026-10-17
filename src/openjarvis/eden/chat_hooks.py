@@ -93,6 +93,14 @@ def _organizacao(request: Any):
     return store
 
 
+def _caminhos_do_pedido(request: Any) -> Optional[dict]:
+    try:
+        valor = getattr(request.state, "eden_caminhos", None)
+    except Exception:  # noqa: BLE001
+        return None
+    return valor if isinstance(valor, dict) else None
+
+
 def _definir_pedido(request: Any, pergunta: Optional[str] = None) -> None:
     """Guarda o espaço e a conversa deste pedido (cabeçalhos do app)."""
     from openjarvis.eden.contexto import PedidoEden, definir_pedido
@@ -113,6 +121,7 @@ def _definir_pedido(request: Any, pergunta: Optional[str] = None) -> None:
                 conversa_id=conversa,
                 store=store,
                 pergunta=pergunta if isinstance(pergunta, str) else None,
+                caminhos=_caminhos_do_pedido(request),
             )
         )
     except Exception:  # noqa: BLE001
@@ -153,6 +162,7 @@ def eden_system_extra() -> str:
             conversa_id=pedido.conversa_id,
             agenda=CACHE.retrato(),
             pergunta=pedido.pergunta,
+            caminhos=pedido.caminhos,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui montar o contexto")
@@ -160,9 +170,10 @@ def eden_system_extra() -> str:
 
 
 async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
-    """Antes de montar o contexto: se a pergunta é sobre trânsito, atualiza
-    os trajetos salvos (TomTom). Espera no máximo 8 s; falha não impede a
-    conversa (o contexto diz que não há dado)."""
+    """Antes de montar o contexto: se a pergunta é sobre trânsito ou caminho,
+    calcula os caminhos para o destino pedido e atualiza os trajetos salvos
+    (TomTom). Espera no máximo 10 s; falha não impede a conversa (o
+    contexto diz que não há dado)."""
     settings = get_settings()
     if not settings.enabled:
         return
@@ -182,14 +193,19 @@ async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
 
         if not rotas.configurado() or not rotas.pergunta_sobre_rotas(pergunta):
             return
-        await asyncio.wait_for(
-            asyncio.to_thread(
-                rotas.atualizar_para_pergunta,
-                _organizacao(request),
-                pergunta,
-                rotas.cliente_do_app(request.app),
-            ),
-            timeout=8,
+        # Localização do aparelho: só vem se a pessoa ligou na página Rotas;
+        # serve só para este pedido (não é guardada).
+        local = rotas.ler_local(request.headers.get("x-eden-local"))
+        store = _organizacao(request)
+        cliente = rotas.cliente_do_app(request.app)
+
+        def trabalho():
+            caminhos = rotas.preparar_caminhos(store, pergunta, cliente, local)
+            rotas.atualizar_para_pergunta(store, pergunta, cliente)
+            return caminhos
+
+        request.state.eden_caminhos = await asyncio.wait_for(
+            asyncio.to_thread(trabalho), timeout=10
         )
     except asyncio.TimeoutError:
         logger.warning("Éden: trajetos não atualizaram a tempo")

@@ -7,7 +7,7 @@ fala com o TomTom.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -79,3 +79,32 @@ async def tempos(request: Request, atualizar: bool = False):
         except rotas.ErroRotas as exc:
             saida.append({"trajeto": t, "erro": str(exc), "code": exc.codigo})
     return {"configurado": True, "tempos": saida}
+
+
+@router.get("/caminhos")
+async def caminhos(
+    request: Request,
+    trajeto: Optional[int] = None,
+    origem: str = "",
+    destino: str = "",
+    atualizar: bool = False,
+):
+    """Até 3 caminhos (com as vias principais) de um trajeto salvo ou entre
+    dois pontos ("lat,lon"). A localização mandada aqui não é guardada."""
+    cliente = rotas.cliente_do_app(request.app)
+    if trajeto is not None:
+        t = await _rodar(rotas.trajeto, _store(request), trajeto)
+        if t is None:
+            raise HTTPException(status_code=404, detail="Trajeto não encontrado")
+        de, para = t["origem"], t["destino"]
+    else:
+        de, para = rotas.ler_local(origem), rotas.ler_local(destino)
+        if de is None or para is None:
+            raise HTTPException(
+                status_code=400, detail="origem e destino precisam ser 'lat,lon'"
+            )
+    try:
+        r = await _rodar(cliente.caminhos, de, para, atualizar)
+    except rotas.ErroRotas as exc:
+        return _erro(exc)
+    return {"configurado": True, **r}
