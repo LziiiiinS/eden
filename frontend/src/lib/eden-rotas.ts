@@ -128,10 +128,10 @@ function semAcento(texto: string): string {
   return texto.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
-// Igual ao _ASSUNTO de src/openjarvis/eden/rotas.py: a localização só vai
-// quando a mensagem parece pergunta de caminho ou trânsito.
+// Igual ao _INTENCAO de src/openjarvis/eden/rotas.py: a localização só vai
+// quando a mensagem é pedido de caminho ("melhor rota pro…", "como chego…").
 const ASSUNTO =
-  /\b(transito|rota\w*|caminho\w*|engarraf\w*|congestion\w*|trajet\w*|demor\w*|chegar|chego|chegada|sair|saio|saida|distancia|estrada\w*|quanto tempo|de carro|vou pr\w*|ir pr\w*|ir para|ir ao|ir a)\b/;
+  /\b(rota\w*|caminho\w*|transito|trajet\w*|engarraf\w*|congestion\w*|de carro|como (?:eu )?cheg\w*|(?:chegar|chego|ir|vou|indo) (?:pra|pro|pras|pros|para|ao|aos|ate|no|na|em)|quanto tempo (?:ate|de carro))\b/;
 
 export function pareceRota(texto: string): boolean {
   return ASSUNTO.test(semAcento(texto));

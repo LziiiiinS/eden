@@ -393,6 +393,12 @@ def test_main_roads_ignore_short_and_bad_pieces():
         ("como está o trânsito?", None),
         ("trânsito na Avenida Brasil", None),
         ("resume esse documento para o cliente", None),
+        # Revisão: só pedido de caminho manda texto ao TomTom.
+        ("quanto tempo leva pra curar uma gripe?", None),
+        ("vou sair com a Ana hoje, me lembra de ligar pro João", None),
+        ("melhor caminho pra casa da minha mãe", "casa da minha mãe"),
+        ("rota pra minha casa", "casa"),
+        ("como chego na Rua das Flores, 123?", "Rua das Flores, 123"),
     ],
 )
 def test_destination_from_question(pergunta, lugar):
@@ -447,6 +453,7 @@ def test_without_origin_or_key(store, com_chave, monkeypatch):
     falso = TomTomFalso()
     r = rotas.preparar_caminhos(store, "melhor rota pro Recreio agora", _cliente(falso))
     assert r["erro"] == "sem_origem"
+    assert falso.pedidos == []  # sem partida, nem procura o lugar
     assert "usar minha localização" in rotas.secao_caminhos(r)
     monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
     assert (
@@ -491,3 +498,45 @@ def test_place_not_found_and_same_place(store, com_chave):
 )
 def test_device_location(valor, ok):
     assert (rotas.ler_local(valor) is not None) is ok
+
+
+def test_saved_place_matching():
+    assert not rotas._parecido("casa da minha mãe", "Casa")
+    assert rotas._parecido("posto 4 da Barra", "Posto 4")
+    assert rotas._parecido("barra", "Posto 4 Barra")
+    assert rotas._parecido("Trabalho", "trabalho")
+    assert not rotas._parecido("ca", "Casa")
+
+
+def test_mothers_house_is_not_my_house(store, com_chave):
+    _trajeto(store)  # Casa → Trabalho
+    falso = TomTomFalso()
+    r = rotas.preparar_caminhos(
+        store, "melhor caminho pra casa da minha mãe", _cliente(falso)
+    )
+    assert r["destino"]["nome"] != "Casa"
+    assert "/geocode/" in falso.pedidos[0][0]
+    assert 'Lugar pedido: "casa da minha mãe"' in rotas.secao_caminhos(r)
+
+
+def test_device_location_is_not_cached(store, com_chave):
+    rotas.criar_trajeto(store, {"origem": CASA, "destino": POSTO4})
+    falso = TomTomFalso()
+    cliente = _cliente(falso)
+    local = rotas.ler_local("-22.98,-43.2")
+    for _ in range(2):
+        rotas.preparar_caminhos(store, "rota pro posto 4", cliente, local)
+    assert len(falso.pedidos) == 2  # nada guardado com a localização
+    rotas.preparar_caminhos(store, "rota pro posto 4", cliente)
+    rotas.preparar_caminhos(store, "rota pro posto 4", cliente)
+    assert len(falso.pedidos) == 3  # da origem salva, guarda 5 min
+
+
+def test_summary_only_and_deadline(store, com_chave, monkeypatch):
+    falso = TomTomFalso()
+    _cliente(falso).caminhos(CASA, POSTO4)
+    assert falso.pedidos[0][1]["routeRepresentation"] == "summaryOnly"
+    _trajeto(store)
+    pergunta = "quanto tempo até o trabalho?"
+    feitos = rotas.atualizar_para_pergunta(store, pergunta, _cliente(falso), prazo=0)
+    assert feitos == 0

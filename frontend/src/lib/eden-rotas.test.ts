@@ -44,5 +44,8 @@ describe('caminhos', () => {
     expect(pareceRota('qual o caminho mais rápido')).toBe(true);
     expect(pareceRota('resume esse documento')).toBe(false);
     expect(pareceRota('anota uma tarefa')).toBe(false);
+    expect(pareceRota('quanto tempo leva pra curar uma gripe?')).toBe(false);
+    expect(pareceRota('vou sair com a Ana, me lembra de ligar pro João')).toBe(false);
+    expect(pareceRota('como chego no Recreio?')).toBe(true);
   });
 });

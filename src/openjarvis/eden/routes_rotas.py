@@ -92,8 +92,11 @@ async def caminhos(
     """Até 3 caminhos (com as vias principais) de um trajeto salvo ou entre
     dois pontos ("lat,lon"). A localização mandada aqui não é guardada."""
     cliente = rotas.cliente_do_app(request.app)
+    guardar = True
     if trajeto is not None:
-        t = await _rodar(rotas.trajeto, _store(request), trajeto)
+        t = None
+        if 0 < trajeto < 2**31:
+            t = await _rodar(rotas.trajeto, _store(request), trajeto)
         if t is None:
             raise HTTPException(status_code=404, detail="Trajeto não encontrado")
         de, para = t["origem"], t["destino"]
@@ -103,8 +106,14 @@ async def caminhos(
             raise HTTPException(
                 status_code=400, detail="origem e destino precisam ser 'lat,lon'"
             )
+        # Pode ser a localização do aparelho: não fica guardada.
+        guardar = False
+    if rotas.mesmo_lugar(de, para):
+        raise HTTPException(
+            status_code=400, detail="origem e destino são o mesmo lugar"
+        )
     try:
-        r = await _rodar(cliente.caminhos, de, para, atualizar)
+        r = await _rodar(cliente.caminhos, de, para, atualizar, guardar)
     except rotas.ErroRotas as exc:
         return _erro(exc)
     return {"configurado": True, **r}

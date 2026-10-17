@@ -96,3 +96,8 @@ def test_alternatives_endpoint(ambiente, monkeypatch):
     for ruim in ("origem=abc&destino=1,1", "origem=91,0&destino=1,1", ""):
         assert c.get(f"/v1/eden/rotas/caminhos?{ruim}", headers=AUTH).status_code == 400
     assert c.get("/v1/eden/rotas/caminhos?trajeto=1").status_code == 401
+    assert c.get(
+        "/v1/eden/rotas/caminhos?trajeto=9223372036854775808", headers=AUTH
+    ).status_code in (404, 422)
+    mesmo = "/v1/eden/rotas/caminhos?origem=-22.97,-43.18&destino=-22.9701,-43.1801"
+    assert c.get(mesmo, headers=AUTH).status_code == 400

@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
+import time
 from typing import Any, AsyncIterator, Optional, Tuple
 
 from starlette.responses import JSONResponse, Response, StreamingResponse
@@ -91,6 +93,25 @@ def _organizacao(request: Any):
         store = Organizacao()
         request.app.state.eden_organizacao = store
     return store
+
+
+_PRAZO_ROTAS_S = 10.0
+_POOL_ROTAS = None
+_POOL_ROTAS_LOCK = threading.Lock()
+
+
+def _pool_rotas():
+    """Poucos fios só para o TomTom: se ele travar, não ocupa os fios das
+    outras rotas do Éden."""
+    global _POOL_ROTAS
+    with _POOL_ROTAS_LOCK:
+        if _POOL_ROTAS is None:
+            from concurrent.futures import ThreadPoolExecutor
+
+            _POOL_ROTAS = ThreadPoolExecutor(
+                max_workers=2, thread_name_prefix="eden-rotas"
+            )
+        return _POOL_ROTAS
 
 
 def _caminhos_do_pedido(request: Any) -> Optional[dict]:
@@ -186,29 +207,40 @@ async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
         logger.exception("Éden: falha ao desarmar respostas de pesquisa")
     if request is None:
         return
+    # Pedido que vai ser recusado (modelo, ferramentas…) não gasta TomTom.
+    if _eden_gate(request_body, settings) is not None:
+        return
     ultima = _last_user(request_body)
     pergunta = ultima.content if ultima and isinstance(ultima.content, str) else None
-    try:
-        from openjarvis.eden import rotas
+    from openjarvis.eden import rotas
 
-        if not rotas.configurado() or not rotas.pergunta_sobre_rotas(pergunta):
-            return
-        # Localização do aparelho: só vem se a pessoa ligou na página Rotas;
-        # serve só para este pedido (não é guardada).
-        local = rotas.ler_local(request.headers.get("x-eden-local"))
+    if not rotas.configurado() or not rotas.pergunta_sobre_rotas(pergunta):
+        return
+    try:
+        # Localização do aparelho: só vem se a pessoa ligou na página Rotas,
+        # só vale para pedido de caminho e serve só para este pedido.
+        local = None
+        if rotas.pedido_de_caminho(pergunta):
+            local = rotas.ler_local(request.headers.get("x-eden-local"))
         store = _organizacao(request)
         cliente = rotas.cliente_do_app(request.app)
+        prazo = time.monotonic() + _PRAZO_ROTAS_S
 
         def trabalho():
             caminhos = rotas.preparar_caminhos(store, pergunta, cliente, local)
-            rotas.atualizar_para_pergunta(store, pergunta, cliente)
+            if time.monotonic() < prazo:
+                rotas.atualizar_para_pergunta(store, pergunta, cliente, prazo)
             return caminhos
 
+        loop = asyncio.get_running_loop()
         request.state.eden_caminhos = await asyncio.wait_for(
-            asyncio.to_thread(trabalho), timeout=10
+            loop.run_in_executor(_pool_rotas(), trabalho), timeout=_PRAZO_ROTAS_S
         )
     except asyncio.TimeoutError:
-        logger.warning("Éden: trajetos não atualizaram a tempo")
+        logger.warning("Éden: caminhos e trajetos não ficaram prontos a tempo")
+        lugar = rotas.destino_da_pergunta(pergunta)
+        if lugar:
+            request.state.eden_caminhos = {"lugar": lugar, "erro": "demorou demais"}
     except Exception:  # noqa: BLE001
         logger.exception("Éden: falha ao atualizar os trajetos")
 
