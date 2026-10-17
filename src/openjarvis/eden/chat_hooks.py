@@ -144,6 +144,7 @@ def _definir_pedido(request: Any, pergunta: Optional[str] = None) -> None:
                 pergunta=pergunta if isinstance(pergunta, str) else None,
                 caminhos=_caminhos_do_pedido(request),
                 voz=request.headers.get("x-eden-voz") == "1",
+                emails=_emails_do_pedido(request),
             )
         )
     except Exception:  # noqa: BLE001
@@ -186,6 +187,7 @@ def eden_system_extra() -> str:
             pergunta=pedido.pergunta,
             caminhos=pedido.caminhos,
             voz=pedido.voz,
+            emails=pedido.emails,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui montar o contexto")
@@ -217,6 +219,7 @@ async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
         return
     ultima = _last_user(request_body)
     pergunta = ultima.content if ultima and isinstance(ultima.content, str) else None
+    await _emails_para_pergunta(request, pergunta)
     from openjarvis.eden import rotas
 
     if not rotas.configurado() or not rotas.pergunta_sobre_rotas(pergunta):
@@ -248,6 +251,46 @@ async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
             request.state.eden_caminhos = {"lugar": lugar, "erro": "demorou demais"}
     except Exception:  # noqa: BLE001
         logger.exception("Éden: falha ao atualizar os trajetos")
+
+
+_PRAZO_EMAIL_S = 8.0
+
+
+async def _emails_para_pergunta(request: Any, pergunta: Optional[str]) -> None:
+    """Parte 5: pergunta sobre e-mail e Gmail ligado → lê os mais recentes
+    (só leitura, guardados 5 min) para o contexto."""
+    try:
+        from openjarvis.eden import gmail, google
+
+        if google.configuracao() is None or not gmail.pergunta_sobre_email(pergunta):
+            return
+        cliente = gmail.cliente_do_app(request.app)
+        if not await asyncio.to_thread(cliente.conectado):
+            return
+
+        def trabalho():
+            return {
+                "conta": gmail.conta_guardada(_organizacao(request)),
+                "lista": gmail.listar(cliente),
+            }
+
+        request.state.eden_emails = await asyncio.wait_for(
+            asyncio.to_thread(trabalho), timeout=_PRAZO_EMAIL_S
+        )
+    except asyncio.TimeoutError:
+        request.state.eden_emails = {"erro": "o Gmail demorou demais"}
+    except Exception as exc:  # noqa: BLE001
+        codigo = getattr(exc, "codigo", "")
+        logger.warning("Éden: não li os e-mails (%s)", codigo or type(exc).__name__)
+        request.state.eden_emails = {"erro": "o Gmail não respondeu agora"}
+
+
+def _emails_do_pedido(request: Any) -> Optional[dict]:
+    try:
+        valor = getattr(request.state, "eden_emails", None)
+    except Exception:  # noqa: BLE001
+        return None
+    return valor if isinstance(valor, dict) else None
 
 
 def prepare_chat(

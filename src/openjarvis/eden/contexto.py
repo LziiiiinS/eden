@@ -49,6 +49,7 @@ class PedidoEden:
     pergunta: Optional[str] = None  # última mensagem da pessoa
     caminhos: Optional[Dict[str, Any]] = None  # rotas.preparar_caminhos
     voz: bool = False  # modo conversa: a resposta vai ser ouvida
+    emails: Optional[Dict[str, Any]] = None  # Parte 5: e-mails recentes (Gmail)
 
 
 _pedido: contextvars.ContextVar[Optional[PedidoEden]] = contextvars.ContextVar(
@@ -194,6 +195,7 @@ def montar(
     pergunta: Optional[str] = None,
     caminhos: Optional[Dict[str, Any]] = None,
     voz: bool = False,
+    emails: Optional[Dict[str, Any]] = None,
 ) -> str:
     """``agenda``: retrato da Google Agenda em cache (``google.CACHE``).
     ``pergunta``: última mensagem da pessoa (o clima só entra se for sobre
@@ -338,6 +340,14 @@ def montar(
         if secao_docs:
             partes.append(secao_docs)
 
+    # E-mails recentes (Parte 5): só se a pergunta for sobre e-mail.
+    from openjarvis.eden.gmail import REGRAS_EMAIL
+    from openjarvis.eden.gmail import secao_contexto as secao_email
+
+    email_txt = secao_email(emails, tz)
+    if email_txt:
+        partes.append(email_txt)
+
     # As regras vêm por último, depois de todo dado de fora.
     partes.append(REGRAS_ACOES)
     if agenda and agenda.get("conectado"):
@@ -346,6 +356,8 @@ def montar(
         from openjarvis.eden.documentos import REGRAS_DOCUMENTOS
 
         partes.append(REGRAS_DOCUMENTOS)
+    if email_txt:
+        partes.append(REGRAS_EMAIL)
     if voz:
         partes.append(REGRAS_VOZ)
     return "\n\n".join(partes)

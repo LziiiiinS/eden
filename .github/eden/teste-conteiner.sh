@@ -140,6 +140,11 @@ codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: applic
 [ "$codigo" = "401" ] || { echo "error: voz sem a chave de acesso devolveu $codigo"; exit 1; }
 echo "ok: voz protegida pela chave de acesso"
 
+# E-mail (Gmail, só leitura): sem o Google configurado, não liga nada.
+com_chave "$BASE/v1/eden/email/status" | grep -q '"configurado":false' \
+  || { echo "error: e-mail diz que está configurado sem o Google"; exit 1; }
+echo "ok: e-mail desligado sem o Google configurado"
+
 docker restart eden-teste >/dev/null
 esperar
 com_chave "$BASE/v1/eden/conversations/c1" | grep -q '"m1"' || { echo "error: conversa sumiu depois de reiniciar"; exit 1; }

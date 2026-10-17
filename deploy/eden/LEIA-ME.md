@@ -119,6 +119,34 @@ Para desligar: **Configurações → Google Agenda → Desconectar**. Ao mudar o
 Éden para outro computador ou servidor, a ligação precisa ser feita de novo
 (a autorização não vai no backup).
 
+## E-mail (Gmail, só leitura)
+
+O Éden pode **ler** uma caixa do Gmail (pode ser uma conta separada, só para
+isso). Ele não manda, não apaga, não arquiva e não marca e-mails como lidos.
+Usa o mesmo projeto do Google da agenda (o `.env` não muda).
+
+Uma vez, no Google Cloud (console.cloud.google.com, no projeto do Éden):
+1. **APIs e serviços → Biblioteca**: procure **Gmail API** e toque em
+   **Ativar**.
+2. **Google Auth Platform → Acesso a dados → Adicionar ou remover escopos**:
+   marque **…/auth/gmail.readonly** ("ver suas mensagens de e-mail") e salve.
+
+Depois, no Éden:
+3. **Configurações → E-mail → Conectar e-mail**. Entre com a conta que o Éden
+   pode ler e marque a permissão de ver os e-mails.
+4. Como o app do Éden não é verificado pelo Google, aparece o aviso "O Google
+   não verificou este app": toque em **Avançado → Acessar Éden**. É o seu
+   próprio app.
+
+No dia a dia:
+- Menu **E-mail**: os e-mails dos últimos 7 dias, busca (ex.: `from:ana`,
+  `is:unread`), abrir um e-mail (só o texto) e **Usar na conversa** (vira
+  documento do espaço ativo).
+- Na conversa: "chegou e-mail do cliente?" — o Éden olha os mais recentes.
+- O que está escrito num e-mail é tratado como dado, nunca como ordem.
+- Para tirar o acesso: **Configurações → E-mail → Desconectar** (ou em
+  myaccount.google.com → Segurança → Apps de terceiros).
+
 ## Documentos na conversa
 
 No campo de mensagem, toque em **Documentos** → **Enviar arquivo** e escolha um

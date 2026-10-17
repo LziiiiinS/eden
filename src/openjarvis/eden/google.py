@@ -208,9 +208,9 @@ class Autorizacoes:
     def __init__(self, relogio: Callable[[], float] = time.monotonic) -> None:
         self._relogio = relogio
         self._lock = threading.Lock()
-        self._pendentes: Dict[str, Tuple[str, float]] = {}
+        self._pendentes: Dict[str, Tuple[str, float, str]] = {}
 
-    def criar(self) -> Tuple[str, str]:
+    def criar(self, tipo: str = "agenda") -> Tuple[str, str]:
         state = secrets.token_urlsafe(32)
         verificador = secrets.token_urlsafe(64)
         with self._lock:
@@ -222,17 +222,23 @@ class Autorizacoes:
             self._pendentes[_resumo(state)] = (
                 verificador,
                 agora + VALIDADE_AUTORIZACAO_S,
+                tipo,
             )
         return state, verificador
 
     def usar(self, state: Any) -> Optional[str]:
+        achado = self.usar_com_tipo(state)
+        return achado[0] if achado else None
+
+    def usar_com_tipo(self, state: Any) -> Optional[Tuple[str, str]]:
+        """(verificador, tipo) do pedido, uma vez só; None se não vale."""
         if not isinstance(state, str) or not 20 <= len(state) <= 200:
             return None
         with self._lock:
             item = self._pendentes.pop(_resumo(state), None)
         if item is None or item[1] <= self._relogio():
             return None
-        return item[0]
+        return item[0], item[2]
 
 
 def desafio_pkce(verificador: str) -> str:
@@ -241,11 +247,17 @@ def desafio_pkce(verificador: str) -> str:
 
 
 def url_de_autorizacao(
-    cfg: Dict[str, str], state: str, verificador: str, drive: bool = False
+    cfg: Dict[str, str],
+    state: str,
+    verificador: str,
+    drive: bool = False,
+    escopos: Optional[List[str]] = None,
 ) -> str:
     """``drive``: pede também a permissão de criar arquivos no Drive (só os
-    que o Éden cria). Sem ela, só a agenda."""
-    escopos = [ESCOPO_AGENDA, ESCOPO_DRIVE] if drive else [ESCOPO_AGENDA]
+    que o Éden cria). Sem ela, só a agenda. ``escopos``: outra lista (ex.: só
+    a leitura do e-mail)."""
+    if escopos is None:
+        escopos = [ESCOPO_AGENDA, ESCOPO_DRIVE] if drive else [ESCOPO_AGENDA]
     return (
         URL_AUTORIZAR
         + "?"
@@ -433,8 +445,10 @@ class ClienteGoogle:
         cfg: Optional[Dict[str, str]] = None,
         http: Any = None,
         relogio: Callable[[], float] = time.time,
+        nome: str = "Google Agenda",
     ) -> None:
         self.cofre = cofre
+        self.nome = nome
         self._cfg = cfg
         self._http = http
         self._relogio = relogio
@@ -491,7 +505,11 @@ class ClienteGoogle:
 
     # ligação
 
-    def trocar_codigo(self, codigo: str, verificador: str) -> None:
+    def trocar_codigo(
+        self, codigo: str, verificador: str, exigir: str = ESCOPO_AGENDA
+    ) -> None:
+        """``exigir``: a permissão sem a qual a ligação não vale (a agenda,
+        ou a leitura do e-mail)."""
         cfg = self.cfg
         resposta = self._rede(
             "POST",
@@ -510,10 +528,10 @@ class ClienteGoogle:
         dados = self._json(resposta)
         escopos = str(dados.get("scope", "")).split()
         refresh = dados.get("refresh_token")
-        if ESCOPO_AGENDA not in escopos:
+        if exigir not in escopos:
             raise ErroGoogle(
-                "A permissão da agenda não foi dada. Marque a caixa da agenda "
-                "na tela do Google.",
+                "A permissão não foi dada. Marque a caixa da permissão na tela "
+                "do Google.",
                 "eden_google_sem_permissao",
             )
         if not isinstance(refresh, str) or not refresh:
@@ -563,7 +581,8 @@ class ClienteGoogle:
         guardado = self.cofre.ler()
         if not guardado:
             raise ErroGoogle(
-                "A Google Agenda não está conectada.", "eden_google_desconectado"
+                f"A conta ({self.nome}) não está conectada.",
+                "eden_google_desconectado",
             )
         cfg = self.cfg
         resposta = self._rede(
@@ -886,13 +905,17 @@ def atualizar_cache(
     return cache.guardar(eventos, int(time.time() * 1000), geracao)
 
 
+def _organizacao_do_app(app):  # noqa: ANN001, ANN202
+    from openjarvis.eden.organizacao import get_organizacao
+
+    return getattr(app.state, "eden_organizacao", None) or get_organizacao()
+
+
 def cliente_do_app(app) -> ClienteGoogle:  # noqa: ANN001
     """Um cliente por servidor (guardado em app.state)."""
     atual = getattr(app.state, "eden_google", None)
     if atual is None:
-        from openjarvis.eden.organizacao import get_organizacao
-
-        store = getattr(app.state, "eden_organizacao", None) or get_organizacao()
+        store = _organizacao_do_app(app)
         atual = ClienteGoogle(Cofre(store))
         app.state.eden_google = atual
     return atual
