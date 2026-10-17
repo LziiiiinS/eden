@@ -81,6 +81,32 @@ docker exec eden-teste sh -c 'touch /tmp/teste && touch /dados/teste && rm /tmp/
   || { echo "error: /tmp e /dados deviam aceitar gravação"; exit 1; }
 echo "ok: programa só-leitura; dados e /tmp graváveis"
 
+# Documentos: um PDF de verdade, lido no processo separado (com limites)
+# dentro do contêiner só-leitura e sem permissões.
+python3 - <<'PY' > /tmp/eden-teste.pdf
+import io, sys
+conteudo = b"BT /F1 12 Tf 72 720 Td (Documento de teste do Eden) Tj ET"
+objetos = [
+    b"<< /Type /Catalog /Pages 2 0 R >>",
+    b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    b"<< /Length " + str(len(conteudo)).encode() + b" >>\nstream\n" + conteudo + b"\nendstream",
+]
+s = io.BytesIO(); s.write(b"%PDF-1.4\n"); pos = []
+for i, o in enumerate(objetos, 1):
+    pos.append(s.tell()); s.write(f"{i} 0 obj\n".encode() + o + b"\nendobj\n")
+x = s.tell(); s.write(f"xref\n0 {len(objetos)+1}\n0000000000 65535 f \n".encode())
+for p in pos: s.write(f"{p:010d} 00000 n \n".encode())
+s.write(f"trailer\n<< /Size {len(objetos)+1} /Root 1 0 R >>\nstartxref\n{x}\n%%EOF\n".encode())
+sys.stdout.buffer.write(s.getvalue())
+PY
+resposta=$(com_chave -X POST -H 'X-Eden-Nome: teste.pdf' -H 'Content-Type: application/pdf' \
+  --data-binary @/tmp/eden-teste.pdf "$BASE/v1/eden/documentos?espaco=pessoal")
+echo "$resposta" | grep -q 'Documento de teste do Eden' \
+  || { echo "error: o PDF não foi lido no contêiner: $resposta"; exit 1; }
+echo "ok: documento PDF lido (processo separado, contêiner só-leitura)"
+
 docker restart eden-teste >/dev/null
 esperar
 com_chave "$BASE/v1/eden/conversations/c1" | grep -q '"m1"' || { echo "error: conversa sumiu depois de reiniciar"; exit 1; }

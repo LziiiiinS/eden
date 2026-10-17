@@ -295,7 +295,21 @@ def montar(
                 )
             partes.append("## Sugestões feitas nesta conversa\n" + "\n".join(linhas))
 
+    # Documentos que a pessoa anexou a esta conversa (só deste espaço).
+    secao_docs = ""
+    if conversa_id:
+        from openjarvis.eden.documentos import secao_contexto
+
+        secao_docs = secao_contexto(store, conversa_id, espaco)
+        if secao_docs:
+            partes.append(secao_docs)
+
+    # As regras vêm por último, depois de todo dado de fora.
     partes.append(REGRAS_ACOES)
     if agenda and agenda.get("conectado"):
         partes.append(REGRAS_AGENDA)
+    if secao_docs:
+        from openjarvis.eden.documentos import REGRAS_DOCUMENTOS
+
+        partes.append(REGRAS_DOCUMENTOS)
     return "\n\n".join(partes)
