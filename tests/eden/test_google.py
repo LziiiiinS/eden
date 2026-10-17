@@ -70,6 +70,8 @@ class GoogleFalso:
         self.refresh = "refresh-secreto"
         self.revogar_falha = False
         self.rede_falha = None  # exceção a lançar no próximo pedido de agenda
+        self.drive = {}  # id → arquivo/pasta
+        self.uploads = []
 
     def _anotar(self, metodo, url, **kw):
         assert urlparse(url).hostname in HOSTS_GOOGLE, url
@@ -94,8 +96,10 @@ class GoogleFalso:
             return Resposta(400 if self.revogar_falha else 200, {})
         raise AssertionError(url)
 
-    def request(self, metodo, url, headers=None, params=None, json=None):
-        self._anotar(metodo, url, headers=headers, params=params, json=json)
+    def request(self, metodo, url, headers=None, params=None, json=None, content=None):
+        self._anotar(
+            metodo, url, headers=headers, params=params, json=json, content=content
+        )
         assert headers["Authorization"].startswith("Bearer acesso-")
         if self.rede_falha is not None:
             erro, self.rede_falha = self.rede_falha, None
@@ -103,6 +107,8 @@ class GoogleFalso:
         if self.expirar_proximo_acesso:
             self.expirar_proximo_acesso = False
             return Resposta(401, {"error": "expired"})
+        if url.startswith(google.URL_DRIVE) or url == google.URL_DRIVE_UPLOAD:
+            return self._drive(metodo, url, headers, json, content)
         if metodo == "GET" and url == google.URL_AGENDA:
             return Resposta(200, {"items": list(self.eventos.values())})
         if metodo == "POST" and url == google.URL_AGENDA:
@@ -121,6 +127,35 @@ class GoogleFalso:
             self.eventos[evento_id].update(json)
             return Resposta(200, self.eventos[evento_id])
         raise AssertionError((metodo, url))
+
+
+def _drive_falso(self, metodo, url, headers, corpo_json, content):
+    if metodo == "POST" and url == google.URL_DRIVE:
+        novo = f"pasta{len(self.drive) + 1:06d}"
+        self.drive[novo] = dict(corpo_json, id=novo, trashed=False)
+        return Resposta(200, {"id": novo})
+    if metodo == "GET" and url.startswith(google.URL_DRIVE + "/"):
+        item = self.drive.get(url.rsplit("/", 1)[1])
+        if item is None:
+            return Resposta(404, {"error": "notFound"})
+        return Resposta(200, {"id": item["id"], "trashed": item["trashed"]})
+    if metodo == "POST" and url == google.URL_DRIVE_UPLOAD:
+        assert headers["Content-Type"].startswith("multipart/related; boundary=")
+        self.uploads.append(content)
+        novo = f"arquivo{len(self.drive) + 1:06d}"
+        self.drive[novo] = {"id": novo, "trashed": False}
+        return Resposta(
+            200,
+            {
+                "id": novo,
+                "name": "x",
+                "webViewLink": f"https://docs.google.com/document/d/{novo}/edit",
+            },
+        )
+    raise AssertionError((metodo, url))
+
+
+GoogleFalso._drive = _drive_falso
 
 
 @pytest.fixture
@@ -748,3 +783,75 @@ def test_context_labels_invites_and_hides_long_ids(store):
     texto = montar(store, "pessoal", TZ, AGORA, agenda=agenda)
     assert "[conv1]" in texto and "convite ainda não aceito" in texto
     assert longo not in texto and '"Festa"' in texto
+
+
+# ── Google Drive (salvar a folha) ────────────────────────────────────────
+
+
+def test_drive_permission_is_asked_only_when_wanted():
+    so_agenda = parse_qs(urlparse(google.url_de_autorizacao(CFG, "e" * 40, "v")).query)
+    assert so_agenda["scope"] == [google.ESCOPO_AGENDA]
+    com_drive = parse_qs(
+        urlparse(google.url_de_autorizacao(CFG, "e" * 40, "v", drive=True)).query
+    )
+    assert com_drive["scope"][0].split() == [google.ESCOPO_AGENDA, google.ESCOPO_DRIVE]
+
+
+def test_save_needs_drive_permission(cliente, falso):
+    _ligar(cliente)
+    assert google.tem_drive(cliente.cofre) is False
+    with pytest.raises(google.ErroGoogle) as exc:
+        google.salvar_no_drive(cliente, "Plano", "<h1>Plano</h1>")
+    assert exc.value.codigo == "eden_google_sem_drive"
+    assert falso.uploads == []
+
+
+def test_save_creates_the_folder_once_and_uploads_a_doc(cliente, falso):
+    falso.escopo = f"{google.ESCOPO_AGENDA} {google.ESCOPO_DRIVE}"
+    _ligar(cliente)
+    assert google.tem_drive(cliente.cofre) is True
+    salvo = google.salvar_no_drive(cliente, "Plano\nda semana", "<h1>Olá</h1>")
+    assert salvo["nome"] == "Plano da semana"
+    assert salvo["link"].startswith("https://docs.google.com/")
+    pastas = [d for d in falso.drive.values() if d.get("name") == "Éden"]
+    assert len(pastas) == 1
+    assert pastas[0]["mimeType"] == "application/vnd.google-apps.folder"
+    corpo = falso.uploads[0].decode()
+    assert '"mimeType": "application/vnd.google-apps.document"' in corpo
+    assert f'"parents": ["{pastas[0]["id"]}"]' in corpo
+    assert "<h1>Olá</h1>" in corpo
+    # Segunda vez: usa a mesma pasta.
+    google.salvar_no_drive(cliente, "Outro", "<p>x</p>")
+    assert len([d for d in falso.drive.values() if d.get("name") == "Éden"]) == 1
+    # Pasta foi para a lixeira: cria outra.
+    pastas[0]["trashed"] = True
+    google.salvar_no_drive(cliente, "Mais um", "<p>y</p>")
+    assert len([d for d in falso.drive.values() if d.get("name") == "Éden"]) == 2
+
+
+def test_save_checks_title_and_size(cliente, falso, monkeypatch):
+    falso.escopo = f"{google.ESCOPO_AGENDA} {google.ESCOPO_DRIVE}"
+    _ligar(cliente)
+    for titulo, html in (("", "<p>x</p>"), ("T", ""), ("T", None)):
+        with pytest.raises(google.ErroGoogle) as exc:
+            google.salvar_no_drive(cliente, titulo, html)
+        assert exc.value.codigo == "eden_google_dados"
+    monkeypatch.setattr(google, "MAX_HTML_DRIVE", 10)
+    with pytest.raises(google.ErroGoogle):
+        google.salvar_no_drive(cliente, "T", "<p>" + "x" * 20 + "</p>")
+    assert falso.uploads == []
+
+
+def test_drive_links_from_elsewhere_are_dropped(cliente, falso, monkeypatch):
+    falso.escopo = f"{google.ESCOPO_AGENDA} {google.ESCOPO_DRIVE}"
+    _ligar(cliente)
+    original = GoogleFalso._drive
+
+    def link_estranho(self, *args):
+        resposta = original(self, *args)
+        if "webViewLink" in resposta._dados:
+            resposta._dados["webViewLink"] = "https://evil.example/x"
+        return resposta
+
+    monkeypatch.setattr(GoogleFalso, "_drive", link_estranho)
+    assert google.salvar_no_drive(cliente, "T", "<p>x</p>")["link"] is None

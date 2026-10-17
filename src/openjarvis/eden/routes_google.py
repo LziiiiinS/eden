@@ -51,21 +51,24 @@ async def status(request: Request):
     cfg = google.configuracao()
     endereco = endereco_celular()
     conectado = False
+    drive = False
     if cfg is not None:
-        conectado = await asyncio.to_thread(
-            google.cliente_do_app(request.app).conectado
-        )
+        cliente = google.cliente_do_app(request.app)
+        conectado = await asyncio.to_thread(cliente.conectado)
+        drive = conectado and await asyncio.to_thread(google.tem_drive, cliente.cofre)
     retrato = google.CACHE.retrato()
     return {
         "configurado": cfg is not None,
         "conectado": conectado,
+        "drive": drive,
         "endereco_retorno": (endereco + google.CAMINHO_RETORNO) if endereco else None,
         "atualizado_em": retrato["atualizado_em"] if conectado else None,
     }
 
 
 @router.post("/conectar")
-async def conectar(request: Request):
+async def conectar(request: Request, drive: bool = False):
+    """``drive=true``: pede também a permissão de salvar no Drive."""
     cfg = google.configuracao()
     if cfg is None:
         raise HTTPException(
@@ -74,7 +77,7 @@ async def conectar(request: Request):
         )
     state, verificador = _autorizacoes(request).criar()
     return JSONResponse(
-        {"url": google.url_de_autorizacao(cfg, state, verificador)},
+        {"url": google.url_de_autorizacao(cfg, state, verificador, drive=drive)},
         headers=_SEM_GUARDAR,
     )
 
@@ -154,3 +157,44 @@ async def atualizar(request: Request):
         )
     em = google.CACHE.retrato()["atualizado_em"]
     return {"conectado": ligado, "atualizado_em": em}
+
+
+MAX_CORPO_DRIVE = google.MAX_HTML_DRIVE + 64 * 1024
+
+
+@router.post("/drive/salvar")
+async def salvar_no_drive(request: Request):
+    """A pessoa tocou em "Salvar no Google Drive" na folha (e confirmou)."""
+    import json
+
+    pedacos = []
+    tamanho = 0
+    async for pedaco in request.stream():
+        tamanho += len(pedaco)
+        if tamanho > MAX_CORPO_DRIVE:
+            raise HTTPException(
+                status_code=413, detail="Folha grande demais (até 2 MB)"
+            )
+        pedacos.append(pedaco)
+    try:
+        dados = json.loads(b"".join(pedacos) or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="JSON inválido") from None
+    if not isinstance(dados, dict):
+        raise HTTPException(status_code=400, detail="JSON inválido")
+    if google.configuracao() is None:
+        raise HTTPException(status_code=409, detail="O Google não está configurado.")
+    cliente = google.cliente_do_app(request.app)
+    try:
+        salvo = await asyncio.to_thread(
+            google.salvar_no_drive, cliente, dados.get("titulo"), dados.get("html")
+        )
+    except google.ErroGoogle as exc:
+        status = 400 if exc.codigo == "eden_google_dados" else 409
+        if exc.codigo not in ("eden_google_dados", "eden_google_sem_drive"):
+            status = 502
+        return JSONResponse(
+            status_code=status, content={"detail": str(exc), "code": exc.codigo}
+        )
+    logger.info("Éden: folha salva no Google Drive")
+    return {"ok": True, **salvo}

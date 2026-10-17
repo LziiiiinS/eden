@@ -13,6 +13,8 @@ export interface EventoAgenda {
 export interface StatusAgenda {
   configurado: boolean;
   conectado: boolean;
+  /** Pode salvar folhas no Drive (só os arquivos que o Éden cria). */
+  drive?: boolean;
   endereco_retorno: string | null;
   atualizado_em: number | null;
 }
@@ -21,14 +23,24 @@ export function statusAgenda(): Promise<StatusAgenda> {
   return edenJson<StatusAgenda>('/google/status');
 }
 
-export async function urlParaConectar(): Promise<string> {
-  const { url } = await edenJson<{ url: string }>('/google/conectar', { method: 'POST' });
+export async function urlParaConectar(drive = false): Promise<string> {
+  const { url } = await edenJson<{ url: string }>(`/google/conectar${drive ? '?drive=true' : ''}`, {
+    method: 'POST',
+  });
   // Só segue para o endereço de autorização do próprio Google.
   const destino = new URL(url);
   if (destino.protocol !== 'https:' || destino.hostname !== 'accounts.google.com') {
     throw new Error('Endereço de autorização inesperado.');
   }
   return destino.toString();
+}
+
+/** Salva a folha como Google Docs na pasta "Éden" do Drive. */
+export function salvarNoDrive(titulo: string, html: string) {
+  return edenJson<{ ok: boolean; id: string; nome: string; link: string | null }>('/google/drive/salvar', {
+    method: 'POST',
+    body: { titulo, html },
+  });
 }
 
 export function desconectarAgenda(): Promise<{ ok: boolean; revogado?: boolean }> {

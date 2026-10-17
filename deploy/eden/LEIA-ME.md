@@ -60,14 +60,16 @@ precisa de cartão. Faça no notebook.
 2. Abra **https://console.cloud.google.com** com a sua conta do Google e crie
    um projeto chamado `Eden`.
 3. No menu, abra **APIs e serviços → Biblioteca**, procure
-   **Google Calendar API** e clique em **Ativar**.
+   **Google Calendar API** e clique em **Ativar**. Se quiser salvar folhas no
+   Drive, ative também a **Google Drive API**.
 4. Abra **Google Auth Platform** (ou "Tela de consentimento OAuth"):
    - **Branding**: nome do app `Éden` e o seu e-mail.
    - **Público (Audience)**: tipo **Externo**. Depois clique em **Publicar o
      app** (Em produção). Assim a ligação não cai a cada 7 dias. O Google
      avisa que o app não foi verificado; para uso só seu, não precisa.
    - **Acesso a dados (Data access)**: adicione o escopo
-     `.../auth/calendar.events`.
+     `.../auth/calendar.events` e, para o Drive, também `.../auth/drive.file`
+     (só os arquivos que o Éden criar).
 5. Em **Clientes**, clique em **Criar cliente**:
    - tipo **Aplicativo da Web**, nome `Éden`;
    - em **URIs de redirecionamento autorizados**, cole o endereço do passo 1;
@@ -87,6 +89,12 @@ dado (nunca como ordem), marca "convite ainda não aceito" e ignora convites
 recusados. Para reduzir convites estranhos: no Google Agenda, **Configurações →
 Configurações de eventos → Adicionar convites à minha agenda → "Somente se o
 remetente for conhecido"**.
+
+**Salvar folhas no Drive (opcional):** em **Configurações → Google Agenda**,
+toque em **Permitir salvar no Drive** e marque as duas caixas na tela do
+Google. Depois, na folha de uma resposta, aparece **Salvar no Drive**: vira um
+Google Docs numa pasta "Éden" do seu Drive. O Éden só enxerga os arquivos que
+ele mesmo cria.
 
 Para desligar: **Configurações → Google Agenda → Desconectar**. Ao mudar o
 Éden para outro computador ou servidor, a ligação precisa ser feita de novo

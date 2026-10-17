@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Download, Pencil, Printer, X } from 'lucide-react';
+import { Download, FolderUp, Pencil, Printer, X } from 'lucide-react';
+import { salvarNoDrive, statusAgenda } from '../../lib/eden-agenda';
 import { SafeImage, SafeLink } from './EdenSafeMarkdown';
 import {
   FOLHA_PAGE_RULE,
@@ -121,6 +122,10 @@ export function EdenPageView({ content, onClose }: Props) {
   const [texto, setTexto] = useState(content);
   const [editando, setEditando] = useState(false);
   const [aviso, setAviso] = useState('');
+  // Éden (Parte 3): salvar no Google Drive, se a pessoa tiver permitido.
+  const [driveOk, setDriveOk] = useState(false);
+  const [noDrive, setNoDrive] = useState<{ texto: string; link: string | null } | null>(null);
+  const [salvandoDrive, setSalvandoDrive] = useState(false);
   const hoje = useMemo(() => new Date(), []);
   const deck = useMemo(() => splitSlides(texto), [texto]);
   const titulo = modo === 'slides' ? deck.titulo : pageTitle(texto);
@@ -133,6 +138,35 @@ export function EdenPageView({ content, onClose }: Props) {
     window.addEventListener('keydown', tecla);
     return () => window.removeEventListener('keydown', tecla);
   }, [onClose]);
+
+  useEffect(() => {
+    let ativo = true;
+    statusAgenda()
+      .then((s) => {
+        if (ativo) setDriveOk(Boolean(s.conectado && s.drive));
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const salvarDrive = async () => {
+    if (!conteudoRef.current) return;
+    if (!window.confirm(`Salvar "${titulo}" como Google Docs na pasta "Éden" do seu Drive?`)) return;
+    setAviso('');
+    setNoDrive(null);
+    setSalvandoDrive(true);
+    try {
+      const html = buildPageHtml(titulo, htmlParaArquivo(conteudoRef.current), hoje);
+      const r = await salvarNoDrive(titulo, html);
+      setNoDrive({ texto: `Salvo no Drive (pasta Éden): ${r.nome}.`, link: r.link });
+    } catch (e) {
+      setAviso((e as Error).message || 'Não consegui salvar no Drive.');
+    } finally {
+      setSalvandoDrive(false);
+    }
+  };
 
   useEffect(() => {
     // O título vira o nome sugerido do PDF.
@@ -258,6 +292,12 @@ export function EdenPageView({ content, onClose }: Props) {
           <Printer size={14} />
           Imprimir ou salvar PDF
         </button>
+        {driveOk && modo === 'folha' && (
+          <button type="button" onClick={() => void salvarDrive()} disabled={salvandoDrive} className={botao} style={botaoNormal}>
+            <FolderUp size={14} />
+            {salvandoDrive ? 'Salvando…' : 'Salvar no Drive'}
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}
@@ -276,6 +316,16 @@ export function EdenPageView({ content, onClose }: Props) {
         {aviso && (
           <p className="w-full text-xs" role="alert" style={{ color: 'var(--color-warning)' }}>
             {aviso}
+          </p>
+        )}
+        {noDrive && (
+          <p className="w-full text-xs" role="status" style={{ color: 'var(--color-success)' }}>
+            {noDrive.texto}{' '}
+            {noDrive.link && (
+              <a href={noDrive.link} target="_blank" rel="noopener noreferrer" className="underline">
+                Abrir no Google Docs
+              </a>
+            )}
           </p>
         )}
         {editando && (
