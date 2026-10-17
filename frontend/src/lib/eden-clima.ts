@@ -114,6 +114,29 @@ export function corVento(knots: number | null): string {
   return 'rgba(230, 70, 70, 0.40)';
 }
 
+/** Uma linha do dia: "chuva fraca, 18–24 °C, chuva 60% · vento até 16 nós de SE". */
+export function resumoDoDia(d: DiaClima): string {
+  const partes: string[] = [];
+  const tempo = descricaoTempo(d.codigo);
+  if (tempo) partes.push(tempo);
+  partes.push(`${numero(d.min)}–${numero(d.max)} °C`);
+  partes.push(`chuva ${numero(d.chuva_prob)}%`);
+  return `${partes.join(', ')} · vento até ${nos(d.vento_kmh) ?? '–'} nós de ${rumo(d.vento_dir)}`;
+}
+
+/** Ondas de hoje numa praia: "ondas até 1,5 m (9 s, de SE)" ou null. */
+export function ondasDoDia(p: Pick<Previsao, 'horas' | 'dias' | 'mar'>): string | null {
+  if (!p.mar || p.dias.length === 0) return null;
+  const hoje = p.dias[0].dia;
+  let maior: HoraClima | null = null;
+  for (const h of p.horas) {
+    if (!h.hora.startsWith(hoje) || h.ondas_m === null || h.ondas_m === undefined) continue;
+    if (maior === null || (h.ondas_m ?? 0) > (maior.ondas_m ?? 0)) maior = h;
+  }
+  if (!maior) return null;
+  return `ondas até ${numero(maior.ondas_m, 1)} m (${numero(maior.ondas_s)} s, de ${rumo(maior.ondas_dir)})`;
+}
+
 export const statusClima = () =>
   edenJson<{ ligado: boolean; lugares: Lugar[]; fonte: string }>('/clima/status');
 export const ligarClima = (ligado: boolean) =>

@@ -3,7 +3,8 @@
 // "Pedir um plano ao Éden" leva o pedido para a conversa.
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CalendarCheck, CalendarDays, MessageSquare, Pin } from 'lucide-react';
+import { CalendarCheck, CalendarDays, CloudSun, MessageSquare, Pin } from 'lucide-react';
+import { ondasDoDia, previsaoDoLugar, resumoDoDia, statusClima } from '../lib/eden-clima';
 import { EdenSpaceSelect } from '../components/Chat/EdenSpaceSelect';
 import { Badge, EdenPage, EdenSection, Empty, ErrorLine, PrimaryButton } from '../components/Eden/EdenUi';
 import { LinhaTarefa } from './EdenTasksPage';
@@ -15,6 +16,53 @@ function saudacao(agora: Date): string {
   if (h < 12) return 'Bom dia';
   if (h < 18) return 'Boa tarde';
   return 'Boa noite';
+}
+
+// Éden (Parte 4): uma linha de clima do lugar principal e das praias (só se
+// o clima estiver ligado; usa a previsão guardada no servidor).
+function ClimaDoDia() {
+  const [linhas, setLinhas] = useState<{ nome: string; texto: string }[]>([]);
+
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const s = await statusClima();
+        if (!s.ligado || s.lugares.length === 0) return;
+        const principal = s.lugares.find((l) => l.principal) ?? s.lugares[0];
+        const praias = s.lugares.filter((l) => l.tipo === 'praia' && l.id !== principal.id).slice(0, 2);
+        const saida: { nome: string; texto: string }[] = [];
+        for (const lugar of [principal, ...praias]) {
+          const p = await previsaoDoLugar(lugar.id);
+          const dia = p.dias[0];
+          if (!dia) continue;
+          const ondas = ondasDoDia(p);
+          saida.push({
+            nome: lugar.nome,
+            texto: lugar.tipo === 'praia' && ondas ? `${ondas} · ${resumoDoDia(dia)}` : resumoDoDia(dia),
+          });
+        }
+        if (ativo) setLinhas(saida);
+      } catch {
+        // Sem clima agora: a página Hoje segue sem essa linha.
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  if (linhas.length === 0) return null;
+  return (
+    <ul className="flex flex-col gap-0.5 text-xs -mt-1" aria-label="Clima de hoje">
+      {linhas.map((l) => (
+        <li key={l.nome} style={{ color: 'var(--color-text-secondary)' }}>
+          <CloudSun size={12} className="inline mr-1 -mt-0.5" />
+          <span style={{ color: 'var(--color-text)' }}>{l.nome}:</span> {l.texto}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export const PEDIDO_PLANO =
@@ -92,6 +140,7 @@ export function EdenTodayPage() {
           </>
         )}
       </p>
+      <ClimaDoDia />
       <ErrorLine message={erro} />
 
       {resumo === null ? (
