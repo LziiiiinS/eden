@@ -8,6 +8,9 @@ import { EdenPushSettings } from '../components/Eden/EdenPushSettings';
 import { EdenGoogleSettings } from '../components/Eden/EdenGoogleSettings';
 import { EdenNotionSettings } from '../components/Eden/EdenNotionSettings';
 import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
+import { EdenAparelhosSettings } from '../components/Eden/EdenAparelhosSettings';
+import { criarAparelho } from '../lib/eden-aparelhos';
+import { ErroEden } from '../lib/eden-org';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
@@ -129,6 +132,9 @@ function PairingCodeBlock() {
 function ConnectPhone({ apiKey }: { apiKey: string }) {
   const [phoneUrl, setPhoneUrl] = useState(initialPhoneUrl);
   const [showQr, setShowQr] = useState(false);
+  // Parte 5: o QR leva uma chave só para o celular novo (não a principal).
+  const [qrKey, setQrKey] = useState<string | null>(null);
+  const [qrErro, setQrErro] = useState<string | null>(null);
   const [automatico, setAutomatico] = useState(false);
   const reachable = isPhoneReachableUrl(phoneUrl);
   const phoneUrlRef = useRef(phoneUrl);
@@ -212,20 +218,42 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
         <button
           type="button"
           disabled={!reachable}
-          onClick={() => setShowQr((v) => !v)}
+          onClick={async () => {
+            if (showQr) {
+              setShowQr(false);
+              return;
+            }
+            setQrErro(null);
+            try {
+              setQrKey((await criarAparelho('Celular (QR code)')).chave);
+            } catch (e) {
+              if (e instanceof ErroEden && e.status === 404) {
+                setQrKey(apiKey); // servidor antigo, sem chave por aparelho
+              } else {
+                setQrErro((e as Error).message);
+                return;
+              }
+            }
+            setShowQr(true);
+          }}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs cursor-pointer disabled:opacity-40 disabled:cursor-default"
           style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent, white)' }}
         >
           <Smartphone size={14} />
           {showQr ? 'Esconder QR code' : 'Mostrar QR code'}
         </button>
-        {showQr && reachable && (
+        {qrErro && (
+          <p className="text-xs" role="alert" style={{ color: 'var(--color-error)' }}>
+            {qrErro}
+          </p>
+        )}
+        {showQr && reachable && qrKey && (
           <div className="flex flex-col items-center gap-2 self-center">
-            <EdenPhoneQr text={buildPhoneLink(phoneUrl, apiKey)} />
+            <EdenPhoneQr text={buildPhoneLink(phoneUrl, qrKey)} />
             <p className="text-xs text-center max-w-xs" style={{ color: 'var(--color-warning)' }}>
-              Este QR code leva a sua chave de acesso. Mostre só para os seus aparelhos, não
-              fotografe nem mande para ninguém. Ele some sozinho em 5 minutos (é só tocar no botão
-              de novo para ver outra vez).
+              Este QR code leva uma chave de acesso só para o celular novo (aparece em Aparelhos
+              ligados, onde dá para desligar). Mostre só para os seus aparelhos, não fotografe nem
+              mande para ninguém. Ele some sozinho em 5 minutos.
             </p>
           </div>
         )}
@@ -450,6 +478,12 @@ export function EdenSettingsPage() {
         {settings.apiKey && (
           <Section title="Conectar um celular">
             <ConnectPhone apiKey={settings.apiKey} />
+          </Section>
+        )}
+
+        {settings.apiKey && (
+          <Section title="Aparelhos ligados">
+            <EdenAparelhosSettings />
           </Section>
         )}
 

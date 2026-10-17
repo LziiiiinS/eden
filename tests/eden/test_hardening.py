@@ -187,7 +187,8 @@ def test_pairing_code_works_on_the_real_eden_server(tmp_path):
         assert client.get("/v1/eden/conversations").status_code == 401
         codigo = client.post("/v1/eden/pareamento", headers=auth).json()["codigo"]
         r = client.post("/v1/eden/pareamento/usar", json={"codigo": codigo})
-        assert r.status_code == 200 and r.json() == {"chave": chave}
+        # Parte 5: chave só do aparelho (não a principal).
+        assert r.status_code == 200 and r.json()["chave"].startswith("oj_ap_")
         # Um site de fora não recebe autorização para mandar o pedido.
         pre = client.options(
             "/v1/eden/pareamento/usar",

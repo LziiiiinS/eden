@@ -327,6 +327,14 @@ def main() -> int:
         )
         assert status == 400, f"o código valeu duas vezes ({status})"
         passo("o código não vale uma segunda vez")
+
+        # Parte 5: o celular ganhou uma chave só dele, que aparece na lista.
+        status, lista = api("GET", "/v1/eden/aparelhos")
+        assert status == 200 and len(lista["aparelhos"]) == 1, lista
+        aparelho = lista["aparelhos"][0]
+        status, _ = api("DELETE", f"/v1/eden/aparelhos/{aparelho['id']}")
+        assert status == 200, f"não desligou o aparelho ({status})"
+        passo(f"chave por aparelho: {aparelho['nome']} listado e desligado")
         navegador.close()
 
     for aviso in avisos:

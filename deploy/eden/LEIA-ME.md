@@ -49,6 +49,23 @@ chave de acesso de novo. Escreva numa janela e veja a conversa aparecer na outra
   **Mostrar código**; no iPhone, toque em **Tenho um código do notebook** e
   digite o código (vale 5 minutos e serve uma vez só).
 
+## Aparelhos ligados (chave por aparelho)
+
+Cada celular ligado pelo **código curto** ou pelo **QR code** recebe uma chave
+só dele. Em **Configurações → Aparelhos ligados** aparecem todos, com o último
+uso.
+
+- Perdeu um celular? No notebook, toque em **Desligar** ao lado dele. Ele
+  perde o acesso na hora; os outros continuam.
+- Só o notebook (chave principal) cria códigos, QR codes e chaves novas. Um
+  celular pode desligar só a si mesmo.
+- Celular ligado antes desta versão usa a chave principal: nele, em
+  **Configurações → Aparelhos ligados**, toque em **Usar uma chave só deste
+  aparelho**. Quando todos tiverem chave própria, dá para trocar a chave
+  principal (veja "Segurança") sem desligar ninguém.
+- Chave criada e nunca usada (por exemplo, um QR code que ninguém leu) some
+  sozinha depois de 1 dia.
+
 ## Ligar a Google Agenda
 
 O Éden lê os seus eventos e sugere eventos novos ou mudanças, sempre com o

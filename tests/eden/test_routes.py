@@ -122,10 +122,23 @@ def test_phone_address_comes_only_from_a_tailscale_https_address(client, monkeyp
 CHAVE = "oj_sk_teste_do_pareamento_123"
 
 
+@pytest.fixture(autouse=True)
+def _aparelhos_isolados(tmp_path):
+    from openjarvis.eden import aparelhos
+
+    reg = aparelhos.Aparelhos(tmp_path / "aparelhos.db")
+    aparelhos.definir_registro(reg)
+    yield reg
+    aparelhos.definir_registro(None)
+    reg.close()
+
+
 def _app_com_chave(tmp_path, chave=CHAVE):
+    from openjarvis.eden.routes_aparelhos import router as aparelhos_router
     from openjarvis.server.auth_middleware import AuthMiddleware
 
     app = FastAPI()
+    app.include_router(aparelhos_router)
     app.state.api_key = chave
     app.state.eden_conversations = ConversationStore(tmp_path / "conv.db")
     app.include_router(router)
@@ -144,10 +157,20 @@ def test_pairing_code_gives_the_key_once(tmp_path):
     assert criado.headers["cache-control"] == "no-store"
     codigo = criado.json()["codigo"]
     # O aparelho sem chave troca o código pela chave.
-    r = c.post("/v1/eden/pareamento/usar", json={"codigo": codigo.lower()})
+    r = c.post(
+        "/v1/eden/pareamento/usar",
+        json={"codigo": codigo.lower()},
+        headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)"},
+    )
     assert r.status_code == 200
-    assert r.json() == {"chave": CHAVE}
+    # Parte 5: o aparelho recebe uma chave só dele, não a principal.
+    chave_aparelho = r.json()["chave"]
+    assert chave_aparelho.startswith("oj_ap_") and chave_aparelho != CHAVE
     assert r.headers["cache-control"] == "no-store"
+    meu = {"Authorization": f"Bearer {chave_aparelho}"}
+    assert c.get("/v1/eden/conversations", headers=meu).status_code == 200
+    lista = c.get("/v1/eden/aparelhos", headers=meu).json()
+    assert lista["aparelhos"][0]["nome"] == "iPhone" and lista["eu"] is not None
     # Uso único.
     r = c.post("/v1/eden/pareamento/usar", json={"codigo": codigo})
     assert r.status_code == 400
@@ -261,3 +284,32 @@ def test_pairing_reads_at_most_one_kilobyte(tmp_path):
         headers={"Content-Type": "application/json"},
     )
     assert r.status_code in (400, 413)
+
+
+def test_device_keys_can_be_turned_off_one_by_one(tmp_path):
+    c = _app_com_chave(tmp_path)
+    principal = {"Authorization": f"Bearer {CHAVE}"}
+    a = c.post("/v1/eden/aparelhos", json={"nome": "iPhone"}, headers=principal).json()
+    b = c.post("/v1/eden/aparelhos", json={"nome": "Samsung"}, headers=principal).json()
+    auth_a = {"Authorization": f"Bearer {a['chave']}"}
+    auth_b = {"Authorization": f"Bearer {b['chave']}"}
+    assert c.get("/v1/eden/conversations", headers=auth_a).status_code == 200
+    # Um aparelho não cria chaves nem códigos, e não desliga outro.
+    assert c.post("/v1/eden/aparelhos", json={}, headers=auth_a).status_code == 403
+    assert c.post("/v1/eden/pareamento", headers=auth_a).status_code == 403
+    assert c.delete(f"/v1/eden/aparelhos/{b['id']}", headers=auth_a).status_code == 403
+    # O notebook (chave principal) desliga o iPhone; o Samsung continua.
+    assert (
+        c.delete(f"/v1/eden/aparelhos/{a['id']}", headers=principal).status_code == 200
+    )
+    assert c.get("/v1/eden/conversations", headers=auth_a).status_code == 401
+    assert c.get("/v1/eden/conversations", headers=auth_b).status_code == 200
+    # Um aparelho pode desligar a si mesmo.
+    assert c.delete(f"/v1/eden/aparelhos/{b['id']}", headers=auth_b).status_code == 200
+    assert c.get("/v1/eden/conversations", headers=auth_b).status_code == 401
+    assert c.delete("/v1/eden/aparelhos/999", headers=principal).status_code == 404
+    lista = c.get("/v1/eden/aparelhos", headers=principal).json()
+    assert lista == {"aparelhos": [], "eu": None}
+    # Chave inventada no formato certo não entra.
+    falsa = {"Authorization": "Bearer oj_ap_" + "A" * 48}
+    assert c.get("/v1/eden/conversations", headers=falsa).status_code == 401
