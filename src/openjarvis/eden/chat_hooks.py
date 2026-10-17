@@ -127,9 +127,9 @@ def _caracteres_documentos() -> int:
     if pedido is None or pedido.store is None or not pedido.conversa_id:
         return 0
     try:
-        from openjarvis.eden.documentos import caracteres_no_contexto
+        from openjarvis.eden.documentos import bytes_no_contexto
 
-        return caracteres_no_contexto(pedido.store, pedido.conversa_id, pedido.espaco)
+        return bytes_no_contexto(pedido.store, pedido.conversa_id, pedido.espaco)
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui medir os documentos anexados")
         return 0
@@ -196,7 +196,12 @@ def prepare_chat(
             settings.max_output_tokens,
         )
     if provider in TRACKED_PROVIDERS:
-        chars = sum(len(m.content or "") for m in request_body.messages or [])
+        # Em bytes UTF-8: emoji e outras escritas gastam mais tokens por
+        # caractere (estimar por caractere deixava a reserva curta).
+        chars = sum(
+            len(m.content.encode("utf-8")) if isinstance(m.content, str) else 0
+            for m in request_body.messages or []
+        )
         if settings.enabled:
             # Os documentos anexados entram no contexto: contam na reserva.
             chars += _caracteres_documentos()

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -42,7 +43,11 @@ TIPOS_LUGAR = ("cidade", "praia")
 MAX_LUGARES = 10
 MAX_NOME_LUGAR = 60
 TEMPO_LIMITE_S = 10.0
+TEMPO_TOTAL_S = 20.0  # prazo da chamada inteira (não só de cada etapa)
 MAX_RESPOSTA = 2 * 1024 * 1024
+# Coordenadas no pedido com 2 casas (~1 km): o Open-Meteo não precisa do
+# endereço exato (as grades dos modelos são de quilômetros).
+CASAS_NO_PEDIDO = 2
 DIAS = 3
 CACHE_S = 30 * 60
 CACHE_CONTEXTO_S = 6 * 3600  # na conversa, aceita previsão de até 6 h
@@ -306,11 +311,43 @@ def _numero(valor: Any) -> Optional[float]:
     return numero if math.isfinite(numero) else None
 
 
+# Faixas plausíveis: fora delas, o valor vira vazio (nada de 1e308 no
+# contexto da IA).
+_FAIXAS = {
+    "temperature_2m": (-90, 60),
+    "temperature_2m_max": (-90, 60),
+    "temperature_2m_min": (-90, 60),
+    "precipitation_probability": (0, 100),
+    "precipitation_probability_max": (0, 100),
+    "precipitation": (0, 500),
+    "precipitation_sum": (0, 2000),
+    "weather_code": (0, 99),
+    "wind_speed_10m": (0, 400),
+    "wind_speed_10m_max": (0, 400),
+    "wind_gusts_10m": (0, 500),
+    "wind_gusts_10m_max": (0, 500),
+    "wind_direction_10m": (0, 360),
+    "wind_direction_10m_dominant": (0, 360),
+    "wave_height": (0, 40),
+    "swell_wave_height": (0, 40),
+    "wave_period": (0, 60),
+    "swell_wave_period": (0, 60),
+    "wave_direction": (0, 360),
+    "swell_wave_direction": (0, 360),
+}
+
+
 def _serie(bloco: Any, nome: str, tamanho: int) -> List[Optional[float]]:
     valores = bloco.get(nome) if isinstance(bloco, dict) else None
     if not isinstance(valores, list):
         return [None] * tamanho
-    saida = [_numero(v) for v in valores[:tamanho]]
+    minimo, maximo = _FAIXAS.get(nome, (-1e6, 1e6))
+    saida = []
+    for v in valores[:tamanho]:
+        numero = _numero(v)
+        saida.append(
+            numero if numero is not None and minimo <= numero <= maximo else None
+        )
     return saida + [None] * (tamanho - len(saida))
 
 
@@ -405,21 +442,40 @@ class ClienteClima:
     def _get(self, url: str, params: Dict[str, Any]) -> Dict[str, Any]:
         if url not in (URL_PREVISAO, URL_MAR, URL_BUSCA):
             raise ErroClima("endereço não permitido")
+        inicio = time.monotonic()
         try:
-            resposta = self._cliente_http().get(url, params=params)
+            # Lê em pedaços, contando: para no teto (sem descompactar, com
+            # Accept-Encoding: identity) e no prazo total.
+            with self._cliente_http().stream(
+                "GET", url, params=params, headers={"Accept-Encoding": "identity"}
+            ) as resposta:
+                if resposta.status_code != 200:
+                    raise ErroClima(
+                        "O serviço de previsão recusou o pedido "
+                        f"({resposta.status_code})."
+                    )
+                pedacos = []
+                tamanho = 0
+                for pedaco in resposta.iter_bytes():
+                    tamanho += len(pedaco)
+                    if tamanho > MAX_RESPOSTA:
+                        raise ErroClima(
+                            "Resposta grande demais do serviço de previsão."
+                        )
+                    if time.monotonic() - inicio > TEMPO_TOTAL_S:
+                        raise ErroClima(
+                            "O serviço de previsão demorou demais.", "eden_clima_rede"
+                        )
+                    pedacos.append(pedaco)
+        except ErroClima:
+            raise
         except Exception as exc:  # noqa: BLE001 - rede, tempo esgotado
             raise ErroClima(
                 "Sem resposta do serviço de previsão agora.", "eden_clima_rede"
             ) from exc
-        if resposta.status_code != 200:
-            raise ErroClima(
-                f"O serviço de previsão recusou o pedido ({resposta.status_code})."
-            )
-        if len(resposta.content or b"") > MAX_RESPOSTA:
-            raise ErroClima("Resposta grande demais do serviço de previsão.")
         try:
-            dados = resposta.json()
-        except ValueError as exc:
+            dados = json.loads(b"".join(pedacos))
+        except (ValueError, RecursionError) as exc:
             raise ErroClima("Resposta estranha do serviço de previsão.") from exc
         if not isinstance(dados, dict):
             raise ErroClima("Resposta estranha do serviço de previsão.")
@@ -462,8 +518,8 @@ class ClienteClima:
             if guardada is not None:
                 return guardada
         base = {
-            "latitude": item["latitude"],
-            "longitude": item["longitude"],
+            "latitude": round(item["latitude"], CASAS_NO_PEDIDO),
+            "longitude": round(item["longitude"], CASAS_NO_PEDIDO),
             "timezone": "auto",
             "forecast_days": DIAS,
         }

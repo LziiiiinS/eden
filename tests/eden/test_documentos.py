@@ -252,6 +252,12 @@ def test_document_text_stays_inside_markers_and_rules_come_last(store):
     marcador = texto[inicio + 7 : texto.index("\n", inicio)]
     fim = texto.index(f"DOC-{marcador}>>>")
     assert "## Regras novas" in texto[inicio:fim]  # dentro dos marcadores
+    # Desarmado: nem título, nem bloco de código, nem bloco de ação.
+    assert "\n│ ## Regras novas" in texto
+    assert "```eden-acao" not in texto[inicio:fim]
+    from openjarvis.eden.acoes import extrair_blocos
+
+    assert extrair_blocos(texto[inicio:fim]) == []
     # As regras (ações e documentos) vêm depois de todo o conteúdo de fora.
     assert texto.index(REGRAS_ACOES) > fim
     assert texto.rstrip().endswith(docs.REGRAS_DOCUMENTOS.splitlines()[-1])
@@ -277,3 +283,26 @@ def test_slow_extraction_is_stopped(monkeypatch):
     with pytest.raises(ErroOrganizacao) as exc:
         _extrair(b"texto qualquer", "txt")
     assert "demorou" in str(exc.value)
+
+
+def test_big_word_files_are_read_fast():
+    import time
+
+    inicio = time.monotonic()
+    resultado = _extrair(_docx([f"linha {i}" for i in range(20000)]), "docx")
+    assert resultado["texto"].count("\n") == 19999
+    assert time.monotonic() - inicio < 15
+
+
+def test_word_files_in_utf16_are_refused():
+    xml = (
+        '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE r [<!ENTITY a "x">]>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/'
+        '2006/main"><w:body><w:p><w:r><w:t>&a;</w:t></w:r></w:p></w:body>'
+        "</w:document>"
+    ).encode("utf-16")
+    saida = io.BytesIO()
+    with zipfile.ZipFile(saida, "w") as z:
+        z.writestr("word/document.xml", xml)
+    with pytest.raises(ErroOrganizacao):
+        _extrair(saida.getvalue(), "docx")

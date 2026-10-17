@@ -249,7 +249,7 @@ export function EdenDocumentos({ conversaId, garantirConversa, disabled = false 
                     <button
                       type="button"
                       onClick={() => void (emUso ? desanexar(d) : anexar(d))}
-                      disabled={disabled || (!emUso && anexadosAqui.length >= porConversa)}
+                      disabled={disabled || (!emUso && anexados.length >= porConversa)}
                       aria-pressed={emUso}
                       className="px-2 py-1 rounded-md text-[11px] cursor-pointer disabled:cursor-default disabled:opacity-50 shrink-0"
                       style={{

@@ -173,6 +173,9 @@ export function EdenGoogleSettings() {
               <Unlink size={12} /> Desconectar
             </GhostButton>
           </div>
+          <p className={texto} style={cor}>
+            Suspeita de vazamento? Toque em Desconectar (o Google retira o acesso) e conecte de novo.
+          </p>
           {status.drive ? (
             <p className={texto} style={cor}>
               Google Drive: o Éden pode salvar folhas na pasta "Éden" (só enxerga os arquivos que ele mesmo
