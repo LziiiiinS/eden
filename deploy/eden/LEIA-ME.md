@@ -106,6 +106,21 @@ conversa).
 - O que está escrito num documento é tratado como dado, nunca como ordem.
 - Para apagar de vez: **Documentos** → lixeira.
 
+## Clima, vento e ondas
+
+No menu, **Clima e ondas**. Começa desligado; ao tocar em **Ligar**, o Éden
+passa a consultar o **Open-Meteo** (grátis para uso pessoal, sem conta e sem
+chave). Só vão as coordenadas dos lugares que você cadastrar.
+
+- **Cidade:** busque pelo nome e toque em **+ cidade**.
+- **Praia ou pico:** busque pelo nome ou, para um pico exato, no Google Maps
+  toque e segure no mar perto do pico, copie os números (ex.: `-27.6025,
+  -48.4320`), cole em **Coordenadas** e toque em **Adicionar praia**.
+- A estrela marca o lugar principal (o que o Éden usa quando você pergunta
+  "vai chover amanhã?" sem dizer onde).
+- A tabela mostra vento e rajadas em nós, ondas e swell (altura e período),
+  temperatura e chuva, de 3 em 3 horas, por 3 dias.
+
 ## Segurança
 
 - O `.env` tem as chaves. Não mande esse arquivo para ninguém, não cole as

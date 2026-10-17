@@ -6,7 +6,8 @@ confere, como uma pessoa faria:
 3. o ícone de folha abre a resposta como folha e como slides, o texto pode
    ser editado e o arquivo salvo não tem scripts; as páginas da organização
    (tarefas, notas, hoje, memória) e as Configurações abrem;
-   um documento enviado pelo clipe é lido e anexado à conversa;
+   um documento enviado pelo clipe é lido e anexado à conversa; a página
+   Clima começa desligada e liga pelo botão;
 4. um "aparelho novo" entra com o código curto (iPhone pela tela de início),
    e o código não vale uma segunda vez;
 5. nenhuma regra de segurança da página (CSP) bloqueou nada e não houve erro
@@ -238,6 +239,20 @@ def main() -> int:
             else:
                 pg.wait_for_load_state("networkidle")
             passo(f"página {caminho} abriu")
+
+        # Clima (Parte 4): começa desligado; ligar não chama o Open-Meteo
+        # (só busca e previsão chamam, e aqui nenhum lugar é cadastrado).
+        pg.goto(BASE + "/clima")
+        ligar = pg.get_by_role("button", name="Ligar clima e ondas")
+        expect(ligar).to_be_visible(timeout=30_000)
+        ligar.click()
+        expect(pg.get_by_text("Nenhum lugar ainda")).to_be_visible(timeout=30_000)
+        expect(pg.get_by_label("Coordenadas")).to_be_visible()
+        status, estado = api("GET", "/v1/eden/clima/status")
+        assert status == 200 and estado["ligado"] is True, estado
+        status, _ = api("POST", "/v1/eden/clima/ligar", {"ligado": False})
+        assert status == 200
+        passo("Clima: desligado no começo, liga pela página")
 
         pg.goto(BASE + "/settings")
         expect(pg.get_by_role("heading", name="Configurações")).to_be_visible(

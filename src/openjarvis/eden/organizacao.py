@@ -161,6 +161,15 @@ CREATE TABLE IF NOT EXISTS conversa_documentos (
     criado_em    INTEGER NOT NULL,
     PRIMARY KEY (conversa_id, documento_id)
 );
+CREATE TABLE IF NOT EXISTS lugares (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome      TEXT    NOT NULL,
+    tipo      TEXT    NOT NULL,
+    latitude  REAL    NOT NULL,
+    longitude REAL    NOT NULL,
+    principal INTEGER NOT NULL DEFAULT 0,
+    criado_em INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS push_inscricoes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint   TEXT    NOT NULL UNIQUE,
