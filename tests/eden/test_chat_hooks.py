@@ -202,9 +202,13 @@ def test_route_question_gets_alternatives_in_the_context(eden, tmp_path, monkeyp
         state=SimpleNamespace(),
     )
     corpo = SimpleNamespace(
+        model="eden-auto",
+        stream=True,
+        tools=None,
+        tool_choice=None,
         messages=[
             SimpleNamespace(role="user", content="melhor rota agora pro posto 4?")
-        ]
+        ],
     )
     asyncio.run(antes_da_conversa(corpo, request))
     caminhos = _caminhos_do_pedido(request)

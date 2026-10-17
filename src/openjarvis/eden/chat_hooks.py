@@ -208,7 +208,10 @@ async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
     if request is None:
         return
     # Pedido que vai ser recusado (modelo, ferramentas…) não gasta TomTom.
-    if _eden_gate(request_body, settings) is not None:
+    try:
+        if _eden_gate(request_body, settings) is not None:
+            return
+    except Exception:  # noqa: BLE001 — corpo estranho: o portão de verdade recusa depois
         return
     ultima = _last_user(request_body)
     pergunta = ultima.content if ultima and isinstance(ultima.content, str) else None
