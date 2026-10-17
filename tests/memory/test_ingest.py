@@ -57,12 +57,17 @@ def test_read_document_utf8_fallback(tmp_path: Path):
 def test_read_document_pdf_missing_dep(tmp_path: Path):
     p = tmp_path / "doc.pdf"
     p.write_bytes(b"%PDF-1.4 fake pdf content")
-    # Should raise ImportError when pdfplumber not installed
-    # or succeed if it IS installed — either way just check it's handled
+    # Without pdfplumber: ImportError naming it. With pdfplumber installed
+    # (the Éden image and CI install the "pdf" extra), the fake PDF is
+    # rejected by the parser instead.
     try:
-        read_document(p)
-    except ImportError as exc:
-        assert "pdfplumber" in str(exc)
+        import pdfplumber  # noqa: F401
+    except ImportError:
+        with pytest.raises(ImportError, match="pdfplumber"):
+            read_document(p)
+    else:
+        with pytest.raises(Exception, match="PDF"):
+            read_document(p)
 
 
 def test_read_document_not_found(tmp_path: Path):
