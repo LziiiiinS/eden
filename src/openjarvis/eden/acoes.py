@@ -70,7 +70,12 @@ TIPOS = (
     "tarefa.concluir",
     "tarefa.apagar",
     "nota.criar",
+    "agenda.criar",
+    "agenda.editar",
 )
+# Ações que mexem fora do Éden (Google): executadas fora da transação do banco.
+TIPOS_EXTERNOS = ("agenda.criar", "agenda.editar")
+MAX_LOCAL_AGENDA = 200
 
 _BLOCO = re.compile(r"```[ \t]*eden-acao[ \t]*\r?\n(.*?)```", re.DOTALL)
 # Bloco aberto que a resposta não fechou (resposta cortada).
@@ -160,6 +165,7 @@ def validar(
     store: Organizacao,
     espaco_ativo: str,
     hoje: date,
+    agenda: Optional[Dict[str, Any]] = None,
 ) -> Proposta:
     """Confere um bloco (já lido como JSON) e devolve a proposta normalizada."""
     if not isinstance(bruto, dict):
@@ -305,6 +311,9 @@ def validar(
         resumo = f"Mudar a tarefa {_aspas(tarefa['titulo'])}: " + "; ".join(partes)
         return Proposta(tipo, params, resumo)
 
+    if tipo in ("agenda.criar", "agenda.editar"):
+        return _validar_agenda(tipo, bruto, hoje, agenda)
+
     # nota.criar
     _so_campos(bruto, ("texto", "titulo", "tipo_nota", "espaco"))
     txt = texto(bruto.get("texto"), "texto", MAX_IA_TEXTO_NOTA)
@@ -322,6 +331,123 @@ def validar(
     return Proposta(tipo, params, resumo)
 
 
+def _duracao(valor: Any) -> int:
+    if valor in (None, ""):
+        return 60
+    duracao = inteiro(valor, "duracao_min")
+    if not 5 <= duracao <= 24 * 60:
+        raise ErroOrganizacao("'duracao_min' precisa ser de 5 a 1440 minutos")
+    return duracao
+
+
+def _texto_duracao(minutos: int) -> str:
+    if minutos % 60 == 0:
+        return f"{minutos // 60} h"
+    if minutos > 60:
+        return f"{minutos // 60} h {minutos % 60} min"
+    return f"{minutos} min"
+
+
+def _quando_evento(evento: Dict[str, Any], hoje: date) -> str:
+    from datetime import datetime as _dt
+
+    inicio = _dt.fromisoformat(evento["inicio"])
+    hora = None if evento.get("dia_inteiro") else inicio.strftime("%H:%M")
+    return resumo_data(inicio.date().isoformat(), hora, hoje)
+
+
+def _validar_agenda(
+    tipo: str, bruto: Dict[str, Any], hoje: date, agenda: Optional[Dict[str, Any]]
+) -> Proposta:
+    if not agenda or not agenda.get("conectado"):
+        raise ErroOrganizacao("a Google Agenda não está conectada")
+    if tipo == "agenda.criar":
+        _so_campos(bruto, ("titulo", "data", "hora", "duracao_min", "local"))
+        titulo = texto(bruto.get("titulo"), "titulo", MAX_TITULO, uma_linha=True)
+        data = data_iso(bruto.get("data"))
+        if not data:
+            raise ErroOrganizacao("o evento precisa de uma data")
+        hora = hora_hhmm(bruto.get("hora"))
+        duracao = _duracao(bruto.get("duracao_min")) if hora else None
+        local = texto(
+            bruto.get("local"),
+            "local",
+            MAX_LOCAL_AGENDA,
+            obrigatorio=False,
+            uma_linha=True,
+        )
+        params = {
+            "titulo": titulo,
+            "data": data,
+            "hora": hora,
+            "duracao_min": duracao,
+            "local": local,
+        }
+        quando = resumo_data(data, hora, hoje)
+        if hora:
+            quando += f" ({_texto_duracao(duracao)})"
+        else:
+            quando += " (dia inteiro)"
+        resumo = f"Criar na Google Agenda: {_aspas(titulo)} — {quando}"
+        if local:
+            resumo += f" · local {_aspas(local)}"
+        return Proposta(tipo, params, resumo)
+
+    # agenda.editar
+    _so_campos(bruto, ("id", "titulo", "data", "hora", "duracao_min", "local"))
+    evento_id = bruto.get("id")
+    eventos = agenda.get("eventos") or {}
+    if not isinstance(evento_id, str) or evento_id not in eventos:
+        raise ErroOrganizacao("evento não encontrado na agenda dos próximos dias")
+    evento = eventos[evento_id]
+    mudancas: Dict[str, Any] = {}
+    partes: List[str] = []
+    if "titulo" in bruto:
+        mudancas["titulo"] = texto(
+            bruto["titulo"], "titulo", MAX_TITULO, uma_linha=True
+        )
+        partes.append(f"título → {_aspas(mudancas['titulo'])}")
+    if "data" in bruto:
+        mudancas["data"] = data_iso(bruto["data"])
+        if not mudancas["data"]:
+            raise ErroOrganizacao("'data' não pode ficar vazia")
+    if "hora" in bruto:
+        mudancas["hora"] = hora_hhmm(bruto["hora"])
+        if not mudancas["hora"]:
+            raise ErroOrganizacao("'hora' não pode ficar vazia")
+    if "data" in mudancas or "hora" in mudancas:
+        from datetime import datetime as _dt
+
+        inicio = _dt.fromisoformat(evento["inicio"])
+        nova_data = mudancas.get("data") or inicio.date().isoformat()
+        nova_hora = mudancas.get("hora") or (
+            None if evento.get("dia_inteiro") else inicio.strftime("%H:%M")
+        )
+        partes.append(f"para {resumo_data(nova_data, nova_hora, hoje)}")
+    if "duracao_min" in bruto:
+        mudancas["duracao_min"] = _duracao(bruto["duracao_min"])
+        partes.append(f"duração → {_texto_duracao(mudancas['duracao_min'])}")
+    if "local" in bruto:
+        mudancas["local"] = texto(
+            bruto["local"],
+            "local",
+            MAX_LOCAL_AGENDA,
+            obrigatorio=False,
+            uma_linha=True,
+        )
+        partes.append(
+            f"local → {_aspas(mudancas['local'])}" if mudancas["local"] else "sem local"
+        )
+    if not mudancas:
+        raise ErroOrganizacao("nada para mudar no evento")
+    params = {"id": evento_id, "titulo_atual": evento["titulo"], "mudancas": mudancas}
+    resumo = (
+        f"Mudar na Google Agenda {_aspas(evento['titulo'])} "
+        f"({_quando_evento(evento, hoje)}): " + "; ".join(partes)
+    )
+    return Proposta(tipo, params, resumo)
+
+
 def propor(
     resposta: str,
     store: Organizacao,
@@ -329,9 +455,11 @@ def propor(
     tz: timezone,
     conversa_id: Optional[str] = None,
     agora: Optional[int] = None,
+    agenda: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Lê os blocos da resposta, cria as ações pendentes e devolve
-    (ações criadas, motivos das recusadas)."""
+    (ações criadas, motivos das recusadas). ``agenda``: retrato da Google
+    Agenda em cache ({"conectado", "eventos": {id: evento}})."""
     agora = agora or agora_ms()
     hoje = local_de_ms(agora, tz).date()
     blocos = extrair_blocos(resposta)
@@ -371,7 +499,7 @@ def propor(
                 raise ErroOrganizacao(
                     "não deu para ler a ação (JSON inválido)"
                 ) from exc
-            proposta = validar(bruto, store, espaco_ativo, hoje)
+            proposta = validar(bruto, store, espaco_ativo, hoje, agenda)
         except ErroOrganizacao as exc:
             recusadas.append(str(exc))
             continue
@@ -492,6 +620,7 @@ def _decidir(
         Callable[[sqlite3.Connection, str, Dict[str, Any]], Dict[str, Any]]
     ],
     agora: int,
+    externo: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     if not isinstance(acao_id, str) or not re.match(r"^[A-Za-z0-9_-]{8,64}$", acao_id):
         raise ErroAcao("ação não encontrada", 404, "eden_acao_nao_encontrada")
@@ -527,6 +656,19 @@ def _decidir(
         # Confere de novo a assinatura do que está gravado.
         if assinatura(row["tipo"], params, row["resumo"]) != row["assinatura"]:
             raise ErroAcao("ação guardada inconsistente", 409, "eden_acao_assinatura")
+        if row["tipo"] in TIPOS_EXTERNOS:
+            # Fora do Éden (Google): marca "executando" (uso único) e faz a
+            # chamada depois, sem segurar o banco.
+            cur = conn.execute(
+                "UPDATE acoes SET estado = 'executando', decidido_em = ? "
+                "WHERE id = ? AND estado = 'pendente'",
+                (agora, acao_id),
+            )
+            if cur.rowcount != 1:
+                raise ErroAcao(
+                    "essa ação já foi decidida", 409, "eden_acao_ja_decidida"
+                )
+            return {"__externo__": [row["tipo"], params]}
         cur = conn.execute(
             "UPDATE acoes SET estado = 'feita', decidido_em = ? "
             "WHERE id = ? AND estado = 'pendente'",
@@ -542,7 +684,7 @@ def _decidir(
         return resultado
 
     try:
-        store.transacao(fazer)
+        pronto = store.transacao(fazer)
     except ErroOrganizacao as exc:
         # Ex.: a tarefa foi apagada entre a sugestão e a confirmação. A
         # transação voltou atrás; marca a ação como falha (uso único).
@@ -557,7 +699,49 @@ def _decidir(
 
         store.transacao(falhou)
         raise ErroAcao(f"não deu para fazer: {exc}", 409, "eden_acao_falhou") from exc
+    if isinstance(pronto, dict) and "__externo__" in pronto:
+        tipo, params = pronto["__externo__"]
+        _executar_fora(store, acao_id, tipo, params, externo, agora_ms())
     return store.acao(acao_id)  # type: ignore[return-value]
+
+
+def _executar_fora(
+    store: Organizacao,
+    acao_id: str,
+    tipo: str,
+    params: Dict[str, Any],
+    externo: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]],
+    agora: int,
+) -> None:
+    from openjarvis.eden.google import ErroGoogle
+
+    try:
+        if externo is None:
+            raise ErroOrganizacao("a Google Agenda não está conectada")
+        resultado = externo(tipo, params)
+    except (ErroOrganizacao, ErroGoogle) as exc:
+        erro = json.dumps({"erro": str(exc)})
+        store.transacao(
+            lambda conn: conn.execute(
+                "UPDATE acoes SET estado = 'falhou', resultado = ? "
+                "WHERE id = ? AND estado = 'executando'",
+                (erro, acao_id),
+            )
+        )
+        raise ErroAcao(f"não deu para fazer: {exc}", 409, "eden_acao_falhou") from exc
+
+    def gravar(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "UPDATE acoes SET estado = 'feita', resultado = ? "
+            "WHERE id = ? AND estado = 'executando'",
+            (json.dumps(resultado), acao_id),
+        )
+        o_que = "criou evento" if tipo == "agenda.criar" else "mudou evento"
+        Organizacao._registrar(
+            conn, "eden", o_que, f"agenda:{resultado.get('evento')}", acao_id
+        )
+
+    store.transacao(gravar)
 
 
 def confirmar(
@@ -566,14 +750,33 @@ def confirmar(
     assinatura_app: Optional[str],
     tz: timezone,
     agora: Optional[int] = None,
+    google: Any = None,
 ) -> Dict[str, Any]:
+    """``google``: cliente da Google Agenda (para as ações agenda.*)."""
     agora = agora or agora_ms()
+
+    def externo(tipo: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        from openjarvis.eden.google import mudancas_do_evento
+
+        if google is None:
+            raise ErroOrganizacao("a Google Agenda não está conectada")
+        if tipo == "agenda.criar":
+            return google.criar(params, tz)
+        # agenda.editar: o evento que o cartão mostrou continua igual?
+        atual = google.evento(params["id"], tz)
+        if atual["titulo"] != params["titulo_atual"]:
+            raise ErroOrganizacao("o evento mudou depois da sugestão; peça de novo")
+        return google.editar(
+            params["id"], mudancas_do_evento(atual, params["mudancas"], tz), tz
+        )
+
     return _decidir(
         store,
         acao_id,
         assinatura_app,
         lambda conn, tipo, params: _executar(store, conn, tipo, params, tz, acao_id),
         agora,
+        externo,
     )
 
 

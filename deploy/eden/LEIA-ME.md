@@ -49,6 +49,42 @@ chave de acesso de novo. Escreva numa janela e veja a conversa aparecer na outra
   **Mostrar código**; no iPhone, toque em **Tenho um código do notebook** e
   digite o código (vale 5 minutos e serve uma vez só).
 
+## Ligar a Google Agenda
+
+O Éden lê os seus eventos e sugere eventos novos ou mudanças, sempre com o
+cartão de confirmação. Ele pede **só a permissão da agenda**. É grátis e não
+precisa de cartão. Faça no notebook.
+
+1. No Éden: **Configurações → Google Agenda**. Copie o **endereço de retorno**
+   que aparece lá (termina em `/v1/eden/google/retorno`).
+2. Abra **https://console.cloud.google.com** com a sua conta do Google e crie
+   um projeto chamado `Eden`.
+3. No menu, abra **APIs e serviços → Biblioteca**, procure
+   **Google Calendar API** e clique em **Ativar**.
+4. Abra **Google Auth Platform** (ou "Tela de consentimento OAuth"):
+   - **Branding**: nome do app `Éden` e o seu e-mail.
+   - **Público (Audience)**: tipo **Externo**. Depois clique em **Publicar o
+     app** (Em produção). Assim a ligação não cai a cada 7 dias. O Google
+     avisa que o app não foi verificado; para uso só seu, não precisa.
+   - **Acesso a dados (Data access)**: adicione o escopo
+     `.../auth/calendar.events`.
+5. Em **Clientes**, clique em **Criar cliente**:
+   - tipo **Aplicativo da Web**, nome `Éden`;
+   - em **URIs de redirecionamento autorizados**, cole o endereço do passo 1;
+   - crie e copie o **ID do cliente** e a **chave secreta do cliente**.
+6. Abra o `.env` desta pasta no Bloco de Notas e acrescente, no fim:
+   `GOOGLE_CLIENT_ID=` (cole o ID) e, na linha de baixo,
+   `GOOGLE_CLIENT_SECRET=` (cole a chave secreta). Salve. **Não mande esses
+   valores para ninguém.**
+7. Rode o `iniciar-eden`.
+8. No Éden: **Configurações → Google Agenda → Conectar**. Entre na sua conta.
+   No aviso "o Google não verificou este app", toque em **Avançado → Acessar
+   Éden**. Marque a caixa da **agenda** e continue.
+
+Para desligar: **Configurações → Google Agenda → Desconectar**. Ao mudar o
+Éden para outro computador ou servidor, a ligação precisa ser feita de novo
+(a autorização não vai no backup).
+
 ## Segurança
 
 - O `.env` tem as chaves. Não mande esse arquivo para ninguém, não cole as

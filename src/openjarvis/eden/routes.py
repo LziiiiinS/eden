@@ -9,8 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import re
 import threading
 import time
 
@@ -120,14 +118,7 @@ async def delete_conversation(conv_id: str, request: Request, deleted_at: int = 
     return {"conversation": meta}
 
 
-_ENDERECO_CELULAR = re.compile(r"^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$")
-
-
-def endereco_celular() -> str | None:
-    """Endereço do Éden no celular (HTTPS do Tailscale), descoberto pelo
-    iniciar-eden / instalar.sh e passado em EDEN_ENDERECO_CELULAR."""
-    valor = os.environ.get("EDEN_ENDERECO_CELULAR", "").strip().rstrip("/").lower()
-    return valor if _ENDERECO_CELULAR.match(valor) else None
+from openjarvis.eden.endereco import endereco_celular  # noqa: E402
 
 
 @router.get("/info")

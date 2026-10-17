@@ -251,14 +251,32 @@ async def ver_acao(acao_id: str, request: Request):
 async def confirmar_acao(acao_id: str, request: Request):
     """Executa a ação guardada — com os parâmetros do servidor, não do app.
     O app manda a assinatura do cartão que a pessoa viu."""
+    from openjarvis.eden import google as google_mod
+
     store = _store(request)
     dados = await _corpo(request)
+    cliente = (
+        google_mod.cliente_do_app(request.app)
+        if google_mod.configuracao() is not None
+        else None
+    )
     try:
         acao = await _rodar(
-            acoes_mod.confirmar, store, acao_id, dados.get("assinatura"), _tz()
+            acoes_mod.confirmar,
+            store,
+            acao_id,
+            dados.get("assinatura"),
+            _tz(),
+            google=cliente,
         )
     except acoes_mod.ErroAcao as exc:
         return _erro_acao(exc)
+    if cliente is not None and str(acao.get("tipo", "")).startswith("agenda."):
+        # A IA passa a enxergar o evento novo/mudado logo.
+        try:
+            await asyncio.to_thread(google_mod.atualizar_cache, cliente, _tz())
+        except Exception:  # noqa: BLE001
+            pass
     return {"acao": acao}
 
 

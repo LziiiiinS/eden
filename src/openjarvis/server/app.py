@@ -530,6 +530,15 @@ def create_app(
         registrar_lembretes(app)
     except Exception as exc:
         logger.warning("Éden: lembretes não ligados: %s", exc)
+    # Éden (Parte 3): Google Agenda.
+    try:
+        from openjarvis.eden.google import registrar_agenda
+        from openjarvis.eden.routes_google import router as eden_google_router
+
+        app.include_router(eden_google_router)
+        registrar_agenda(app)
+    except Exception as exc:
+        logger.warning("Éden: Google Agenda não ligada: %s", exc)
 
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)

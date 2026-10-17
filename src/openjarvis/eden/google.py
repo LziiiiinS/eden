@@ -1,0 +1,644 @@
+"""Éden: ligação com a Google Agenda (Parte 3).
+
+O que faz:
+- a pessoa liga a conta do Google nas Configurações (autorização do próprio
+  Google, com "state" de uso único e PKCE);
+- o Éden lê os eventos dos próximos dias (página Hoje e contexto da IA);
+- a IA pode **sugerir** criar ou mudar um evento; só acontece quando a pessoa
+  toca em Confirmar no cartão (mesmo caminho das tarefas).
+
+Segurança:
+- só a permissão de eventos da agenda (``calendar.events``); nada de e-mail,
+  Drive ou contatos;
+- o "refresh token" (a autorização que dura) fica **cifrado** no banco do
+  Éden; a chave da cifra fica num arquivo ``.key`` que nunca entra no backup.
+  Quem pegar um backup não consegue mexer na agenda; depois de restaurar
+  num servidor novo, basta ligar a conta de novo;
+- o ID e o segredo do cliente do Google ficam só no ``.env`` do servidor;
+- o Éden só fala com endereços fixos do Google (nada vindo da IA ou de
+  eventos vira endereço);
+- títulos e locais dos eventos são dados de fora: entram no contexto da IA
+  entre aspas, limpos de caracteres invisíveis e com tamanho limitado.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import logging
+import os
+import re
+import secrets
+import threading
+import time
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import quote, urlencode
+
+logger = logging.getLogger(__name__)
+
+URL_AUTORIZAR = "https://accounts.google.com/o/oauth2/v2/auth"
+URL_TOKEN = "https://oauth2.googleapis.com/token"
+URL_REVOGAR = "https://oauth2.googleapis.com/revoke"
+URL_AGENDA = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+ESCOPO_AGENDA = "https://www.googleapis.com/auth/calendar.events"
+CAMINHO_RETORNO = "/v1/eden/google/retorno"
+
+VALIDADE_AUTORIZACAO_S = 10 * 60
+MAX_AUTORIZACOES = 5
+TEMPO_LIMITE_S = 15.0
+DIAS_NA_AGENDA = 7
+MAX_EVENTOS = 40
+MAX_TITULO = 200
+MAX_LOCAL = 200
+
+_CLIENT_ID = re.compile(r"^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$")
+_EVENTO_ID = re.compile(r"^[A-Za-z0-9_]{1,1024}$")
+_ESPACOS = re.compile(r"\s+")
+
+
+class ErroGoogle(Exception):
+    def __init__(self, mensagem: str, codigo: str = "eden_google") -> None:
+        super().__init__(mensagem)
+        self.codigo = codigo
+
+
+# ── configuração (no .env do servidor) ───────────────────────────────────
+
+
+def configuracao() -> Optional[Dict[str, str]]:
+    """ID e segredo do cliente do Google + endereço de retorno. None se
+    faltar algo (a tela mostra "ainda não configurado")."""
+    from openjarvis.eden.endereco import endereco_celular
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    segredo = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+    endereco = endereco_celular()
+    if not client_id or not segredo or not endereco:
+        return None
+    if not _CLIENT_ID.match(client_id) or any(c.isspace() for c in segredo):
+        logger.warning("Éden: GOOGLE_CLIENT_ID ou _SECRET com formato estranho")
+        return None
+    return {
+        "client_id": client_id,
+        "client_secret": segredo,
+        "retorno": endereco + CAMINHO_RETORNO,
+    }
+
+
+# ── cofre: refresh token cifrado ─────────────────────────────────────────
+
+
+def _caminho_chave() -> Path:
+    from openjarvis.core.paths import get_config_dir
+
+    return get_config_dir() / "eden" / "google.key"
+
+
+def _carregar_cifra(caminho: Optional[Path] = None):
+    from cryptography.fernet import Fernet
+
+    caminho = caminho or _caminho_chave()
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(str(caminho), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        pass
+    else:
+        with os.fdopen(fd, "wb") as arquivo:
+            arquivo.write(Fernet.generate_key())
+    return Fernet(caminho.read_bytes().strip())
+
+
+class Cofre:
+    """Guarda o refresh token cifrado na tabela ``ajustes``."""
+
+    CHAVE = "google_agenda"
+
+    def __init__(self, store, caminho_chave: Optional[Path] = None) -> None:  # noqa: ANN001
+        self.store = store
+        self._caminho = caminho_chave
+        self._cifra = None
+
+    def _f(self):
+        if self._cifra is None:
+            self._cifra = _carregar_cifra(self._caminho)
+        return self._cifra
+
+    def salvar(self, refresh_token: str, escopo: str) -> None:
+        dados = json.dumps(
+            {"refresh": refresh_token, "escopo": escopo, "em": int(time.time())}
+        ).encode()
+        cifrado = self._f().encrypt(dados).decode()
+        self.store.transacao(
+            lambda c: c.execute(
+                "INSERT INTO ajustes (chave, valor) VALUES (?, ?) "
+                "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+                (self.CHAVE, cifrado),
+            )
+        )
+
+    def ler(self) -> Optional[Dict[str, Any]]:
+        from cryptography.fernet import InvalidToken
+
+        rows = self.store._ler(
+            "SELECT valor FROM ajustes WHERE chave = ?", (self.CHAVE,)
+        )
+        if not rows:
+            return None
+        try:
+            dados = json.loads(self._f().decrypt(rows[0][0].encode()))
+        except (InvalidToken, ValueError, TypeError):
+            # Ex.: backup restaurado em outro servidor (a chave não vai junto).
+            return None
+        return dados if isinstance(dados.get("refresh"), str) else None
+
+    def apagar(self) -> None:
+        self.store.transacao(
+            lambda c: c.execute("DELETE FROM ajustes WHERE chave = ?", (self.CHAVE,))
+        )
+
+    def conectado(self) -> bool:
+        return self.ler() is not None
+
+
+# ── autorizações em andamento (state + PKCE) ─────────────────────────────
+
+
+def _resumo(valor: str) -> str:
+    return hashlib.sha256(("eden-google:" + valor).encode()).hexdigest()
+
+
+class Autorizacoes:
+    """Pedidos de ligação em andamento: "state" de uso único, 10 minutos."""
+
+    def __init__(self, relogio: Callable[[], float] = time.monotonic) -> None:
+        self._relogio = relogio
+        self._lock = threading.Lock()
+        self._pendentes: Dict[str, Tuple[str, float]] = {}
+
+    def criar(self) -> Tuple[str, str]:
+        state = secrets.token_urlsafe(32)
+        verificador = secrets.token_urlsafe(64)
+        with self._lock:
+            agora = self._relogio()
+            self._pendentes = {k: v for k, v in self._pendentes.items() if v[1] > agora}
+            while len(self._pendentes) >= MAX_AUTORIZACOES:
+                mais_velho = min(self._pendentes, key=lambda k: self._pendentes[k][1])
+                del self._pendentes[mais_velho]
+            self._pendentes[_resumo(state)] = (
+                verificador,
+                agora + VALIDADE_AUTORIZACAO_S,
+            )
+        return state, verificador
+
+    def usar(self, state: Any) -> Optional[str]:
+        if not isinstance(state, str) or not 20 <= len(state) <= 200:
+            return None
+        with self._lock:
+            item = self._pendentes.pop(_resumo(state), None)
+        if item is None or item[1] <= self._relogio():
+            return None
+        return item[0]
+
+
+def desafio_pkce(verificador: str) -> str:
+    digest = hashlib.sha256(verificador.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def url_de_autorizacao(cfg: Dict[str, str], state: str, verificador: str) -> str:
+    return (
+        URL_AUTORIZAR
+        + "?"
+        + urlencode(
+            {
+                "client_id": cfg["client_id"],
+                "redirect_uri": cfg["retorno"],
+                "response_type": "code",
+                "scope": ESCOPO_AGENDA,
+                "access_type": "offline",
+                "prompt": "consent",
+                "include_granted_scopes": "false",
+                "state": state,
+                "code_challenge": desafio_pkce(verificador),
+                "code_challenge_method": "S256",
+            }
+        )
+    )
+
+
+# ── textos de fora (títulos e locais dos eventos) ────────────────────────
+
+
+def limpar_externo(valor: Any, maximo: int) -> str:
+    from openjarvis.eden.organizacao import _visivel
+
+    if not isinstance(valor, str):
+        return ""
+    limpo = "".join(c for c in valor if c in "\n\t" or _visivel(c))
+    limpo = _ESPACOS.sub(" ", limpo).strip()
+    if len(limpo) > maximo:
+        limpo = limpo[: maximo - 1].rstrip() + "…"
+    return limpo
+
+
+def _momento(campo: Any, tz: timezone) -> Tuple[Optional[datetime], bool]:
+    """(início, dia_inteiro) de um campo start/end do Google."""
+    if not isinstance(campo, dict):
+        return None, False
+    if isinstance(campo.get("dateTime"), str):
+        try:
+            return datetime.fromisoformat(
+                campo["dateTime"].replace("Z", "+00:00")
+            ).astimezone(tz), False
+        except ValueError:
+            return None, False
+    if isinstance(campo.get("date"), str):
+        try:
+            d = date.fromisoformat(campo["date"])
+        except ValueError:
+            return None, True
+        return datetime(d.year, d.month, d.day, tzinfo=tz), True
+    return None, False
+
+
+def normalizar_evento(bruto: Any, tz: timezone) -> Optional[Dict[str, Any]]:
+    if not isinstance(bruto, dict) or bruto.get("status") == "cancelled":
+        return None
+    evento_id = bruto.get("id")
+    if not isinstance(evento_id, str) or not _EVENTO_ID.match(evento_id):
+        return None
+    inicio, dia_inteiro = _momento(bruto.get("start"), tz)
+    fim, _ = _momento(bruto.get("end"), tz)
+    if inicio is None:
+        return None
+    return {
+        "id": evento_id,
+        "titulo": limpar_externo(bruto.get("summary"), MAX_TITULO) or "(sem título)",
+        "local": limpar_externo(bruto.get("location"), MAX_LOCAL),
+        "inicio": inicio.isoformat(),
+        "fim": fim.isoformat() if fim else None,
+        "dia_inteiro": dia_inteiro,
+    }
+
+
+def corpo_do_evento(params: Dict[str, Any], tz: timezone) -> Dict[str, Any]:
+    """Parâmetros do Éden (data, hora, duração) → corpo do evento do Google."""
+    d = date.fromisoformat(params["data"])
+    corpo: Dict[str, Any] = {"summary": params["titulo"]}
+    if params.get("local"):
+        corpo["location"] = params["local"]
+    if params.get("hora"):
+        h, m = (int(x) for x in params["hora"].split(":"))
+        inicio = datetime(d.year, d.month, d.day, h, m, tzinfo=tz)
+        fim = inicio + timedelta(minutes=int(params.get("duracao_min") or 60))
+        corpo["start"] = {"dateTime": inicio.isoformat()}
+        corpo["end"] = {"dateTime": fim.isoformat()}
+    else:
+        corpo["start"] = {"date": d.isoformat()}
+        corpo["end"] = {"date": (d + timedelta(days=1)).isoformat()}
+    return corpo
+
+
+def mudancas_do_evento(
+    atual: Dict[str, Any], mudancas: Dict[str, Any], tz: timezone
+) -> Dict[str, Any]:
+    """Mudanças pedidas (titulo, local, data, hora, duracao_min) → campos do
+    Google, completando com o que o evento já tem (ex.: muda só a hora)."""
+    corpo: Dict[str, Any] = {}
+    if "titulo" in mudancas:
+        corpo["summary"] = mudancas["titulo"]
+    if "local" in mudancas:
+        corpo["location"] = mudancas["local"] or ""
+    if not {"data", "hora", "duracao_min"} & set(mudancas):
+        return corpo
+    inicio = datetime.fromisoformat(atual["inicio"]).astimezone(tz)
+    fim = None
+    if atual.get("fim"):
+        fim = datetime.fromisoformat(atual["fim"]).astimezone(tz)
+    dia = inicio.date()
+    if mudancas.get("data"):
+        dia = date.fromisoformat(mudancas["data"])
+    hora = mudancas.get("hora")
+    if hora is None and not atual.get("dia_inteiro"):
+        hora = inicio.strftime("%H:%M")
+    if mudancas.get("duracao_min"):
+        duracao = int(mudancas["duracao_min"])
+    elif fim and not atual.get("dia_inteiro"):
+        duracao = max(5, int((fim - inicio).total_seconds() // 60))
+    else:
+        duracao = 60
+    novo = corpo_do_evento(
+        {"titulo": "", "data": dia.isoformat(), "hora": hora, "duracao_min": duracao},
+        tz,
+    )
+    corpo["start"] = novo["start"]
+    corpo["end"] = novo["end"]
+    return corpo
+
+
+# ── cliente (só endereços fixos do Google) ───────────────────────────────
+
+
+class ClienteGoogle:
+    def __init__(
+        self,
+        cofre: Cofre,
+        cfg: Optional[Dict[str, str]] = None,
+        http: Any = None,
+        relogio: Callable[[], float] = time.time,
+    ) -> None:
+        self.cofre = cofre
+        self._cfg = cfg
+        self._http = http
+        self._relogio = relogio
+        self._lock = threading.Lock()
+        self._acesso: Optional[Tuple[str, float]] = None
+
+    @property
+    def cfg(self) -> Dict[str, str]:
+        cfg = self._cfg or configuracao()
+        if cfg is None:
+            raise ErroGoogle(
+                "A Google Agenda ainda não foi configurada no servidor.",
+                "eden_google_sem_config",
+            )
+        return cfg
+
+    def _cliente_http(self):
+        if self._http is None:
+            import httpx
+
+            self._http = httpx.Client(timeout=TEMPO_LIMITE_S, follow_redirects=False)
+        return self._http
+
+    # ligação
+
+    def trocar_codigo(self, codigo: str, verificador: str) -> None:
+        cfg = self.cfg
+        resposta = self._cliente_http().post(
+            URL_TOKEN,
+            data={
+                "code": codigo,
+                "client_id": cfg["client_id"],
+                "client_secret": cfg["client_secret"],
+                "redirect_uri": cfg["retorno"],
+                "grant_type": "authorization_code",
+                "code_verifier": verificador,
+            },
+        )
+        if resposta.status_code != 200:
+            raise ErroGoogle("O Google recusou a ligação. Tente de novo.")
+        dados = resposta.json()
+        escopos = str(dados.get("scope", "")).split()
+        refresh = dados.get("refresh_token")
+        if ESCOPO_AGENDA not in escopos:
+            raise ErroGoogle(
+                "A permissão da agenda não foi dada. Marque a caixa da agenda "
+                "na tela do Google.",
+                "eden_google_sem_permissao",
+            )
+        if not isinstance(refresh, str) or not refresh:
+            raise ErroGoogle("O Google não mandou a autorização. Tente de novo.")
+        self.cofre.salvar(refresh, " ".join(escopos))
+        with self._lock:
+            self._acesso = (
+                str(dados.get("access_token", "")),
+                self._relogio() + int(dados.get("expires_in", 0)) - 60,
+            )
+
+    def desconectar(self) -> None:
+        guardado = self.cofre.ler()
+        self.cofre.apagar()
+        with self._lock:
+            self._acesso = None
+        if guardado:
+            try:
+                self._cliente_http().post(
+                    URL_REVOGAR, data={"token": guardado["refresh"]}
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("Éden: não consegui avisar o Google (desconectado aqui)")
+
+    def conectado(self) -> bool:
+        return self.cofre.conectado()
+
+    # acesso
+
+    def _token_de_acesso(self, forcar: bool = False) -> str:
+        with self._lock:
+            if (
+                not forcar
+                and self._acesso
+                and self._acesso[0]
+                and self._acesso[1] > self._relogio()
+            ):
+                return self._acesso[0]
+        guardado = self.cofre.ler()
+        if not guardado:
+            raise ErroGoogle(
+                "A Google Agenda não está conectada.", "eden_google_desconectado"
+            )
+        cfg = self.cfg
+        resposta = self._cliente_http().post(
+            URL_TOKEN,
+            data={
+                "client_id": cfg["client_id"],
+                "client_secret": cfg["client_secret"],
+                "refresh_token": guardado["refresh"],
+                "grant_type": "refresh_token",
+            },
+        )
+        if resposta.status_code in (400, 401):
+            erro = ""
+            try:
+                erro = resposta.json().get("error", "")
+            except ValueError:
+                pass
+            if erro == "invalid_grant":
+                self.cofre.apagar()
+                raise ErroGoogle(
+                    "A ligação com o Google expirou ou foi retirada. Conecte de "
+                    "novo nas Configurações.",
+                    "eden_google_reconectar",
+                )
+        if resposta.status_code != 200:
+            raise ErroGoogle("O Google não respondeu agora. Tente de novo.")
+        dados = resposta.json()
+        token = str(dados.get("access_token", ""))
+        with self._lock:
+            self._acesso = (
+                token,
+                self._relogio() + int(dados.get("expires_in", 0)) - 60,
+            )
+        return token
+
+    def _pedir(self, metodo: str, url: str, **kw: Any) -> Any:
+        for tentativa in (0, 1):
+            token = self._token_de_acesso(forcar=tentativa == 1)
+            resposta = self._cliente_http().request(
+                metodo, url, headers={"Authorization": f"Bearer {token}"}, **kw
+            )
+            if resposta.status_code == 401 and tentativa == 0:
+                continue
+            if resposta.status_code == 404:
+                raise ErroGoogle("Evento não encontrado na agenda.", "eden_google_404")
+            if resposta.status_code >= 400:
+                raise ErroGoogle(f"O Google recusou o pedido ({resposta.status_code}).")
+            return resposta.json() if resposta.content else {}
+        raise ErroGoogle("O Google recusou o acesso.")  # pragma: no cover
+
+    # agenda
+
+    def listar(
+        self, inicio: datetime, fim: datetime, tz: timezone
+    ) -> List[Dict[str, Any]]:
+        dados = self._pedir(
+            "GET",
+            URL_AGENDA,
+            params={
+                "timeMin": inicio.isoformat(),
+                "timeMax": fim.isoformat(),
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": str(MAX_EVENTOS),
+            },
+        )
+        itens = dados.get("items") if isinstance(dados, dict) else None
+        eventos = [normalizar_evento(e, tz) for e in (itens or [])]
+        return [e for e in eventos if e][:MAX_EVENTOS]
+
+    def evento(self, evento_id: str, tz: timezone) -> Dict[str, Any]:
+        if not _EVENTO_ID.match(evento_id or ""):
+            raise ErroGoogle("Evento não encontrado na agenda.", "eden_google_404")
+        evento = normalizar_evento(
+            self._pedir("GET", f"{URL_AGENDA}/{quote(evento_id, safe='')}"), tz
+        )
+        if evento is None:
+            raise ErroGoogle("Evento não encontrado na agenda.", "eden_google_404")
+        return evento
+
+    def criar(self, params: Dict[str, Any], tz: timezone) -> Dict[str, Any]:
+        criado = self._pedir("POST", URL_AGENDA, json=corpo_do_evento(params, tz))
+        evento = normalizar_evento(criado, tz)
+        return {"evento": evento["id"] if evento else None}
+
+    def editar(
+        self, evento_id: str, mudancas: Dict[str, Any], tz: timezone
+    ) -> Dict[str, Any]:
+        if not _EVENTO_ID.match(evento_id or ""):
+            raise ErroGoogle("Evento não encontrado na agenda.", "eden_google_404")
+        self._pedir(
+            "PATCH",
+            f"{URL_AGENDA}/{quote(evento_id, safe='')}",
+            json=mudancas,
+        )
+        return {"evento": evento_id}
+
+
+# ── agenda em cache (para o contexto da IA, sem esperar o Google) ────────
+
+
+class AgendaEmCache:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.eventos: List[Dict[str, Any]] = []
+        self.atualizado_em: Optional[int] = None
+        self.conectado = False
+
+    def guardar(self, eventos: List[Dict[str, Any]], agora_ms: int) -> None:
+        with self._lock:
+            self.eventos = list(eventos)
+            self.atualizado_em = agora_ms
+            self.conectado = True
+
+    def limpar(self) -> None:
+        with self._lock:
+            self.eventos = []
+            self.atualizado_em = None
+            self.conectado = False
+
+    def retrato(self) -> Dict[str, Any]:
+        with self._lock:
+            return {
+                "conectado": self.conectado,
+                "eventos": list(self.eventos),
+                "atualizado_em": self.atualizado_em,
+            }
+
+    def por_id(self) -> Dict[str, Dict[str, Any]]:
+        with self._lock:
+            return {e["id"]: e for e in self.eventos}
+
+
+CACHE = AgendaEmCache()
+
+
+def janela(tz: timezone, agora: Optional[datetime] = None, dias: int = DIAS_NA_AGENDA):
+    agora = agora or datetime.now(tz)
+    inicio = datetime(agora.year, agora.month, agora.day, tzinfo=tz)
+    return inicio, inicio + timedelta(days=dias)
+
+
+def atualizar_cache(
+    cliente: ClienteGoogle, tz: timezone, cache: AgendaEmCache = CACHE
+) -> bool:
+    """Busca os próximos dias no Google e guarda. False se não estiver ligado."""
+    if not cliente.conectado():
+        cache.limpar()
+        return False
+    inicio, fim = janela(tz)
+    try:
+        eventos = cliente.listar(inicio, fim, tz)
+    except ErroGoogle as exc:
+        if exc.codigo in ("eden_google_reconectar", "eden_google_desconectado"):
+            cache.limpar()
+        raise
+    cache.guardar(eventos, int(time.time() * 1000))
+    return True
+
+
+def cliente_do_app(app) -> ClienteGoogle:  # noqa: ANN001
+    """Um cliente por servidor (guardado em app.state)."""
+    atual = getattr(app.state, "eden_google", None)
+    if atual is None:
+        from openjarvis.eden.organizacao import get_organizacao
+
+        store = getattr(app.state, "eden_organizacao", None) or get_organizacao()
+        atual = ClienteGoogle(Cofre(store))
+        app.state.eden_google = atual
+    return atual
+
+
+INTERVALO_AGENDA_S = 5 * 60
+
+
+def registrar_agenda(app) -> None:  # noqa: ANN001
+    """Atualiza a agenda em cache a cada 5 minutos (se estiver ligada)."""
+    import asyncio
+
+    from openjarvis.eden.settings import get_settings
+
+    async def laco() -> None:
+        await asyncio.sleep(10)
+        while True:
+            try:
+                if get_settings().enabled and configuracao() is not None:
+                    await asyncio.to_thread(
+                        atualizar_cache, cliente_do_app(app), get_settings().tz
+                    )
+            except asyncio.CancelledError:
+                raise
+            except ErroGoogle as exc:
+                logger.warning("Éden: agenda não atualizada (%s)", exc.codigo)
+            except Exception:  # noqa: BLE001
+                logger.exception("Éden: falha ao atualizar a agenda")
+            await asyncio.sleep(INTERVALO_AGENDA_S)
+
+    @app.on_event("startup")
+    async def _ligar() -> None:  # pragma: no cover - roda com o servidor de verdade
+        if get_settings().enabled:
+            app.state.eden_agenda_tarefa = asyncio.create_task(laco())

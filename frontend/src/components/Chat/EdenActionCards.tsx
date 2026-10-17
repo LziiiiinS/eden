@@ -24,6 +24,7 @@ const ROTULO: Record<string, string> = {
   recusada: 'Recusado',
   expirada: 'Expirou — peça de novo ao Éden',
   falhou: 'Não deu para fazer',
+  executando: 'Enviando…',
 };
 
 function Cartao({ messageId, acao }: { messageId: string; acao: EdenActionRef }) {
