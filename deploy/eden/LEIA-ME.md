@@ -183,6 +183,26 @@ mensagem e desliga sozinho depois.
   **platform.claude.com/settings/capabilities** e confira se a busca na
   internet (web search) não foi desligada.
 
+## Respostas em voz (modo conversa)
+
+O Éden pode **falar** as respostas, com a voz da OpenAI (a mesma chave da
+OpenAI do `.env`; não precisa de conta nova). Funciona no notebook, no iPhone
+e no Samsung.
+
+- No campo de mensagem, toque em **Responder em voz**. Daí em diante, o Éden
+  fala cada resposta (mais curta, boa de ouvir) e, ao usar o **microfone**,
+  já envia o que você falou: você fala, ele responde falando. Toque de novo
+  para voltar ao texto.
+- Em **Configurações → Voz**: ligar o alto-falante embaixo de cada resposta
+  (para ouvir só quando quiser), o modo conversa e a voz (Marin, Cedar e
+  outras). O botão **Ouvir** testa a voz.
+- Custo: cerca de **US$ 0,02 a cada 1.000 caracteres falados** (uma resposta
+  curta sai por menos de 1 centavo). Entra no limite de gastos da OpenAI do
+  mês, e há um teto por hora.
+- No iPhone: deixe o volume alto e a tela aberta. Se o som não sair, toque no
+  alto-falante embaixo da resposta (o iPhone às vezes exige um toque).
+- Respostas longas: a voz lê o começo e diz "O resto está na tela".
+
 ## Notion
 
 Com o Notion ligado, dá para **trazer uma página do Notion** para a conversa

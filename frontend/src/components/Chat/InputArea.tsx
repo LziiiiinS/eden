@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Send, Square, Paperclip, Search, Globe } from 'lucide-react';
+import { Send, Square, Paperclip, Search, Globe, Volume2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
@@ -19,6 +19,7 @@ import { avisarMudanca } from './EdenActionCards';
 import { parseActionsEvent, removeActionBlocks, type EdenActionRef } from '../../lib/eden-acoes';
 import { CAMINHO_PESQUISA, ULTIMAS_NA_PESQUISA, mensagensParaIa } from '../../lib/eden-pesquisa';
 import { localDoAparelho, pareceRota, usarLocalNaConversa } from '../../lib/eden-rotas';
+import { desbloquearAudio, useEdenVozStore } from '../../lib/eden-voz';
 import { useEdenOrg } from '../../lib/eden-org';
 import { useSpeech } from '../../hooks/useSpeech';
 import {
@@ -125,6 +126,13 @@ export function InputArea() {
   // Éden (Parte 4): pesquisa na internet só na próxima mensagem (desliga
   // sozinha depois de enviar).
   const [pesquisaWeb, setPesquisaWeb] = useState(false);
+  // Éden (Parte 4): modo conversa — o Éden fala as respostas (mais curtas) e,
+  // pelo microfone, já envia o que a pessoa falou.
+  const voiceOutputEnabled = useAppStore((s) => s.settings.voiceOutputEnabled);
+  const voiceAutoplay = useAppStore((s) => s.settings.voiceAutoplay);
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const modoVoz = edenServer && voiceOutputEnabled && voiceAutoplay;
+  const enviarRef = useRef<((texto?: string) => Promise<void>) | null>(null);
 
   // Éden: pedido vindo de outra tela (ex.: "Pedir um plano ao Éden" no Hoje).
   // Abre uma conversa nova com o texto na caixa; a pessoa confere e envia.
@@ -180,19 +188,29 @@ export function InputArea() {
   }, [speechError]);
 
   const handleMicClick = useCallback(async () => {
+    // Éden: no iPhone, o som da resposta precisa ser liberado neste toque.
+    if (modoVoz) desbloquearAudio();
     if (speechState === 'recording') {
       try {
         const text = await stopRecording();
         if (text) {
-          setInput((prev) => (prev ? prev + ' ' + text : text));
+          if (modoVoz && enviarRef.current) {
+            // Modo conversa: falou, enviou.
+            const atual = textareaRef.current?.value.trim() ?? '';
+            await enviarRef.current(atual ? `${atual} ${text}` : text);
+          } else {
+            setInput((prev) => (prev ? prev + ' ' + text : text));
+          }
         }
       } catch {
         // Error is captured in useSpeech
       }
     } else {
+      // Começou a falar: o Éden para de falar.
+      if (edenServer) useEdenVozStore.getState().stop();
       await startRecording();
     }
-  }, [speechState, startRecording, stopRecording]);
+  }, [speechState, startRecording, stopRecording, modoVoz, edenServer]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -210,8 +228,9 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
+  const sendMessage = useCallback(async (texto?: string) => {
+    const content = (texto ?? input).trim();
+    if (modoVoz) desbloquearAudio();
     if (!content || streamState.isStreaming) return;
     if (!selectedModel) {
       toast.error('Escolha um modelo primeiro (⌘K)');
@@ -446,6 +465,8 @@ export function InputArea() {
               'X-Eden-Espaco': useEdenOrg.getState().espacoAtivo,
               'X-Eden-Conversa': convId,
               ...(local ? { 'X-Eden-Local': local } : {}),
+              // Modo conversa: resposta curta, boa de ouvir.
+              ...(modoVoz ? { 'X-Eden-Voz': '1' } : {}),
             }
           : {},
         pesquisar ? CAMINHO_PESQUISA : undefined,
@@ -652,7 +673,9 @@ export function InputArea() {
     maxTokens,
     edenServer,
     pesquisaWeb,
+    modoVoz,
   ]);
+  enviarRef.current = sendMessage;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Éden: no celular, a tecla Enter do teclado pula linha (como nos apps de
@@ -693,10 +716,39 @@ export function InputArea() {
                 <Globe size={12} />
                 Pesquisar na internet
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (modoVoz) {
+                    updateSettings({ voiceAutoplay: false });
+                    useEdenVozStore.getState().stop();
+                  } else {
+                    desbloquearAudio();
+                    updateSettings({ voiceAutoplay: true, voiceOutputEnabled: true });
+                  }
+                }}
+                aria-pressed={modoVoz}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors cursor-pointer"
+                style={{
+                  background: modoVoz ? 'var(--color-accent-subtle)' : 'transparent',
+                  border: `1px solid ${modoVoz ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  color: modoVoz ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                }}
+                title="Modo conversa: o Éden fala as respostas"
+              >
+                <Volume2 size={12} />
+                Responder em voz
+              </button>
               {pesquisaWeb && (
                 <span className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>
                   Só nesta mensagem · Claude, até 3 buscas (US$ 0,01 cada) · usa só as últimas mensagens desta
                   conversa (não usa suas tarefas, notas, memórias, agenda nem documentos)
+                </span>
+              )}
+              {modoVoz && !pesquisaWeb && (
+                <span className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>
+                  O Éden fala as respostas (mais curtas) · pelo microfone, já envia o que você falou · voz da OpenAI,
+                  ~US$ 0,02 por 1.000 caracteres
                 </span>
               )}
             </div>
@@ -773,7 +825,7 @@ export function InputArea() {
               reason={micReason}
             />
             <button
-              onClick={sendMessage}
+              onClick={() => void sendMessage()}
               disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
               title={selectedModel ? 'Enviar mensagem' : 'Escolha um modelo primeiro (⌘K)'}
               aria-label="Enviar mensagem"

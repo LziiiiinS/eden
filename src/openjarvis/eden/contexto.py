@@ -48,6 +48,7 @@ class PedidoEden:
     store: Any = None  # Organizacao
     pergunta: Optional[str] = None  # última mensagem da pessoa
     caminhos: Optional[Dict[str, Any]] = None  # rotas.preparar_caminhos
+    voz: bool = False  # modo conversa: a resposta vai ser ouvida
 
 
 _pedido: contextvars.ContextVar[Optional[PedidoEden]] = contextvars.ContextVar(
@@ -61,6 +62,15 @@ def definir_pedido(pedido: Optional[PedidoEden]) -> contextvars.Token:
 
 def pedido_atual() -> Optional[PedidoEden]:
     return _pedido.get()
+
+
+REGRAS_VOZ = """\
+## Resposta falada (modo conversa)
+A pessoa vai OUVIR esta resposta (o app lê em voz alta). Responda curto e \
+falado, como numa conversa: até 3 ou 4 frases, sem tabelas, títulos, listas \
+longas, links ou emojis. Números e horários do jeito que se fala. Se o assunto \
+pedir muito detalhe, dê o principal e ofereça mandar o resto por escrito. Os \
+cartões de ação continuam valendo (a pessoa confirma na tela)."""
 
 
 REGRAS_ACOES = """\
@@ -183,6 +193,7 @@ def montar(
     agenda: Optional[Dict[str, Any]] = None,
     pergunta: Optional[str] = None,
     caminhos: Optional[Dict[str, Any]] = None,
+    voz: bool = False,
 ) -> str:
     """``agenda``: retrato da Google Agenda em cache (``google.CACHE``).
     ``pergunta``: última mensagem da pessoa (o clima só entra se for sobre
@@ -335,4 +346,6 @@ def montar(
         from openjarvis.eden.documentos import REGRAS_DOCUMENTOS
 
         partes.append(REGRAS_DOCUMENTOS)
+    if voz:
+        partes.append(REGRAS_VOZ)
     return "\n\n".join(partes)

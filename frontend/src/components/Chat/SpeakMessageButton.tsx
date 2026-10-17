@@ -1,6 +1,7 @@
 import { Volume2, Square } from 'lucide-react';
 import { useTts } from '../../hooks/useTts';
 import { useAppStore } from '../../lib/store';
+import { desbloquearAudio } from '../../lib/eden-voz';
 
 interface Props {
   messageId: string;
@@ -23,7 +24,15 @@ export function SpeakMessageButton({ messageId, content }: Props) {
   return (
     <>
       <button
-        onClick={() => (busy ? stop() : speak(messageId, content))}
+        onClick={() => {
+          if (busy) {
+            stop();
+            return;
+          }
+          // Éden: no iPhone o som precisa ser liberado dentro do toque.
+          desbloquearAudio();
+          void speak(messageId, content);
+        }}
         className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
         style={{
           color: busy ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
