@@ -143,7 +143,14 @@ No dia a dia:
   `is:unread`), abrir um e-mail (só o texto) e **Usar na conversa** (vira
   documento do espaço ativo).
 - Na conversa: "chegou e-mail do cliente?" — o Éden olha os mais recentes.
-- O que está escrito num e-mail é tratado como dado, nunca como ordem.
+- O Éden é instruído a tratar o que está escrito num e-mail como dado, não
+  como ordem; qualquer coisa que ele sugira gravar continua pedindo a sua
+  confirmação no cartão.
+- Prefira uma conta **diferente** da conta da agenda. Se a agenda e o e-mail
+  estiverem ligados ao mesmo tempo, desligar um deles apaga a ligação só no
+  Éden (o Google retira a permissão da conta inteira, e a outra ligação cairia
+  junto). Para retirar de vez: myaccount.google.com → Segurança → Apps de
+  terceiros.
 - Para tirar o acesso: **Configurações → E-mail → Desconectar** (ou em
   myaccount.google.com → Segurança → Apps de terceiros).
 

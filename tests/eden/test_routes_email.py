@@ -123,3 +123,38 @@ def test_without_google_config(ambiente, monkeypatch):
     assert c.get("/v1/eden/email/status", headers=AUTH).json()["configurado"] is False
     assert c.post("/v1/eden/email/conectar", headers=AUTH).status_code == 409
     assert c.get("/v1/eden/email/mensagens", headers=AUTH).json()["conectado"] is False
+
+
+def test_disconnect_keeps_google_grant_when_calendar_is_connected(
+    ambiente, monkeypatch
+):
+    from openjarvis.eden import routes_email
+
+    c, falso, _ = ambiente
+    _conectar(c)
+    monkeypatch.setattr(routes_email, "_agenda_ligada", lambda request: True)
+    r = c.post("/v1/eden/email/desconectar", headers=AUTH).json()
+    assert r == {"ok": True, "revogado": False, "motivo": "agenda_ligada"}
+    assert not any(p[1] == google.URL_REVOGAR for p in falso.pedidos)
+    assert c.get("/v1/eden/email/status", headers=AUTH).json()["conectado"] is False
+
+
+def test_disconnect_revokes_when_alone(ambiente):
+    c, falso, _ = ambiente
+    _conectar(c)
+    r = c.post("/v1/eden/email/desconectar", headers=AUTH).json()
+    assert r["revogado"] is True and r["motivo"] is None
+    assert any(p[1] == google.URL_REVOGAR for p in falso.pedidos)
+
+
+def test_profile_failure_clears_the_old_address(ambiente, monkeypatch):
+    c, _, store = ambiente
+    _conectar(c)
+    assert gmail.conta_guardada(store) == "eden.levi@gmail.com"
+
+    def falha(cliente):
+        raise google.ErroGoogle("sem resposta", "eden_google_rede")
+
+    monkeypatch.setattr(gmail, "conta", falha)
+    assert _conectar(c).headers["location"] == "/settings?email=conectado"
+    assert gmail.conta_guardada(store) is None

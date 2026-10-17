@@ -147,7 +147,7 @@ export function EdenEmailPage() {
         </EdenSection>
       ) : (
         <>
-          {aberto && <Aberto id={aberto} onFechar={() => setAberto(null)} />}
+          {aberto && <Aberto key={aberto} id={aberto} onFechar={() => setAberto(null)} />}
           <EdenSection title={status.conta ? `Caixa de entrada · ${status.conta}` : 'Caixa de entrada'}>
             <div className="flex items-center gap-2 mb-2">
               <input

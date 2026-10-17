@@ -196,7 +196,8 @@ def test_context_is_disarmed_and_rules_come_last(store, cliente):
     emails = {"conta": "eden.levi@gmail.com", "lista": gmail.listar(cliente)}
     texto = montar(store, "pessoal", TZ, emails=emails)
     assert "## E-mails recentes" in texto and "<<<EMAIL " in texto
-    assert '"Cliente Ana"' in texto and "NÃO LIDO" in texto
+    assert "Cliente Ana" in texto and "ana@cliente.com" in texto
+    assert "NÃO LIDO" in texto
     assert "16/10 21:00" in texto  # horário de Brasília
     secao = texto.split("<<<EMAIL ")[1].split("<<<FIM EMAIL")[0]
     assert all(linha.startswith("│ ") for linha in secao.splitlines()[1:] if linha)
@@ -268,3 +269,92 @@ def test_chat_hook_reads_emails_only_for_email_questions(store, cliente, monkeyp
     asyncio.run(chat_hooks._emails_para_pergunta(request, "chegou e-mail da Ana?"))
     emails = request.state.eden_emails
     assert emails["conta"] == "eden.levi@gmail.com" and len(emails["lista"]) == 2
+
+
+def _parte(mime, texto, charset=None):
+    cabecalhos = []
+    if charset:
+        cabecalhos.append(
+            {"name": "Content-Type", "value": f'{mime}; charset="{charset}"'}
+        )
+    dados = texto.encode(charset or "utf-8") if isinstance(texto, str) else texto
+    return {
+        "mimeType": mime,
+        "headers": cabecalhos,
+        "body": {"data": base64.urlsafe_b64encode(dados).decode()},
+    }
+
+
+def test_body_uses_the_message_charset():
+    assert gmail.texto_da_mensagem(
+        _parte("text/plain", "Olá, reunião às 15h", "ISO-8859-1")
+    ) == ("Olá, reunião às 15h")
+    # charset inventado ou que não é de texto: cai para UTF-8.
+    assert (
+        gmail.texto_da_mensagem(_parte("text/plain", "ação".encode(), "base64"))
+        == "ação"
+    )
+    assert (
+        gmail.texto_da_mensagem(_parte("text/plain", "ação".encode(), "nao-existe"))
+        == "ação"
+    )
+
+
+def test_mailing_list_keeps_the_main_body():
+    alternativa = {
+        "mimeType": "multipart/alternative",
+        "parts": [
+            _parte("text/plain", "corpo principal"),
+            _parte("text/html", "<p>corpo em html</p>"),
+        ],
+    }
+    misto = {
+        "mimeType": "multipart/mixed",
+        "parts": [alternativa, _parte("text/plain", "rodapé da lista")],
+    }
+    assert gmail.texto_da_mensagem(misto) == "corpo principal\n\nrodapé da lista"
+    so_html = {
+        "mimeType": "multipart/alternative",
+        "parts": [_parte("text/html", "<p>Só <b>html</b></p>")],
+    }
+    assert gmail.limpar_corpo(gmail.texto_da_mensagem(so_html)) == "Só html"
+
+
+@pytest.mark.parametrize(
+    "ruim",
+    ["<" * 600_000, "<style>" * 80_000, "<!--" * 150_000, '<a href="' * 60_000],
+)
+def test_malformed_html_does_not_freeze(ruim):
+    import time
+
+    inicio = time.monotonic()
+    texto = gmail.texto_da_mensagem(_parte("text/html", ruim))
+    assert time.monotonic() - inicio < 5
+    assert len(texto) <= gmail.MAX_PARTE
+
+
+def test_context_shows_name_and_address(store, cliente, falso):
+    falso.mensagens["m0000003"] = _mensagem(
+        "m0000003", '"Banco Itaú" <golpe@x.ru>', "Sua conta", "clique aqui"
+    )
+    gmail.CACHE.limpar()
+    emails = {"conta": "eden.levi@gmail.com", "lista": gmail.listar(cliente)}
+    texto = montar(store, "pessoal", TZ, emails=emails)
+    assert "Banco Itaú" in texto and "golpe@x.ru" in texto
+
+
+def test_missing_message_says_email_not_event(cliente):
+    with pytest.raises(google.ErroGoogle) as exc:
+        gmail.mensagem(cliente, "naoexiste1")
+    assert "E-mail" in str(exc.value) and "agenda" not in str(exc.value)
+
+
+def test_only_one_listing_at_a_time(cliente, monkeypatch):
+    monkeypatch.setattr(gmail, "ESPERA_LISTA_S", 0.05)
+    assert gmail._LISTANDO.acquire()
+    try:
+        with pytest.raises(google.ErroGoogle):
+            gmail.listar(cliente, forcar=True)
+    finally:
+        gmail._LISTANDO.release()
+    assert len(gmail.listar(cliente)) == 2

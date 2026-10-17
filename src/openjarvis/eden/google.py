@@ -543,6 +543,9 @@ class ClienteGoogle:
         # autorização inteira (este app + esta conta), e derrubaria também a
         # autorização nova que acabou de chegar.
 
+    def revogar_token(self, token: str) -> bool:
+        return self._revogar(token)
+
     def _revogar(self, token: str) -> bool:
         try:
             resposta = self._rede("POST", URL_REVOGAR, data={"token": token})
@@ -550,15 +553,22 @@ class ClienteGoogle:
             return False
         return resposta.status_code == 200
 
-    def desconectar(self) -> bool:
+    def desconectar(self, revogar: bool = True) -> bool:
         """Apaga aqui e revoga no Google. Devolve False se o Google não
-        confirmou (aí a pessoa remove o Éden na conta do Google)."""
+        confirmou (aí a pessoa remove o Éden na conta do Google).
+
+        ``revogar=False``: só apaga aqui. Usado quando a agenda e o e-mail
+        estão ligados ao mesmo tempo: a revogação do Google vale para a
+        autorização inteira (este app + esta conta) e, se for a mesma conta,
+        derrubaria a outra ligação também (revisão de 17/10)."""
         guardado = self.cofre.ler()
         self.cofre.apagar()
         with self._lock:
             self._acesso = None
         if not guardado:
             return True
+        if not revogar:
+            return False
         revogado = self._revogar(guardado["refresh"])
         if not revogado:
             logger.warning("Éden: o Google não confirmou a revogação")

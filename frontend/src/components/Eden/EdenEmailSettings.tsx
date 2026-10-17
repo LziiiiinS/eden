@@ -58,7 +58,11 @@ export function EdenEmailSettings() {
     setErro(null);
     try {
       const r = await desconectarEmail();
-      if (!r.revogado) {
+      if (r.motivo === 'agenda_ligada') {
+        setErro(
+          'Desligado aqui. Como a Google Agenda também está ligada, o Éden não retirou a permissão no Google (se fosse a mesma conta, a agenda cairia junto). Para retirar de vez: myaccount.google.com → Segurança → Apps de terceiros.',
+        );
+      } else if (!r.revogado) {
         setErro('Desligado aqui. Para garantir, retire o acesso do Éden em myaccount.google.com → Segurança → Apps de terceiros.');
       }
       carregar();

@@ -36,9 +36,10 @@ class ClienteFalso:
         self.codigos.append((codigo, verificador))
         self.ligado = True
 
-    def desconectar(self):
+    def desconectar(self, revogar=True):
         self.ligado = False
-        return not self.revogar_falha
+        self.revogou = revogar
+        return not self.revogar_falha if revogar else False
 
     def listar(self, inicio, fim, tz):
         if not self.ligado:
@@ -150,6 +151,7 @@ def test_disconnect_clears_cache(ambiente):
     assert c.post("/v1/eden/google/desconectar", headers=AUTH).json() == {
         "ok": True,
         "revogado": True,
+        "motivo": None,
     }
     assert google.CACHE.retrato()["conectado"] is False
     assert c.get("/v1/eden/google/eventos?dias=99", headers=AUTH).status_code == 400
@@ -160,8 +162,19 @@ def test_disconnect_tells_when_google_did_not_confirm(ambiente):
     falso.ligado = True
     falso.revogar_falha = True
     r = c.post("/v1/eden/google/desconectar", headers=AUTH).json()
-    assert r == {"ok": True, "revogado": False}
+    assert r == {"ok": True, "revogado": False, "motivo": None}
     assert falso.ligado is False
+
+
+def test_disconnect_does_not_revoke_while_email_is_connected(ambiente, monkeypatch):
+    from openjarvis.eden import routes_google
+
+    c, falso = ambiente
+    falso.ligado = True
+    monkeypatch.setattr(routes_google, "_email_ligado", lambda request: True)
+    r = c.post("/v1/eden/google/desconectar", headers=AUTH).json()
+    assert r == {"ok": True, "revogado": False, "motivo": "email_ligado"}
+    assert falso.revogou is False and falso.ligado is False
 
 
 def test_connect_can_ask_for_drive_too(ambiente):

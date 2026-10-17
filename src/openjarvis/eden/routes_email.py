@@ -77,10 +77,20 @@ async def conectar(request: Request):
     return JSONResponse({"url": url}, headers=_SEM_GUARDAR)
 
 
+def _agenda_ligada(request: Request) -> bool:
+    try:
+        return google.cliente_do_app(request.app).conectado()
+    except Exception:  # noqa: BLE001
+        return True  # na dúvida, não revoga nada no Google
+
+
 async def concluir_ligacao(request: Request, codigo: str, verificador: str) -> str:
     """Chamado pela volta do Google (routes_google.retorno) quando o pedido
     era do e-mail. Devolve a situação para a tela."""
     cliente = gmail.cliente_do_app(request.app)
+    store = _store(request)
+    antigo = await asyncio.to_thread(cliente.cofre.ler)
+    conta_antiga = await asyncio.to_thread(gmail.conta_guardada, store)
     try:
         await asyncio.to_thread(
             cliente.trocar_codigo, codigo, verificador, gmail.ESCOPO_GMAIL
@@ -88,12 +98,30 @@ async def concluir_ligacao(request: Request, codigo: str, verificador: str) -> s
     except google.ErroGoogle as exc:
         logger.warning("Éden: ligação do e-mail não concluída (%s)", exc.codigo)
         return "sem-permissao" if "permissao" in exc.codigo else "erro"
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: ligação do e-mail não concluída")
+        return "erro"
+    gmail.CACHE.limpar()
+    conta = None
     try:
         conta = await asyncio.to_thread(gmail.conta, cliente)
-        await _rodar(guardar_conta, _store(request), conta)
     except Exception:  # noqa: BLE001
         logger.warning("Éden: e-mail ligado, mas não li o endereço da conta")
-    gmail.CACHE.limpar()
+    try:
+        await _rodar(guardar_conta, store, conta)
+    except Exception:  # noqa: BLE001
+        logger.warning("Éden: não guardei o endereço da conta de e-mail")
+    # Trocou de conta: a autorização da conta antiga é retirada no Google.
+    # Só quando a agenda não está ligada (se fosse a mesma conta, a
+    # revogação derrubaria a agenda junto).
+    if (
+        antigo
+        and conta
+        and conta_antiga
+        and conta.lower() != conta_antiga.lower()
+        and not await asyncio.to_thread(_agenda_ligada, request)
+    ):
+        await asyncio.to_thread(cliente.revogar_token, antigo["refresh"])
     logger.info("Éden: e-mail (Gmail) conectado")
     return "conectado"
 
@@ -104,11 +132,18 @@ async def desconectar(request: Request):
 
     exigir_chave_principal(request)
     cliente = gmail.cliente_do_app(request.app)
-    revogado = await asyncio.to_thread(cliente.desconectar)
+    # Agenda ligada: só apaga aqui (se fosse a mesma conta do Google, revogar
+    # derrubaria a agenda junto). A tela explica como retirar no Google.
+    agenda = await asyncio.to_thread(_agenda_ligada, request)
+    revogado = await asyncio.to_thread(cliente.desconectar, not agenda)
     gmail.CACHE.limpar()
     await _rodar(guardar_conta, _store(request), None)
     logger.info("Éden: e-mail (Gmail) desconectado")
-    return {"ok": True, "revogado": revogado is not False}
+    return {
+        "ok": True,
+        "revogado": revogado is not False,
+        "motivo": "agenda_ligada" if agenda else None,
+    }
 
 
 @router.get("/mensagens")

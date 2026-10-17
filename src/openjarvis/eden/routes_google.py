@@ -127,12 +127,28 @@ async def desconectar(request: Request):
     exigir_chave_principal(request)
     cliente = google.cliente_do_app(request.app)
     google.CACHE.limpar()
-    revogado = await asyncio.to_thread(cliente.desconectar)
+    # E-mail ligado: só apaga aqui (se fosse a mesma conta do Google, revogar
+    # derrubaria o e-mail junto).
+    email = await asyncio.to_thread(_email_ligado, request)
+    revogado = await asyncio.to_thread(cliente.desconectar, not email)
     google.CACHE.limpar()
     logger.info("Éden: Google Agenda desconectada")
     # revogado False: desligou aqui, mas o Google não confirmou (a tela diz
     # onde retirar o acesso na conta do Google).
-    return {"ok": True, "revogado": revogado is not False}
+    return {
+        "ok": True,
+        "revogado": revogado is not False,
+        "motivo": "email_ligado" if email else None,
+    }
+
+
+def _email_ligado(request: Request) -> bool:
+    try:
+        from openjarvis.eden import gmail
+
+        return gmail.cliente_do_app(request.app).conectado()
+    except Exception:  # noqa: BLE001
+        return True  # na dúvida, não revoga nada no Google
 
 
 @router.get("/eventos")

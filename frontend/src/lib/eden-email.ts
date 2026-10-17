@@ -56,7 +56,8 @@ export function mensagemDaVoltaEmail(situacao: string | null): string | null {
 
 export const statusEmail = () => edenJson<StatusEmail>('/email/status');
 export const urlConectarEmail = async () => (await edenJson<{ url: string }>('/email/conectar', { method: 'POST' })).url;
-export const desconectarEmail = () => edenJson<{ ok: boolean; revogado: boolean }>('/email/desconectar', { method: 'POST' });
+export const desconectarEmail = () =>
+  edenJson<{ ok: boolean; revogado: boolean; motivo?: string | null }>('/email/desconectar', { method: 'POST' });
 export const listarEmails = (busca = '', atualizar = false) =>
   edenJson<{ conectado: boolean; mensagens: ResumoEmail[]; aviso?: string }>(
     `/email/mensagens?busca=${encodeURIComponent(busca)}${atualizar ? '&atualizar=true' : ''}`,

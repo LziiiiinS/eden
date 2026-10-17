@@ -43,7 +43,7 @@ export function salvarNoDrive(titulo: string, html: string) {
   });
 }
 
-export function desconectarAgenda(): Promise<{ ok: boolean; revogado?: boolean }> {
+export function desconectarAgenda(): Promise<{ ok: boolean; revogado?: boolean; motivo?: string | null }> {
   return edenJson('/google/desconectar', { method: 'POST' });
 }
 

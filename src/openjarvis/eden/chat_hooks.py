@@ -271,7 +271,7 @@ async def _emails_para_pergunta(request: Any, pergunta: Optional[str]) -> None:
         def trabalho():
             return {
                 "conta": gmail.conta_guardada(_organizacao(request)),
-                "lista": gmail.listar(cliente),
+                "lista": gmail.listar(cliente, maximo=gmail.MAX_NO_CONTEXTO),
             }
 
         request.state.eden_emails = await asyncio.wait_for(

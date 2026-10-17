@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import html
 import logging
 import re
@@ -20,6 +21,7 @@ import threading
 import time
 from datetime import datetime
 from email.utils import parseaddr
+from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
@@ -37,9 +39,11 @@ URL_GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
 MAX_LISTA = 25
 MAX_BUSCA = 200
 MAX_CORPO = 100_000
+MAX_PARTE = 512 * 1024  # bytes de cada parte, antes de limpar
 MAX_NO_CONTEXTO = 15
 CACHE_S = 5 * 60
 _ID = re.compile(r"[A-Za-z0-9]{6,64}")
+_CHARSET = re.compile(r"charset\s*=\s*\"?([A-Za-z0-9._:-]{1,40})", re.I)
 _ASSUNTO_EMAIL = re.compile(
     r"\b(e-?mails?|emails?|caixa de entrada|inbox|gmail|mensage(?:m|ns) (?:nova|novas)|"
     r"me (?:mandou|mandaram|escreveu|respondeu)|respondeu|chegou algo)\b"
@@ -140,29 +144,108 @@ def resumo_da_mensagem(bruto: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-def _decodificar(dados: Any) -> str:
+def _charset(payload: Dict[str, Any]) -> str:
+    achado = _CHARSET.search(_cabecalho(payload, "Content-Type"))
+    return achado.group(1) if achado else "utf-8"
+
+
+def _decodificar(dados: Any, charset: str = "utf-8") -> str:
+    """Base64 do Gmail → texto, no charset do próprio e-mail (revisão de
+    17/10: corpo em ISO-8859-1 saía com "�"). Cada parte é cortada em
+    MAX_PARTE antes de qualquer limpeza."""
     if not isinstance(dados, str) or not dados:
         return ""
+    dados = dados[: MAX_PARTE * 4 // 3 + 4]
     try:
         bruto = base64.urlsafe_b64decode(dados + "=" * (-len(dados) % 4))
     except (ValueError, TypeError):
         return ""
-    return bruto.decode("utf-8", "replace")
+    bruto = bruto[:MAX_PARTE]
+    for nome in (charset, "utf-8"):
+        try:
+            return _decodificar_com(bruto, nome)
+        except (LookupError, UnicodeDecodeError, ValueError):
+            continue
+    return bruto.decode("cp1252", "replace")
 
 
-_TAG = re.compile(r"<[^>]+>")
-_BLOCO_INVISIVEL = re.compile(r"<(script|style|head)[^>]*>.*?</\1>", re.I | re.S)
+def _decodificar_com(bruto: bytes, nome: str) -> str:
+    if not codecs.lookup(nome)._is_text_encoding:  # type: ignore[attr-defined]
+        raise LookupError(nome)
+    try:
+        return bruto.decode(nome)
+    except UnicodeDecodeError as exc:
+        # Corte no meio de uma letra (MAX_PARTE): fica só o que veio inteiro.
+        if len(bruto) >= MAX_PARTE and exc.start >= len(bruto) - 4:
+            return bruto[: exc.start].decode(nome)
+        raise
+
+
+class _Texto(HTMLParser):
+    """HTML → texto sem regex (revisão de 17/10: as regex ficavam lentas
+    demais com HTML de propósito malformado e travavam o servidor)."""
+
+    ESCONDIDOS = {"script", "style", "head", "title", "template", "noscript"}
+    QUEBRAS = {
+        "br",
+        "p",
+        "div",
+        "li",
+        "tr",
+        "table",
+        "blockquote",
+        "section",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+    }
+    ESPACOS = {"td", "th"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.partes: List[str] = []
+        self.escondido = 0
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag in self.ESCONDIDOS:
+            self.escondido += 1
+        elif tag in self.QUEBRAS:
+            self.partes.append("\n")
+        elif tag in self.ESPACOS:
+            self.partes.append(" ")
+
+    def handle_startendtag(self, tag: str, attrs: Any) -> None:
+        if tag in self.QUEBRAS:
+            self.partes.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.ESCONDIDOS:
+            self.escondido = max(0, self.escondido - 1)
+        elif tag in self.QUEBRAS:
+            self.partes.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.escondido:
+            self.partes.append(data)
 
 
 def _html_para_texto(valor: str) -> str:
-    valor = _BLOCO_INVISIVEL.sub(" ", valor)
-    valor = re.sub(r"<\s*(br|/p|/div|/li|/tr|/h\d)\s*/?>", "\n", valor, flags=re.I)
-    return html.unescape(_TAG.sub(" ", valor))
+    leitor = _Texto()
+    try:
+        leitor.feed(valor)
+        leitor.close()
+    except Exception:  # noqa: BLE001 - HTML quebrado: fica o que deu para ler
+        pass
+    return "".join(leitor.partes)
 
 
 def texto_da_mensagem(payload: Any, profundidade: int = 0) -> str:
-    """Texto do e-mail: a parte text/plain; sem ela, a text/html sem tags.
-    Anexos não são lidos."""
+    """Texto do e-mail. Em multipart/alternative, a versão text/plain (sem
+    ela, a HTML sem tags); em multipart/mixed (ex.: listas de e-mail com
+    rodapé), todas as partes de texto juntas. Anexos não são lidos."""
     if not isinstance(payload, dict) or profundidade > 10:
         return ""
     tipo = str(payload.get("mimeType", "")).lower()
@@ -170,23 +253,26 @@ def texto_da_mensagem(payload: Any, profundidade: int = 0) -> str:
     if payload.get("filename"):
         return ""  # anexo
     if tipo == "text/plain":
-        return _decodificar(corpo.get("data"))
+        return _decodificar(corpo.get("data"), _charset(payload))
+    if tipo == "text/html":
+        return _html_para_texto(_decodificar(corpo.get("data"), _charset(payload)))
     partes = payload.get("parts") if isinstance(payload.get("parts"), list) else []
-    if tipo.startswith("multipart/"):
-        textos = [texto_da_mensagem(p, profundidade + 1) for p in partes]
+    if not tipo.startswith("multipart/"):
+        return ""
+    if tipo == "multipart/alternative":
         planos = [
-            t
-            for p, t in zip(partes, textos)
+            p
+            for p in partes
             if isinstance(p, dict)
             and str(p.get("mimeType", "")).lower() == "text/plain"
-            and t
         ]
-        if planos:
-            return "\n\n".join(planos)
-        return "\n\n".join(t for t in textos if t)
-    if tipo == "text/html":
-        return _html_para_texto(_decodificar(corpo.get("data")))
-    return ""
+        for p in planos + [p for p in partes if p not in planos]:
+            texto = texto_da_mensagem(p, profundidade + 1)
+            if texto.strip():
+                return texto
+        return ""
+    textos = [texto_da_mensagem(p, profundidade + 1) for p in partes]
+    return "\n\n".join(t for t in textos if t.strip())
 
 
 def limpar_corpo(texto: str) -> str:
@@ -232,13 +318,23 @@ def conta(cliente: ClienteGoogle) -> Optional[str]:
     return limpar_externo(endereco, 120) if isinstance(endereco, str) else None
 
 
+_LISTANDO = threading.Lock()
+PRAZO_LISTA_S = 20.0
+ESPERA_LISTA_S = 10.0
+
+
 def listar(
     cliente: ClienteGoogle,
     busca: str = "",
     maximo: int = MAX_LISTA,
     forcar: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Os e-mails mais recentes (ou os da busca, no formato do Gmail)."""
+    """Os e-mails mais recentes (ou os da busca, no formato do Gmail).
+
+    Uma leitura por vez (as outras esperam no máximo 10 s e usam o
+    resultado guardado) e no máximo ~20 s no total: com o Gmail lento, as
+    perguntas repetidas não prendem todas as linhas de trabalho do servidor
+    (revisão de 17/10)."""
     busca = limpar_externo(busca if isinstance(busca, str) else "", MAX_BUSCA)
     busca = busca.replace("\n", " ").strip() or "newer_than:7d -in:spam -in:trash"
     maximo = max(1, min(int(maximo), MAX_LISTA))
@@ -247,14 +343,34 @@ def listar(
         guardado = CACHE.pegar(chave)
         if guardado is not None:
             return guardado
+    if not _LISTANDO.acquire(timeout=ESPERA_LISTA_S):
+        raise ErroGoogle("O Gmail está demorando. Tente de novo.", "eden_google_rede")
+    try:
+        if not forcar:
+            guardado = CACHE.pegar(chave)
+            if guardado is not None:
+                return guardado
+        return _listar_agora(cliente, busca, maximo, chave)
+    finally:
+        _LISTANDO.release()
+
+
+def _listar_agora(
+    cliente: ClienteGoogle, busca: str, maximo: int, chave: str
+) -> List[Dict[str, Any]]:
+    inicio = time.monotonic()
     dados = cliente._pedir(
         "GET", f"{URL_GMAIL}/messages", params={"q": busca, "maxResults": str(maximo)}
     )
     resultado = []
+    completo = True
     for item in (dados.get("messages") or [])[:maximo]:
         mid = item.get("id") if isinstance(item, dict) else None
         if not isinstance(mid, str) or not _ID.fullmatch(mid):
             continue
+        if time.monotonic() - inicio > PRAZO_LISTA_S:
+            completo = False
+            break
         bruto = cliente._pedir(
             "GET",
             f"{URL_GMAIL}/messages/{quote(mid, safe='')}",
@@ -268,18 +384,24 @@ def listar(
         resumo = resumo_da_mensagem(bruto)
         if resumo is not None:
             resultado.append(resumo)
-    CACHE.guardar(chave, resultado)
+    if completo:
+        CACHE.guardar(chave, resultado)
     return resultado
 
 
 def mensagem(cliente: ClienteGoogle, mensagem_id: Any) -> Dict[str, Any]:
     if not isinstance(mensagem_id, str) or not _ID.fullmatch(mensagem_id):
         raise ErroGoogle("E-mail não encontrado.", "eden_google_404")
-    bruto = cliente._pedir(
-        "GET",
-        f"{URL_GMAIL}/messages/{quote(mensagem_id, safe='')}",
-        params={"format": "full"},
-    )
+    try:
+        bruto = cliente._pedir(
+            "GET",
+            f"{URL_GMAIL}/messages/{quote(mensagem_id, safe='')}",
+            params={"format": "full"},
+        )
+    except ErroGoogle as exc:
+        if exc.codigo == "eden_google_404":
+            raise ErroGoogle("E-mail não encontrado.", "eden_google_404") from None
+        raise
     resumo = resumo_da_mensagem(bruto)
     if resumo is None:
         raise ErroGoogle("E-mail não encontrado.", "eden_google_404")
@@ -345,7 +467,11 @@ def secao_contexto(emails: Optional[Dict[str, Any]], tz: Any = None) -> str:
     marca = secrets.token_hex(4)
     linhas = []
     for m in lista[:MAX_NO_CONTEXTO]:
-        de = m["de"]["nome"] or m["de"]["email"]
+        # Nome e endereço juntos: "Banco X" <golpe@x.ru> não pode chegar à
+        # IA só como "Banco X" (revisão de 17/10).
+        de = m["de"]["email"]
+        if m["de"]["nome"]:
+            de = f"{m['de']['nome']} <{m['de']['email']}>"
         quando = datetime.fromtimestamp((m.get("recebido_em") or 0) / 1000, tz)
         quando = quando.strftime("%d/%m %H:%M")
         lido = "NÃO LIDO" if m.get("nao_lido") else "lido"
