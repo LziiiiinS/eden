@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import urlparse
 
 import pytest
@@ -250,7 +251,8 @@ def test_save_creates_page_under_parent(ambiente):
     md = corpo["markdown"]
     assert "evil.example" not in md and "Veja foto" in md
     assert '‹page url="https://www.notion.so/outra">Outra‹/page>' in md
-    assert "<b>código</b>" in md  # dentro do bloco de código fica igual
+    # Até dentro de bloco de código o "<" vira "‹" (sem brecha pela cerca).
+    assert "‹b>código‹/b>" in md and "<" not in md
 
 
 def test_save_is_not_retried(ambiente):
@@ -343,10 +345,82 @@ def test_only_fixed_host():
         )
 
 
-def test_links_only_notion():
-    assert notion._link_ok("https://www.notion.so/x") == "https://www.notion.so/x"
-    assert notion._link_ok("https://levi.notion.site/x") == "https://levi.notion.site/x"
-    assert notion._link_ok("https://evil.example/notion.so") is None
-    assert notion._link_ok("http://www.notion.so/x") is None
-    assert notion._link_ok("https://www.notion.so@evil.example/") is None
-    assert notion._link_ok("https://notnotion.so/") is None
+def test_link_is_built_from_the_id(ambiente):
+    _, cliente, _ = ambiente
+    resumo = cliente.pagina(PAI)
+    assert resumo["link"] == "https://www.notion.so/" + PAI.replace("-", "")
+
+
+# ── revisão de segurança (6ª rodada) ─────────────────────────────────────
+
+PAGINA_EXISTENTE = (
+    '<page url="https://www.notion.so/' + PAI.replace("-", "") + '">P</page>'
+)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "``` x ``` <mention-page url='x'/>\n" + PAGINA_EXISTENTE,
+        "    ```\n" + PAGINA_EXISTENTE,
+        "```\n~~~\n```\n" + PAGINA_EXISTENTE,
+        "~~~\n" + PAGINA_EXISTENTE,
+        '<database url="https://www.notion.so/x"/>',
+        "<image source='https://evil.example/x.png'/>",
+    ],
+)
+def test_no_notion_tag_survives(texto):
+    md = notion.markdown_para_salvar(texto)
+    assert "<" not in md
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "![a [b] c](https://evil.example/x.png?d=1)",
+        "![linha\nquebrada](https://evil.example/x.png)",
+        "![" + "a" * 400 + "](https://evil.example/x.png)",
+        "![a][r]\n\n[r]: https://evil.example/x.png",
+        "! [a](https://evil.example/x.png)",
+    ],
+)
+def test_no_image_form_survives(texto):
+    md = notion.markdown_para_salvar(texto)
+    assert "![" not in md and not re.search(r"!\s*\[", md)
+
+
+def test_failure_after_create_warns_about_duplicate(ambiente):
+    store, _, _ = ambiente
+    notion.guardar_pai(store, {"id": PAI, "titulo": "Éden"})
+
+    class Estranha(NotionFalso):
+        def stream(self, metodo, url, headers=None, json=None):
+            self.pedidos.append((metodo, url, json))
+            return Resposta(200, {"object": "error"})
+
+    falso = Estranha()
+    with pytest.raises(notion.ErroNotion) as exc:
+        notion.salvar(store, notion.ClienteNotion(http=falso), "Plano", "# Plano")
+    assert "confira no Notion se a página já foi criada" in str(exc.value)
+    assert len(falso.pedidos) == 1
+
+
+def test_title_with_slash_keeps_both_parts(ambiente):
+    store, cliente, falso = ambiente
+
+    class ComBarra(NotionFalso):
+        def stream(self, metodo, url, headers=None, json=None):
+            if metodo == "GET" and not url.endswith("/markdown"):
+                self.pedidos.append((metodo, url, json))
+                return Resposta(200, pagina(PAI, "Plano A/Plano B"))
+            return super().stream(metodo, url, headers, json)
+
+    doc = notion.importar(store, notion.ClienteNotion(http=ComBarra()), "pessoal", PAI)
+    assert doc["nome"] == "Plano A-Plano B (Notion).md"
+
+
+def test_notion_key_is_redacted():
+    from openjarvis.eden.redact import redact_secrets
+
+    assert CHAVE not in redact_secrets(f"erro com {CHAVE} no texto")
+    assert "secret_" + "x" * 43 not in redact_secrets("secret_" + "x" * 43)

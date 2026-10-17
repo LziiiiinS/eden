@@ -41,7 +41,8 @@ export function EdenNotionSettings() {
         <ol className="list-decimal ml-5 flex flex-col gap-1 text-xs">
           <li>
             Em notion.so/profile/integrations, crie uma conexão <strong>interna</strong> chamada "Éden". Em
-            Capacidades, deixe só <strong>Ler conteúdo</strong> e <strong>Inserir conteúdo</strong>.
+            Capacidades, deixe só <strong>Ler conteúdo</strong> e <strong>Inserir conteúdo</strong> (o Notion já vem
+            com "Atualizar conteúdo" marcado: desmarque).
           </li>
           <li>
             Copie a chave secreta e cole no <code>.env</code> do Éden, na linha <code>NOTION_API_KEY=</code> (sem{' '}

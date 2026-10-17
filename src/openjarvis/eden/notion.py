@@ -25,7 +25,6 @@ import os
 import re
 import time
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
 
 from openjarvis.eden.organizacao import ErroOrganizacao, Organizacao
 
@@ -52,7 +51,11 @@ _CHAVE = re.compile(r"(?:ntn_|secret_)[A-Za-z0-9]{20,80}")
 _ID = re.compile(
     r"([0-9a-f]{8})-?([0-9a-f]{4})-?([0-9a-f]{4})-?([0-9a-f]{4})-?([0-9a-f]{12})"
 )
-_HOSTS_LINK = ("notion.so", "notion.site")
+
+
+AVISO_DUPLICAR = (
+    " Antes de tentar de novo, confira no Notion se a página já foi criada."
+)
 
 
 class ErroNotion(Exception):
@@ -102,21 +105,6 @@ def id_da_pagina(valor: Any) -> str:
     return "-".join(achado.groups())
 
 
-def _link_ok(valor: Any) -> Optional[str]:
-    if not isinstance(valor, str) or len(valor) > 500:
-        return None
-    try:
-        partes = urlsplit(valor)
-    except ValueError:
-        return None
-    host = (partes.hostname or "").lower()
-    if partes.scheme != "https" or "@" in partes.netloc:
-        return None
-    if not any(host == h or host.endswith("." + h) for h in _HOSTS_LINK):
-        return None
-    return valor
-
-
 def _texto_externo(valor: Any, maximo: int) -> str:
     from openjarvis.eden.google import limpar_externo
 
@@ -151,7 +139,8 @@ def _resumo_pagina(pagina: Any) -> Optional[Dict[str, Any]]:
     return {
         "id": pid,
         "titulo": titulo_da_pagina(pagina),
-        "link": _link_ok(pagina.get("url")),
+        # O link é montado pelo ID (não pelo endereço que veio da resposta).
+        "link": f"https://www.notion.so/{pid.replace('-', '')}",
         "editado_em": editado
         if isinstance(editado, str) and len(editado) <= 40
         else None,
@@ -196,15 +185,20 @@ def guardar_pai(store: Organizacao, pagina: Optional[Dict[str, str]]) -> None:
 # ── texto que vai para o Notion ──────────────────────────────────────────
 
 _IMAGEM = re.compile(r"!\[([^\]\n]{0,300})\]\([^)\n]{0,2000}\)")
+# Qualquer outra forma de imagem (colchetes dentro, quebra de linha,
+# referência ![a][r]) vira link comum sem o "!".
+_RESTO_DE_IMAGEM = re.compile(r"!(?=\s*\[)")
 
 
 def markdown_para_salvar(texto: Any) -> str:
     """Folha do Éden → markdown para o Notion.
 
-    - imagens viram só o texto alternativo (nada é baixado de fora);
-    - fora de blocos de código, "<" vira "‹": o markdown do Notion entende
-      marcações como <page url="..."> e <mention-...>, que poderiam ligar ou
-      mover páginas que já existem."""
+    - imagens viram só o texto (nada é baixado de fora): todo "![" perde o
+      "!", em qualquer forma de imagem do markdown;
+    - todo "<" vira "‹", inclusive dentro de blocos de código: o markdown do
+      Notion entende marcações como <page url="...">, <database>, <mention-…>
+      e <image>, que poderiam ligar, mover ou mostrar coisas de fora. Num
+      bloco de código o "‹" aparece no lugar do "<" (preço aceitável)."""
     if not isinstance(texto, str):
         raise ErroOrganizacao("faltou o texto da folha")
     texto = texto.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
@@ -213,15 +207,8 @@ def markdown_para_salvar(texto: Any) -> str:
     if len(texto) > MAX_SALVAR:
         raise ErroOrganizacao("a folha é grande demais para salvar no Notion", 413)
     texto = _IMAGEM.sub(lambda m: m.group(1), texto)
-    linhas = []
-    em_codigo = False
-    for linha in texto.split("\n"):
-        if linha.lstrip().startswith(("```", "~~~")):
-            em_codigo = not em_codigo
-            linhas.append(linha)
-            continue
-        linhas.append(linha if em_codigo else linha.replace("<", "‹"))
-    return "\n".join(linhas)
+    texto = _RESTO_DE_IMAGEM.sub("", texto)
+    return texto.replace("<", "‹")
 
 
 def titulo_para_salvar(valor: Any) -> str:
@@ -276,8 +263,7 @@ class ClienteNotion:
                         + (
                             ""
                             if metodo == "GET" or url == URL_BUSCA
-                            else " Antes, confira no Notion se a página já não"
-                            " foi criada."
+                            else AVISO_DUPLICAR
                         ),
                         "eden_notion_rede",
                     ) from None
@@ -395,9 +381,19 @@ class ClienteNotion:
             "properties": {"title": {"title": [{"text": {"content": titulo}}]}},
             "markdown": markdown,
         }
-        resumo = _resumo_pagina(self._pedir("POST", URL_CRIAR, corpo))
-        if resumo is None:
-            raise ErroNotion("O Notion não confirmou a página criada.")
+        try:
+            resumo = _resumo_pagina(self._pedir("POST", URL_CRIAR, corpo))
+            if resumo is None:
+                raise ErroNotion("O Notion não confirmou a página criada.")
+        except ErroNotion as exc:
+            # Falha depois do pedido sair (resposta estranha, grande, lenta):
+            # a página pode ter sido criada. Avisa antes de a pessoa repetir.
+            texto = str(exc)
+            if exc.codigo in ("eden_notion", "eden_notion_rede") and (
+                "confira no Notion" not in texto
+            ):
+                texto += AVISO_DUPLICAR
+            raise ErroNotion(texto, exc.codigo) from None
         return resumo
 
 
@@ -433,7 +429,8 @@ def importar(
     conteudo = cliente.markdown(resumo["id"])
     texto = conteudo["markdown"]
     bruto = texto.encode("utf-8")
-    nome = documentos.limpar_nome(f"{resumo['titulo'][:100]} (Notion).md")
+    titulo = resumo["titulo"][:100].replace("/", "-").replace("\\", "-")
+    nome = documentos.limpar_nome(f"{titulo} (Notion).md")
     doc = documentos.guardar(
         store,
         espaco,

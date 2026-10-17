@@ -179,8 +179,9 @@ apaga páginas que já existem.
 1. Entre em **notion.so/profile/integrations** → **Nova conexão** (ou "New
    integration"). Tipo **Interna**, nome **Éden**, no seu espaço de trabalho.
 2. Em **Capacidades**, deixe marcado só **Ler conteúdo** e **Inserir
-   conteúdo**. Desmarque "Atualizar conteúdo", comentários e informações de
-   usuários. Salve.
+   conteúdo**. Desmarque "Atualizar conteúdo" (ele **vem marcado**),
+   comentários e informações de usuários. Salve. Assim o Éden não consegue
+   mudar nem apagar páginas que já existem.
 3. Copie a **chave secreta** (começa com `ntn_`). No `.env` desta pasta, na
    linha `NOTION_API_KEY=`, cole depois do `=` (sem `#`, sem espaços). Se a
    linha não existir, escreva no fim. Salve com **Ctrl + S**. **Não mande
