@@ -3,6 +3,8 @@ import type { ChatMessage } from '../types';
 import { removeActionBlocks } from './eden-acoes';
 
 export const CAMINHO_PESQUISA = '/v1/eden/pesquisa';
+/** Quantas falas vão para a pesquisa (igual a MAX_MENSAGENS no servidor). */
+export const ULTIMAS_NA_PESQUISA = 6;
 
 /**
  * Nota que vai junto das respostas de pesquisa quando a conversa continua:

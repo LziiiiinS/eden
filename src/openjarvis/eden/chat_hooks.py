@@ -164,7 +164,16 @@ async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
     os trajetos salvos (TomTom). Espera no máximo 8 s; falha não impede a
     conversa (o contexto diz que não há dado)."""
     settings = get_settings()
-    if not settings.enabled or request is None:
+    if not settings.enabled:
+        return
+    try:
+        from openjarvis.eden.pesquisa import neutralizar_historico
+
+        # Respostas antigas da pesquisa na internet voltam "desarmadas".
+        neutralizar_historico(getattr(request_body, "messages", None))
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: falha ao desarmar respostas de pesquisa")
+    if request is None:
         return
     ultima = _last_user(request_body)
     pergunta = ultima.content if ultima and isinstance(ultima.content, str) else None

@@ -7,6 +7,7 @@ leitura. Nunca cria cartões de ação e não grava nada na memória.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from fastapi import APIRouter, Request
@@ -85,8 +86,13 @@ async def pesquisar(request: Request):
 
     async def gerar():
         try:
-            async for texto in pesquisa.stream_pesquisa(mensagens, settings=settings):
-                yield pesquisa.pedaco_sse(texto)
+            # aclosing: se o app desconectar, a pesquisa fecha na hora e o
+            # gasto é anotado (sem depender da coleta de lixo).
+            async with contextlib.aclosing(
+                pesquisa.stream_pesquisa(mensagens, settings=settings)
+            ) as fluxo:
+                async for texto in fluxo:
+                    yield pesquisa.pedaco_sse(texto)
         except Exception as exc:  # noqa: BLE001 — o erro vira texto na conversa
             if isinstance(exc, (BudgetExceeded, pesquisa.ErroPesquisa, ProviderError)):
                 motivo = redact_secrets(str(exc))

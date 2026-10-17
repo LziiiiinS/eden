@@ -17,7 +17,7 @@ import { EdenSpaceSelect } from './EdenSpaceSelect';
 import { EdenDocumentos } from './EdenDocumentos';
 import { avisarMudanca } from './EdenActionCards';
 import { parseActionsEvent, removeActionBlocks, type EdenActionRef } from '../../lib/eden-acoes';
-import { CAMINHO_PESQUISA, mensagensParaIa } from '../../lib/eden-pesquisa';
+import { CAMINHO_PESQUISA, ULTIMAS_NA_PESQUISA, mensagensParaIa } from '../../lib/eden-pesquisa';
 import { useEdenOrg } from '../../lib/eden-org';
 import { useSpeech } from '../../hooks/useSpeech';
 import {
@@ -420,7 +420,14 @@ export function InputArea() {
         }
       } else {
       for await (const sseEvent of streamChat(
-        { model: requestModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
+        {
+          model: requestModel,
+          // A pesquisa só usa as últimas falas (o servidor corta do mesmo jeito).
+          messages: pesquisar ? apiMessages.slice(-ULTIMAS_NA_PESQUISA) : apiMessages,
+          stream: true,
+          temperature,
+          max_tokens: maxTokens,
+        },
         controller.signal,
         // Éden: em qual espaço a conversa acontece (o servidor usa as
         // tarefas, notas e memórias desse espaço). A pesquisa na internet
@@ -675,8 +682,8 @@ export function InputArea() {
               </button>
               {pesquisaWeb && (
                 <span className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>
-                  Só nesta mensagem · Claude, até 3 buscas (US$ 0,01 cada) · não usa suas tarefas, notas, memórias,
-                  agenda nem documentos
+                  Só nesta mensagem · Claude, até 3 buscas (US$ 0,01 cada) · usa só as últimas mensagens desta
+                  conversa (não usa suas tarefas, notas, memórias, agenda nem documentos)
                 </span>
               )}
             </div>

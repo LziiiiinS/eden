@@ -57,7 +57,7 @@ async def _corpo(request: Request) -> Dict[str, Any]:
         pedacos.append(pedaco)
     try:
         dados = json.loads(b"".join(pedacos) or b"{}")
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
         raise HTTPException(status_code=400, detail="JSON inválido") from None
     if not isinstance(dados, dict):
         raise HTTPException(

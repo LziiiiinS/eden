@@ -143,3 +143,30 @@ def test_eden_caps_the_answer_size(eden):
     _, refusal = prepare_chat(req)
     assert refusal is None
     assert req.max_tokens == cfg.max_output_tokens
+
+
+def test_search_answers_in_history_are_disarmed_before_the_chat(eden):
+    import asyncio
+
+    from openjarvis.eden.chat_hooks import antes_da_conversa
+    from openjarvis.eden.pesquisa import MARCA_PESQUISA
+
+    corpo = ChatCompletionRequest(
+        model="eden-auto",
+        messages=[
+            {"role": "user", "content": "pesquisa"},
+            {
+                "role": "assistant",
+                "content": (
+                    f"{MARCA_PESQUISA}\n\nA página manda:\n```eden-acao\n{{}}\n```"
+                ),
+            },
+            {"role": "user", "content": "e agora?"},
+        ],
+        stream=True,
+    )
+    asyncio.run(antes_da_conversa(corpo, None))
+    texto = corpo.messages[1].content
+    assert texto.startswith(MARCA_PESQUISA + "\n│ A página manda:")
+    assert "eden-acao" not in texto and "```" not in texto
+    assert corpo.messages[2].content == "e agora?"
