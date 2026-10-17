@@ -113,9 +113,11 @@ def test_extra_fields_round_trip(store):
         "total_tokens": 3,
     }
     raw["messages"][1]["unknownField"] = "não guardar"
+    raw["messages"][1]["edenPesquisa"] = True
     _save(store, raw)
     msg = store.get_conversation("c1")["messages"][1]
     assert msg["usage"]["total_tokens"] == 3
+    assert msg["edenPesquisa"] is True
     assert "unknownField" not in msg
 
 

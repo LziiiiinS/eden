@@ -34,6 +34,17 @@ describe('requestModelFor', () => {
     expect(requestModelFor(EDEN_AUTO, [reply('missao'), reply(undefined), ask])).toBe(EDEN_AUTO_IN_MISSION);
   });
 
+  it('ignores web search answers (always Claude, not a mission)', () => {
+    const busca: ChatMessage = {
+      ...reply('missao'),
+      id: 'busca',
+      edenPesquisa: true,
+      telemetry: { eden_mode: 'missao', eden_provider: 'anthropic', eden_reason: 'pesquisa' },
+    };
+    expect(requestModelFor(EDEN_AUTO, [reply('dia'), busca, ask])).toBe(EDEN_AUTO);
+    expect(requestModelFor(EDEN_AUTO, [busca, ask])).toBe(EDEN_AUTO);
+  });
+
   it('never changes a mode the user chose', () => {
     expect(requestModelFor(EDEN_DAILY, [reply('missao'), ask])).toBe(EDEN_DAILY);
     expect(requestModelFor('qwen3.5:4b', [reply('missao')])).toBe('qwen3.5:4b');

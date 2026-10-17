@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Send, Square, Paperclip, Search } from 'lucide-react';
+import { Send, Square, Paperclip, Search, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
@@ -17,6 +17,7 @@ import { EdenSpaceSelect } from './EdenSpaceSelect';
 import { EdenDocumentos } from './EdenDocumentos';
 import { avisarMudanca } from './EdenActionCards';
 import { parseActionsEvent, removeActionBlocks, type EdenActionRef } from '../../lib/eden-acoes';
+import { CAMINHO_PESQUISA, ULTIMAS_NA_PESQUISA, mensagensParaIa } from '../../lib/eden-pesquisa';
 import { useEdenOrg } from '../../lib/eden-org';
 import { useSpeech } from '../../hooks/useSpeech';
 import {
@@ -120,6 +121,9 @@ export function InputArea() {
     if (edenServer && deepResearch) setDeepResearch(false);
   }, [edenServer, deepResearch, setDeepResearch]);
   const corpusSync = useResearchCorpusSync(deepResearch);
+  // Éden (Parte 4): pesquisa na internet só na próxima mensagem (desliga
+  // sozinha depois de enviar).
+  const [pesquisaWeb, setPesquisaWeb] = useState(false);
 
   // Éden: pedido vindo de outra tela (ex.: "Pedir um plano ao Éden" no Hoje).
   // Abre uma conversa nova com o texto na caixa; a pessoa confere e envia.
@@ -214,6 +218,8 @@ export function InputArea() {
     }
 
     setInput('');
+    const pesquisar = edenServer && pesquisaWeb && !deepResearch;
+    setPesquisaWeb(false);
 
     let convId = activeId;
     if (!convId) {
@@ -230,11 +236,9 @@ export function InputArea() {
 
     // Build API messages before adding assistant placeholder
     const currentMessages = useAppStore.getState().messages;
-    const apiMessages = currentMessages.map((m) => ({
-      role: m.role,
-      // Éden: blocos de ação antigos não voltam para a IA.
-      content: m.role === 'assistant' ? removeActionBlocks(m.content) : m.content,
-    }));
+    // Éden: blocos de ação antigos não voltam para a IA, e respostas de
+    // pesquisa vão marcadas como conteúdo de fora (informação, nunca ordem).
+    const apiMessages = mensagensParaIa(currentMessages);
     // Éden: no automático, uma conversa em missão continua com o Claude.
     const requestModel = requestModelFor(selectedModel, currentMessages);
 
@@ -244,6 +248,7 @@ export function InputArea() {
       content: '',
       timestamp: Date.now(),
       isResearch: deepResearch || undefined,
+      edenPesquisa: pesquisar || undefined,
     };
     addMessage(convId, assistantMsg);
 
@@ -274,7 +279,7 @@ export function InputArea() {
     setStreamState({
       conversationId: convId,
       isStreaming: true,
-      phase: deepResearch ? 'Pesquisando…' : 'Escrevendo…',
+      phase: deepResearch ? 'Pesquisando…' : pesquisar ? 'Pesquisando na internet…' : 'Escrevendo…',
       elapsedMs: 0,
       activeToolCalls: [],
       content: '',
@@ -415,17 +420,26 @@ export function InputArea() {
         }
       } else {
       for await (const sseEvent of streamChat(
-        { model: requestModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
+        {
+          model: requestModel,
+          // A pesquisa só usa as últimas falas (o servidor corta do mesmo jeito).
+          messages: pesquisar ? apiMessages.slice(-ULTIMAS_NA_PESQUISA) : apiMessages,
+          stream: true,
+          temperature,
+          max_tokens: maxTokens,
+        },
         controller.signal,
         // Éden: em qual espaço a conversa acontece (o servidor usa as
-        // tarefas, notas e memórias desse espaço).
-        edenServer
+        // tarefas, notas e memórias desse espaço). A pesquisa na internet
+        // não recebe nada disso.
+        edenServer && !pesquisar
           ? { 'X-Eden-Espaco': useEdenOrg.getState().espacoAtivo, 'X-Eden-Conversa': convId }
           : {},
+        pesquisar ? CAMINHO_PESQUISA : undefined,
       )) {
         const eventName = sseEvent.event;
 
-        if (eventName === 'eden_acoes') {
+        if (eventName === 'eden_acoes' && !pesquisar) {
           const { acoes, recusadas } = parseActionsEvent(sseEvent.data);
           edenActions = acoes;
           if (recusadas.length > 0) {
@@ -436,7 +450,11 @@ export function InputArea() {
         } else if (eventName === 'eden_route') {
           try {
             edenRoute = JSON.parse(sseEvent.data) as EdenRoute;
-            setStreamState({ phase: `${providerName(edenRoute.provider)} escrevendo…` });
+            setStreamState({
+              phase: pesquisar
+                ? 'Pesquisando na internet (Claude)…'
+                : `${providerName(edenRoute.provider)} escrevendo…`,
+            });
           } catch {}
         } else if (eventName === 'agent_turn_start') {
           setStreamState({ phase: 'Pensando…' });
@@ -620,6 +638,7 @@ export function InputArea() {
     temperature,
     maxTokens,
     edenServer,
+    pesquisaWeb,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -645,6 +664,29 @@ export function InputArea() {
               garantirConversa={() => activeId ?? createConversation(selectedModel)}
               disabled={streamState.isStreaming}
             />
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <button
+                type="button"
+                onClick={() => setPesquisaWeb(!pesquisaWeb)}
+                disabled={streamState.isStreaming}
+                aria-pressed={pesquisaWeb}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors cursor-pointer disabled:cursor-default disabled:opacity-50"
+                style={{
+                  background: pesquisaWeb ? 'var(--color-accent-subtle)' : 'transparent',
+                  border: `1px solid ${pesquisaWeb ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  color: pesquisaWeb ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                }}
+              >
+                <Globe size={12} />
+                Pesquisar na internet
+              </button>
+              {pesquisaWeb && (
+                <span className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Só nesta mensagem · Claude, até 3 buscas (US$ 0,01 cada) · usa só as últimas mensagens desta
+                  conversa (não usa suas tarefas, notas, memórias, agenda nem documentos)
+                </span>
+              )}
+            </div>
           </div>
         ) : (
         <div className="flex items-center gap-2">

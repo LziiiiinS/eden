@@ -42,11 +42,14 @@ export function SafeLink({ href, children }: { href?: string; children?: React.R
         e.preventDefault();
         // O endereço inteiro aparece: um link pode levar dados escondidos
         // depois do "?" (ex.: texto de um documento que enganou a IA).
-        const inteiro = destino.length > 300 ? `${destino.slice(0, 300)}…` : destino;
+        // Mostra o endereço já interpretado pelo navegador (o que vai abrir
+        // de verdade), não o texto que a IA escreveu.
+        const real = externo.href;
+        const inteiro = real.length > 300 ? `${real.slice(0, 300)}…` : real;
         const ok = window.confirm(
           `Abrir um site fora do Éden?\n\n${site}\n\nEndereço completo:\n${inteiro}\n\nEste link foi escrito pela IA. Só abra se você confia nele e se o endereço não leva informações suas.`,
         );
-        if (ok) window.open(destino, '_blank', 'noopener,noreferrer');
+        if (ok) window.open(real, '_blank', 'noopener,noreferrer');
       }}
     >
       {children}

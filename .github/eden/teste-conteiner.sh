@@ -112,6 +112,18 @@ echo "$resposta" | grep -q 'Documento de teste do Eden' \
   || { echo "error: o PDF não foi lido no contêiner: $resposta"; exit 1; }
 echo "ok: documento PDF lido (processo separado, contêiner só-leitura)"
 
+# Pesquisa na internet: sem a chave da Anthropic, recusa sem chamar ninguém.
+com_chave "$BASE/v1/eden/pesquisa/status" | grep -q '"disponivel":false' \
+  || { echo "error: a pesquisa diz que está disponível sem a chave"; exit 1; }
+codigo=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $KEY" \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"teste"}]}' "$BASE/v1/eden/pesquisa")
+[ "$codigo" = "409" ] || { echo "error: pesquisa sem chave devolveu $codigo"; exit 1; }
+codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"teste"}]}' "$BASE/v1/eden/pesquisa")
+[ "$codigo" = "401" ] || { echo "error: pesquisa sem a chave de acesso devolveu $codigo"; exit 1; }
+echo "ok: pesquisa na internet protegida e desligada sem a chave da Anthropic"
+
 docker restart eden-teste >/dev/null
 esperar
 com_chave "$BASE/v1/eden/conversations/c1" | grep -q '"m1"' || { echo "error: conversa sumiu depois de reiniciar"; exit 1; }

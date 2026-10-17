@@ -25,9 +25,11 @@ export async function* streamChat(
   request: ChatRequest,
   signal?: AbortSignal,
   extraHeaders: Record<string, string> = {},
+  // Éden: a pesquisa na internet usa outro endereço com o mesmo formato.
+  path = '/v1/chat/completions',
 ): AsyncGenerator<SSEEvent> {
   const base = getBase();
-  const response = await fetch(`${base}/v1/chat/completions`, {
+  const response = await fetch(`${base}${path}`, {
     method: 'POST',
     headers: authHeaders({ ...extraHeaders, 'Content-Type': 'application/json' }),
     body: JSON.stringify(request),

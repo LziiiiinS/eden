@@ -208,6 +208,18 @@ def main() -> int:
         expect(painel).to_have_count(0)
         passo("documento tirado da conversa")
 
+        # ── pesquisa na internet (Parte 4): liga só para a próxima mensagem ─
+        busca = pg.get_by_role("button", name="Pesquisar na internet")
+        expect(busca).to_have_attribute("aria-pressed", "false")
+        busca.click()
+        expect(busca).to_have_attribute("aria-pressed", "true")
+        expect(pg.get_by_text("Só nesta mensagem")).to_be_visible()
+        busca.click()
+        expect(busca).to_have_attribute("aria-pressed", "false")
+        status, estado = api("GET", "/v1/eden/pesquisa/status")
+        assert status == 200 and estado["disponivel"] is False, estado
+        passo("pesquisa na internet: botão liga/desliga; sem chave da Anthropic")
+
         # ── organização pessoal (Parte 2) e Configurações ─────────────────
         status, _ = api(
             "POST",

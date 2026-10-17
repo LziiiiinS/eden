@@ -134,6 +134,8 @@ export interface ChatMessage {
   audio?: { url: string };
   /** Éden: ações sugeridas nesta resposta (cartões de confirmação). */
   edenActions?: EdenActionRef[];
+  /** Éden: resposta da pesquisa na internet (conteúdo de páginas de fora). */
+  edenPesquisa?: boolean;
 }
 
 export interface Conversation {

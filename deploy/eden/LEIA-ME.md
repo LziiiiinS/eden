@@ -148,6 +148,27 @@ A página **Hoje** mostra o tempo dos dois primeiros trajetos, e na conversa dá
 para perguntar "quanto tempo até o trabalho agora?". O TomTom recebe só as
 coordenadas de origem e destino (e o texto da busca de endereço).
 
+## Pesquisa na internet
+
+Para perguntas sobre coisas de agora (notícias, preços, horários, resultados),
+toque em **Pesquisar na internet** antes de enviar. Vale só para aquela
+mensagem e desliga sozinho depois.
+
+- Usa o **Claude** (a mesma chave da Anthropic do `.env`; não precisa de conta
+  nova). Faz até 3 buscas por pergunta e no máximo 20 pesquisas por hora.
+- Custo: o texto (como uma resposta do Claude) **mais US$ 0,01 por busca**.
+  Entra no limite de gastos da Anthropic do mês.
+- A resposta termina com **Fontes:** (os sites usados). Os links pedem
+  confirmação antes de abrir.
+- A pesquisa **não** recebe suas tarefas, notas, memórias, agenda nem
+  documentos; só a conversa aberta (as últimas mensagens). E não cria cartões
+  de ação: para guardar algo, peça depois numa mensagem normal.
+- O que vem das páginas é tratado como dado, nunca como ordem.
+- Para pesquisar algo da sua cidade, escreva a cidade na pergunta.
+- Se aparecer "web search não está ligado", entre em
+  **platform.claude.com/settings/capabilities** e confira se a busca na
+  internet (web search) não foi desligada.
+
 ## Segurança
 
 - O `.env` tem as chaves. Não mande esse arquivo para ninguém, não cole as

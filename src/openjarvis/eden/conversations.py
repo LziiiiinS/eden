@@ -43,6 +43,8 @@ _EXTRA_FIELDS = (
     "telemetry",
     # Éden (Parte 2): ações sugeridas nesta resposta (cartões de confirmação).
     "edenActions",
+    # Éden (Parte 4): resposta da pesquisa na internet (conteúdo de fora).
+    "edenPesquisa",
 )
 
 _SCHEMA = """
