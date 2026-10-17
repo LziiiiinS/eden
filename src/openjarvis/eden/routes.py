@@ -156,9 +156,13 @@ _SEM_GUARDAR = {"Cache-Control": "no-store"}
 
 @router.post("/pareamento")
 async def criar_pareamento(request: Request):
-    """Cria um código de 5 minutos (protegida pela chave, como as outras)."""
+    """Cria um código de 5 minutos. Só com a chave principal (o notebook): um
+    aparelho com chave própria não cria acesso para outros."""
     from fastapi.responses import JSONResponse
 
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
     if not _chave_do_servidor(request):
         raise HTTPException(
             status_code=409, detail="O servidor está sem chave de acesso"
@@ -168,6 +172,9 @@ async def criar_pareamento(request: Request):
 
 @router.delete("/pareamento")
 async def cancelar_pareamento(request: Request):
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
     _pareamento(request).cancelar()
     return {"ok": True}
 
@@ -205,6 +212,15 @@ async def usar_pareamento(request: Request):
         raise HTTPException(
             status_code=409, detail="O servidor está sem chave de acesso"
         )
+    from openjarvis.eden.aparelhos import registro as aparelhos_registro
+
+    # Lista cheia: recusa antes de gastar o código.
+    if not await asyncio.to_thread(aparelhos_registro().pode_criar):
+        raise HTTPException(
+            status_code=409,
+            detail="Muitos aparelhos ligados. No notebook, desligue algum em "
+            "Configurações → Aparelhos ligados.",
+        )
     resultado = _pareamento(request).usar(codigo)
     if resultado == pareamento.MUITAS_TENTATIVAS:
         return JSONResponse(
@@ -225,8 +241,22 @@ async def usar_pareamento(request: Request):
             status_code=400,
             headers=_SEM_GUARDAR,
         )
-    logger.info("Éden: um aparelho foi ligado com o código de pareamento")
-    return JSONResponse({"chave": chave}, headers=_SEM_GUARDAR)
+    # Parte 5: o aparelho recebe uma chave só dele (dá para desligar um só).
+    from openjarvis.eden.aparelhos import nome_pelo_navegador, registro
+
+    try:
+        novo = await asyncio.to_thread(
+            registro().criar, nome_pelo_navegador(request.headers.get("user-agent"))
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: não consegui criar a chave do aparelho")
+        raise HTTPException(
+            status_code=503, detail="Não consegui criar a chave do aparelho."
+        ) from None
+    logger.info("Éden: aparelho %d ligado com o código de pareamento", novo["id"])
+    return JSONResponse({"chave": novo["chave"]}, headers=_SEM_GUARDAR)
 
 
 @router.get("/gastos")

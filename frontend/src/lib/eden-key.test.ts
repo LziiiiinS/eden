@@ -69,3 +69,11 @@ describe('QR code', () => {
     expect(qr.size % 4).toBe(1);
   });
 });
+
+describe('chave de aparelho', () => {
+  it('keeps a device key (oj_ap_)', () => {
+    const ap = 'oj_ap_Zx-9_' + 'a'.repeat(40);
+    expect(normalizeAccessKey(`  ${ap} `)).toBe(ap);
+    expect(readKeyFromHash(`#chave=${ap}`)).toBe(ap);
+  });
+});

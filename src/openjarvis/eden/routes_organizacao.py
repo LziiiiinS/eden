@@ -393,8 +393,12 @@ async def push_inscrever(request: Request):
 
 @router.delete("/push/inscricoes/{insc_id}")
 async def push_remover(insc_id: int, request: Request):
-    """Remove um aparelho da lista de avisos (pela tela de Configurações)."""
+    """Remove um aparelho da lista de avisos (pela tela de Configurações).
+    Só o notebook (chave principal)."""
     from openjarvis.eden import push
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
 
     removida = await asyncio.to_thread(
         push.remover_inscricao_id, _store(request), insc_id

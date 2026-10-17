@@ -33,6 +33,17 @@ _WS_AUTH_PROTOCOL = "openjarvis.auth.v1"
 _WS_KEY_PROTOCOL_PREFIX = "openjarvis.key.b64url."
 
 
+def _chave_de_aparelho(presented: str) -> int | None:
+    """Éden (Parte 5): chave própria de um aparelho (``oj_ap_…``), se valer."""
+    try:
+        from openjarvis.eden.aparelhos import conferir
+
+        return conferir(presented)
+    except Exception:  # noqa: BLE001 — nunca derruba o pedido
+        logger.exception("Éden: falha ao conferir a chave do aparelho")
+        return None
+
+
 def _api_keys_match(presented: str, expected: str) -> bool:
     """Compare API keys as bytes so non-ASCII values do not raise ``TypeError``."""
     try:
@@ -73,11 +84,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             scheme, _, token = auth.partition(" ")
             # Constant-time comparison to avoid leaking the key via timing.
-            if scheme.lower() != "bearer" or not _api_keys_match(token, self._api_key):
-                return JSONResponse(
-                    {"detail": "Invalid API key"},
-                    status_code=401,
-                )
+            if scheme.lower() != "bearer":
+                return JSONResponse({"detail": "Invalid API key"}, status_code=401)
+            if _api_keys_match(token, self._api_key):
+                request.state.eden_aparelho = None  # chave principal
+            else:
+                aparelho = _chave_de_aparelho(token)
+                if aparelho is None:
+                    return JSONResponse(
+                        {"detail": "Invalid API key"},
+                        status_code=401,
+                    )
+                request.state.eden_aparelho = aparelho
         return await call_next(request)
 
     @staticmethod
@@ -204,7 +222,23 @@ def authenticate_websocket(
     protocol_valid = bool(credential_protocol and expected_protocol) and (
         _api_keys_match(credential_protocol, expected_protocol)
     )
+    if not (header_valid or protocol_valid):
+        # Éden: chave própria do aparelho (no cabeçalho ou no protocolo).
+        presented = header_token if scheme.lower() == "bearer" else ""
+        if not presented and credential_protocol:
+            presented = _decode_key_protocol(credential_protocol)
+        if presented and _chave_de_aparelho(presented) is not None:
+            return True, selected_protocol
     return header_valid or protocol_valid, selected_protocol
+
+
+def _decode_key_protocol(protocol: str) -> str:
+    encoded = protocol[len(_WS_KEY_PROTOCOL_PREFIX) :]
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+    except (ValueError, UnicodeError):
+        return ""
 
 
 def websocket_authorized(websocket, expected_key: str) -> bool:  # noqa: ANN001

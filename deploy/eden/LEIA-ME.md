@@ -49,6 +49,25 @@ chave de acesso de novo. Escreva numa janela e veja a conversa aparecer na outra
   **Mostrar código**; no iPhone, toque em **Tenho um código do notebook** e
   digite o código (vale 5 minutos e serve uma vez só).
 
+## Aparelhos ligados (chave por aparelho)
+
+Cada celular ligado pelo **código curto** ou pelo **QR code** recebe uma chave
+só dele. Em **Configurações → Aparelhos ligados** aparecem todos, com o último
+uso.
+
+- Perdeu um celular? No notebook, toque em **Desligar** ao lado dele. Ele
+  perde o acesso na hora; os outros continuam.
+- Só o notebook (chave principal) cria códigos, QR codes e chaves novas, e
+  liga ou desliga contas (Google, e-mail, Notion). Um celular pode desligar
+  só a si mesmo.
+- Celular ligado antes desta versão usa a chave principal: nele, em
+  **Configurações → Aparelhos ligados**, toque em **Usar uma chave só deste
+  aparelho**.
+- A chave do QR code vale 10 minutos para o primeiro uso; a do código curto,
+  1 dia. Depois de usada, vale até ser desligada.
+- Ao desligar um aparelho, os avisos de lembrete recomeçam: os aparelhos que
+  continuam ligados se inscrevem de novo sozinhos quando abrem o Éden.
+
 ## Ligar a Google Agenda
 
 O Éden lê os seus eventos e sugere eventos novos ou mudanças, sempre com o
@@ -242,7 +261,11 @@ Depois:
   rede privada (Tailscale), com endereço HTTPS.
 - Se a chave de acesso vazar: no `.env`, apague o que vem depois de
   `OPENJARVIS_API_KEY=` (deixe a linha vazia), salve e rode o `iniciar-eden`.
-  Ele cria uma chave nova; digite a nova em cada aparelho.
+  Ele cria uma chave nova e **desliga todas as chaves de aparelho** (alguém
+  com a chave antiga pode ter criado outras). Ligue cada celular de novo pelo
+  código curto.
+- Perdeu só um celular: não precisa trocar a chave principal; desligue só ele
+  em **Configurações → Aparelhos ligados**.
 - Se a chave de uma IA vazar: apague a chave no site da empresa, crie outra e
   troque no `.env`.
 

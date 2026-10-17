@@ -61,6 +61,9 @@ async def buscar(request: Request, q: str = ""):
 
 @router.post("/pai")
 async def escolher_pai(request: Request):
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
     dados = await _corpo(request)
     cliente = notion.cliente_do_app(request.app)
     try:
@@ -74,6 +77,9 @@ async def escolher_pai(request: Request):
 
 @router.delete("/pai")
 async def esquecer_pai(request: Request):
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
     await _rodar(notion.guardar_pai, _store(request), None)
     return {"pai": None}
 

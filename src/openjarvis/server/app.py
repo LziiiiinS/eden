@@ -569,6 +569,13 @@ def create_app(
         app.include_router(eden_voz_router)
     except Exception as exc:
         logger.warning("Éden: voz não ligada: %s", exc)
+    # Éden (Parte 5): chave por aparelho (lista e desligar um aparelho só).
+    try:
+        from openjarvis.eden.routes_aparelhos import router as eden_aparelhos_router
+
+        app.include_router(eden_aparelhos_router)
+    except Exception as exc:
+        logger.warning("Éden: aparelhos não ligados: %s", exc)
     # Éden (Parte 4): Notion (precisa da NOTION_API_KEY no .env).
     try:
         from openjarvis.eden.routes_notion import router as eden_notion_router

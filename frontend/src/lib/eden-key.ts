@@ -5,7 +5,8 @@
 // com espaços ou aspas, e também o caso em que o navegador já tinha preenchido
 // uma senha salva no campo e a chave foi colada junto: fica só a última chave
 // no formato oj_sk_….
-const KEY_PATTERN = /oj_sk_[A-Za-z0-9_-]+/g;
+// Éden (Parte 5): também a chave própria de um aparelho (oj_ap_…).
+const KEY_PATTERN = /oj_(?:sk|ap)_[A-Za-z0-9_-]+/g;
 
 /** Nome do parâmetro no fim do link do QR code: https://…/#chave=oj_sk_… */
 export const KEY_HASH_PARAM = 'chave';

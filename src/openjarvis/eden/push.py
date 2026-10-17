@@ -271,6 +271,14 @@ def remover_inscricao_id(store, insc_id: int) -> bool:
     return bool(store.transacao(fazer))
 
 
+def remover_todas_inscricoes(store) -> int:
+    """Apaga todas as inscrições de avisos (ex.: um aparelho foi desligado)."""
+    return int(
+        store.transacao(lambda c: c.execute("DELETE FROM push_inscricoes").rowcount)
+        or 0
+    )
+
+
 def conferir_troca_de_chave(store, chave_acesso: str) -> bool:
     """Se a chave de acesso do servidor mudou desde a última vez, apaga as
     inscrições de avisos: quem só tinha a chave antiga não continua
@@ -481,8 +489,16 @@ def registrar_lembretes(app) -> None:
         if store is None:
             store = Organizacao()
             app.state.eden_organizacao = store
-        if conferir_troca_de_chave(store, os.environ.get("OPENJARVIS_API_KEY", "")):
+        chave_principal = os.environ.get("OPENJARVIS_API_KEY", "")
+        if conferir_troca_de_chave(store, chave_principal):
             logger.info("Éden: chave de acesso nova; avisos dos aparelhos reiniciados")
+        try:
+            from openjarvis.eden.aparelhos import registro
+
+            if registro().conferir_troca_da_chave_principal(chave_principal):
+                logger.info("Éden: chave principal nova; aparelhos desligados")
+        except Exception:  # noqa: BLE001
+            logger.exception("Éden: não consegui conferir as chaves dos aparelhos")
         # Servidor acabou de ligar: nenhuma chamada ao Google está no ar.
         presas = store.fechar_presas(int(time.time() * 1000) + 1)
         if presas:
