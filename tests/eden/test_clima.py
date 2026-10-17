@@ -345,3 +345,36 @@ def test_out_of_range_values_and_rounded_coordinates(store, falso):
     _cliente(falso).previsao(casa)
     params = falso.pedidos[-1][1]
     assert params["latitude"] == -27.6 and params["longitude"] == -48.55
+
+
+def test_a_passing_network_failure_is_tried_again(store, falso, monkeypatch):
+    monkeypatch.setattr(clima.time, "sleep", lambda s: None)
+
+    class UmaFalha:
+        def __init__(self):
+            self.vezes = 0
+
+        def stream(self, metodo, url, params=None, headers=None):
+            self.vezes += 1
+            if self.vezes == 1:
+                raise ConnectionError("caiu")
+            return falso.stream(metodo, url, params, headers)
+
+    http = UmaFalha()
+    resultados = clima.ClienteClima(http=http, cache=clima.CacheClima()).buscar("Rio")
+    assert resultados[0]["nome"] == "Florianópolis" and http.vezes == 2
+
+
+def test_server_errors_are_tried_once_more_then_explained(store, monkeypatch):
+    monkeypatch.setattr(clima.time, "sleep", lambda s: None)
+
+    class Sempre503:
+        vezes = 0
+
+        def stream(self, metodo, url, params=None, headers=None):
+            Sempre503.vezes += 1
+            return Resposta(503, {})
+
+    with pytest.raises(clima.ErroClima) as exc:
+        clima.ClienteClima(http=Sempre503(), cache=clima.CacheClima()).buscar("Rio")
+    assert exc.value.codigo == "eden_clima_rede" and Sempre503.vezes == 2
