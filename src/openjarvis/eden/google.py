@@ -481,7 +481,6 @@ class ClienteGoogle:
 
     def trocar_codigo(self, codigo: str, verificador: str) -> None:
         cfg = self.cfg
-        anterior = self.cofre.ler()
         resposta = self._rede(
             "POST",
             URL_TOKEN,
@@ -509,9 +508,10 @@ class ClienteGoogle:
             raise ErroGoogle("O Google não mandou a autorização. Tente de novo.")
         self.cofre.salvar(refresh, " ".join(escopos))
         self._guardar_acesso(dados)
-        # Ligou de novo: a autorização antiga deixa de valer no Google também.
-        if anterior and anterior.get("refresh") != refresh:
-            self._revogar(anterior["refresh"])
+        # Ligou de novo: a autorização antiga sai do cofre (é sobrescrita).
+        # NÃO revogar no Google: a revogação do Google vale para a
+        # autorização inteira (este app + esta conta), e derrubaria também a
+        # autorização nova que acabou de chegar.
 
     def _revogar(self, token: str) -> bool:
         try:
