@@ -11,6 +11,8 @@ _PATTERNS = (
     (re.compile(r"oj_sk_[A-Za-z0-9_\-]+"), "oj_sk_…"),
     (re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=\-]+"), "Bearer …"),
     (re.compile(r"(?i)(x-api-key[\"']?\s*[:=]\s*[\"']?)[^\s\"',}]+"), r"\1…"),
+    # Chave no endereço (ex.: TomTom ...?key=...).
+    (re.compile(r"(?i)([?&](?:key|api_key|apikey)=)[^&\s\"']+"), r"\1…"),
 )
 
 

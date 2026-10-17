@@ -254,6 +254,11 @@ def main() -> int:
         assert status == 200
         passo("Clima: desligado no começo, liga pela página")
 
+        # Rotas (Parte 4): sem a chave do TomTom, a página só explica.
+        pg.goto(BASE + "/rotas")
+        expect(pg.get_by_text("Ainda não configurado")).to_be_visible(timeout=30_000)
+        passo("Rotas: sem a chave do TomTom, explica como ligar")
+
         pg.goto(BASE + "/settings")
         expect(pg.get_by_role("heading", name="Configurações")).to_be_visible(
             timeout=30_000

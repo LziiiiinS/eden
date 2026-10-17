@@ -10,6 +10,7 @@ import { EdenTasksPage } from './pages/EdenTasksPage';
 import { EdenNotesPage } from './pages/EdenNotesPage';
 import { EdenTodayPage } from './pages/EdenTodayPage';
 import { EdenClimaPage } from './pages/EdenClimaPage';
+import { EdenRotasPage } from './pages/EdenRotasPage';
 import { EdenAccessGate } from './components/EdenAccessGate';
 import { GetStartedPage } from './pages/GetStartedPage';
 import { AgentsPage } from './pages/AgentsPage';
@@ -216,6 +217,7 @@ export default function App() {
           <Route path="hoje" element={<EdenTodayPage />} />
           {/* Éden (Parte 4): clima, vento e ondas. */}
           <Route path="clima" element={<EdenClimaPage />} />
+          <Route path="rotas" element={<EdenRotasPage />} />
           <Route path="settings/avancado" element={<SettingsPage />} />
           <Route path="get-started" element={<GetStartedPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />

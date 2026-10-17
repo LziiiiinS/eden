@@ -3,8 +3,9 @@
 // "Pedir um plano ao Éden" leva o pedido para a conversa.
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CalendarCheck, CalendarDays, CloudSun, MessageSquare, Pin } from 'lucide-react';
+import { CalendarCheck, CalendarDays, Car, CloudSun, MessageSquare, Pin } from 'lucide-react';
 import { ondasDoDia, previsaoDoLugar, resumoDoDia, statusClima } from '../lib/eden-clima';
+import { resumoTempo, temposTrajetos, type TempoTrajeto } from '../lib/eden-rotas';
 import { EdenSpaceSelect } from '../components/Chat/EdenSpaceSelect';
 import { Badge, EdenPage, EdenSection, Empty, ErrorLine, PrimaryButton } from '../components/Eden/EdenUi';
 import { LinhaTarefa } from './EdenTasksPage';
@@ -59,6 +60,35 @@ function ClimaDoDia() {
         <li key={l.nome} style={{ color: 'var(--color-text-secondary)' }}>
           <CloudSun size={12} className="inline mr-1 -mt-0.5" />
           <span style={{ color: 'var(--color-text)' }}>{l.nome}:</span> {l.texto}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Éden (Parte 4): tempo agora dos trajetos salvos (se o TomTom estiver ligado).
+function TransitoDoDia() {
+  const [tempos, setTempos] = useState<TempoTrajeto[]>([]);
+
+  useEffect(() => {
+    let ativo = true;
+    temposTrajetos()
+      .then((r) => {
+        if (ativo && r.configurado) setTempos(r.tempos.filter((t) => !t.erro).slice(0, 2));
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  if (tempos.length === 0) return null;
+  return (
+    <ul className="flex flex-col gap-0.5 text-xs -mt-1" aria-label="Trânsito agora">
+      {tempos.map((t) => (
+        <li key={t.trajeto.id} style={{ color: 'var(--color-text-secondary)' }}>
+          <Car size={12} className="inline mr-1 -mt-0.5" />
+          <span style={{ color: 'var(--color-text)' }}>{t.trajeto.nome}:</span> {resumoTempo(t)}
         </li>
       ))}
     </ul>
@@ -141,6 +171,7 @@ export function EdenTodayPage() {
         )}
       </p>
       <ClimaDoDia />
+      <TransitoDoDia />
       <ErrorLine message={erro} />
 
       {resumo === null ? (

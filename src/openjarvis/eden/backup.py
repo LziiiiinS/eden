@@ -404,6 +404,7 @@ ESQUEMA_PERMITIDO = {
         "documentos",
         "conversa_documentos",
         "lugares",
+        "trajetos",
     },
 }
 

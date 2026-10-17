@@ -548,6 +548,13 @@ def create_app(
         registrar_clima(app)
     except Exception as exc:
         logger.warning("Éden: clima não ligado: %s", exc)
+    # Éden (Parte 4): rotas e trânsito (precisa da chave do TomTom no .env).
+    try:
+        from openjarvis.eden.routes_rotas import router as eden_rotas_router
+
+        app.include_router(eden_rotas_router)
+    except Exception as exc:
+        logger.warning("Éden: rotas não ligadas: %s", exc)
     # Éden (Parte 3): documentos escolhidos pela pessoa para a conversa.
     try:
         from openjarvis.eden.routes_documentos import router as eden_docs_router

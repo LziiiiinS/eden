@@ -306,6 +306,13 @@ def montar(
     if clima_txt:
         partes.append(clima_txt)
 
+    # Trânsito (Parte 4): só se a pergunta for sobre caminho ou trânsito.
+    from openjarvis.eden.rotas import secao_contexto as secao_rotas
+
+    rotas_txt = secao_rotas(store, pergunta)
+    if rotas_txt:
+        partes.append(rotas_txt)
+
     # Documentos que a pessoa anexou a esta conversa (só deste espaço).
     secao_docs = ""
     if conversa_id:
