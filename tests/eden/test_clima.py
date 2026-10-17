@@ -22,13 +22,23 @@ HOSTS = {
 
 
 class Resposta:
-    def __init__(self, status: int, dados) -> None:
+    def __init__(self, status: int, dados, bruto: bytes = None) -> None:
         self.status_code = status
         self._dados = dados
-        self.content = json.dumps(dados).encode()
+        self.content = bruto if bruto is not None else json.dumps(dados).encode()
 
     def json(self):
         return self._dados
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def iter_bytes(self):
+        for i in range(0, len(self.content), 65536):
+            yield self.content[i : i + 65536]
 
 
 def _horas(n=72):
@@ -40,6 +50,11 @@ class OpenMeteoFalso:
     def __init__(self) -> None:
         self.pedidos = []
         self.falhar_mar = False
+
+    def stream(self, metodo, url, params=None, headers=None):
+        assert metodo == "GET"
+        assert headers == {"Accept-Encoding": "identity"}
+        return self.get(url, params)
 
     def get(self, url, params=None):
         assert urlparse(url).hostname in HOSTS, url
@@ -223,7 +238,7 @@ def test_city_skips_the_sea_and_sea_failure_is_not_fatal(store, falso):
 
 def test_network_failure_becomes_a_clear_error(store):
     class SemRede:
-        def get(self, url, params=None):
+        def stream(self, metodo, url, params=None, headers=None):
             raise TimeoutError("demorou")
 
     cidade = clima.criar_lugar(store, {"nome": "C", "latitude": 0, "longitude": 0})
@@ -288,3 +303,45 @@ def test_turning_off_clears_the_cache(store, falso):
     clima.definir_ligado(store, False)
     assert clima.CACHE.pegar(cidade, 60) is None
     assert clima.atualizar_todos(store, _cliente(falso)) == 0
+
+
+def test_huge_or_weird_answers_are_refused(store, monkeypatch):
+    cidade = clima.criar_lugar(store, {"nome": "C", "latitude": 0, "longitude": 0})
+
+    class Estranho:
+        def __init__(self, bruto):
+            self.bruto = bruto
+
+        def stream(self, metodo, url, params=None, headers=None):
+            return Resposta(200, None, bruto=self.bruto)
+
+    monkeypatch.setattr(clima, "MAX_RESPOSTA", 1000)
+    for bruto in (b"x" * 5000, b"[" * 900 + b"]" * 900, b"nao e json"):
+        with pytest.raises(clima.ErroClima):
+            clima.ClienteClima(http=Estranho(bruto), cache=clima.CacheClima()).previsao(
+                cidade
+            )
+
+
+def test_out_of_range_values_and_rounded_coordinates(store, falso):
+    previsao = clima.montar_previsao(
+        {
+            "hourly": {
+                "time": ["2026-10-17T00:00"],
+                "temperature_2m": [1e308],
+                "wind_speed_10m": [-5],
+                "wind_direction_10m": [361],
+                "weather_code": [61],
+            }
+        },
+        None,
+    )
+    hora = previsao["horas"][0]
+    assert hora["temperatura"] is None and hora["vento_kmh"] is None
+    assert hora["vento_dir"] is None and hora["codigo"] == 61
+    casa = clima.criar_lugar(
+        store, {"nome": "Casa", "latitude": -27.59671, "longitude": -48.54911}
+    )
+    _cliente(falso).previsao(casa)
+    params = falso.pedidos[-1][1]
+    assert params["latitude"] == -27.6 and params["longitude"] == -48.55

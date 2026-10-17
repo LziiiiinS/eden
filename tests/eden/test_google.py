@@ -855,3 +855,19 @@ def test_drive_links_from_elsewhere_are_dropped(cliente, falso, monkeypatch):
 
     monkeypatch.setattr(GoogleFalso, "_drive", link_estranho)
     assert google.salvar_no_drive(cliente, "T", "<p>x</p>")["link"] is None
+
+
+def test_drive_refuses_html_that_fetches_or_runs_things(cliente, falso):
+    falso.escopo = f"{google.ESCOPO_AGENDA} {google.ESCOPO_DRIVE}"
+    _ligar(cliente)
+    for html in (
+        '<img src="https://evil.example/x.png">',
+        '<p style="background:url(https://evil.example)">x</p>',
+        "<script>alert(1)</script>",
+        '<a href="javascript:alert(1)">x</a>',
+    ):
+        with pytest.raises(google.ErroGoogle) as exc:
+            google.salvar_no_drive(cliente, "T", html)
+        assert exc.value.codigo == "eden_google_dados"
+    assert falso.uploads == []
+    assert google.salvar_no_drive(cliente, "T", '<a href="https://x.example">x</a>')

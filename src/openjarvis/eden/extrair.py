@@ -88,8 +88,13 @@ def texto_docx(dados: bytes) -> str:
         conteudo = xml.read(DOCX_XML_MAX + 1)
     if len(conteudo) > DOCX_XML_MAX:
         raise ErroExtracao("documento do Word grande demais")
+    # Word de verdade grava o XML em UTF-8. UTF-16 escaparia da conferência
+    # de DOCTYPE/ENTITY abaixo (que procura os bytes em ASCII).
+    if conteudo[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in conteudo[:200]:
+        raise ErroExtracao("documento do Word com conteúdo estranho")
     if b"<!DOCTYPE" in conteudo or b"<!ENTITY" in conteudo:
         raise ErroExtracao("documento do Word com conteúdo estranho")
+    total = 0
     try:
         for evento, elemento in ElementTree.iterparse(
             io.BytesIO(conteudo), events=("end",)
@@ -102,11 +107,13 @@ def texto_docx(dados: bytes) -> str:
             elif tag in (f"{_W}br", f"{_W}cr"):
                 paragrafo.append("\n")
             elif tag == f"{_W}p":
-                partes.append("".join(paragrafo))
+                linha = "".join(paragrafo)
+                partes.append(linha)
+                total += len(linha) + 1
                 paragrafo = []
                 elemento.clear()
-            if sum(len(p) for p in partes) > TEXTO_MAX:
-                break
+                if total > TEXTO_MAX:
+                    break
     except ElementTree.ParseError as exc:
         raise ErroExtracao("arquivo do Word danificado") from exc
     if paragrafo:

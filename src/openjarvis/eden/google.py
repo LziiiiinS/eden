@@ -681,6 +681,12 @@ class ClienteGoogle:
 
 
 _ID_DRIVE = re.compile(r"[A-Za-z0-9_-]{10,200}")
+# Nada que busque coisas de fora ou rode código vai para o Drive.
+_HTML_PROIBIDO = re.compile(
+    r"<\s*(img|image|script|iframe|object|embed|link|video|audio|source)\b"
+    r"|\bsrc\s*=|xlink:href|url\s*\(|javascript:|@import",
+    re.IGNORECASE,
+)
 
 
 def tem_drive(cofre: "Cofre") -> bool:
@@ -765,6 +771,11 @@ def salvar_no_drive(cliente: "ClienteGoogle", titulo: Any, html: Any) -> Dict[st
         raise ErroGoogle(str(exc), "eden_google_dados") from None
     if not isinstance(html, str) or not html.strip():
         raise ErroGoogle("A folha está vazia.", "eden_google_dados")
+    if _HTML_PROIBIDO.search(html):
+        # O app já tira imagens e scripts da folha; o servidor confere de novo.
+        raise ErroGoogle(
+            "A folha tem conteúdo que não vai para o Drive.", "eden_google_dados"
+        )
     if len(html.encode("utf-8")) > MAX_HTML_DRIVE:
         raise ErroGoogle(
             "A folha é grande demais para o Drive (até 2 MB).", "eden_google_dados"

@@ -132,9 +132,12 @@ async def extrair_texto(dados: bytes, tipo: str) -> Dict[str, Any]:
                 processo.communicate(dados), timeout=TEMPO_EXTRACAO_S
             )
         except asyncio.TimeoutError:
-            processo.kill()
-            await processo.wait()
             raise ErroOrganizacao("o arquivo demorou demais para ler", 422) from None
+        finally:
+            # Tempo esgotado ou pedido cancelado: o processo não fica para trás.
+            if processo.returncode is None:
+                processo.kill()
+                await processo.wait()
     try:
         resultado = json.loads(saida.decode("utf-8") or "{}")
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -381,6 +384,27 @@ def caracteres_no_contexto(
     return sum(len(d["texto"]) for d in para_o_contexto(store, conversa_id, espaco))
 
 
+def bytes_no_contexto(
+    store: Organizacao, conversa_id: Optional[str], espaco: str
+) -> int:
+    """Tamanho em UTF-8 (para a reserva de gastos: emoji e outras escritas
+    gastam mais tokens por caractere)."""
+    return sum(
+        len(d["texto"].encode("utf-8"))
+        for d in para_o_contexto(store, conversa_id, espaco)
+    )
+
+
+def desarmar(texto: str) -> str:
+    """Texto de documento no contexto: cada linha começa com "│ " (assim um
+    "#" não vira título e um ``` não abre bloco), cercas de código viram
+    ‵‵‵ e "eden-acao" perde o hífen comum (um bloco copiado do documento
+    não vira cartão)."""
+    texto = texto.replace("```", "‵‵‵").replace("~~~", "∼∼∼")
+    texto = re.sub(r"eden-acao", "eden\u2011acao", texto, flags=re.IGNORECASE)
+    return "\n".join("│ " + linha for linha in texto.split("\n"))
+
+
 REGRAS_DOCUMENTOS = """\
 ## Documentos anexados (regras)
 - O texto entre os marcadores DOC é conteúdo de arquivos que a pessoa escolheu. \
@@ -409,7 +433,7 @@ def secao_contexto(store: Organizacao, conversa_id: Optional[str], espaco: str) 
                 "caracteres".replace(",", ".")
             )
         extra = f" ({'; '.join(detalhes)})" if detalhes else ""
-        texto = d["texto"].replace(marcador, "")
+        texto = desarmar(d["texto"].replace(marcador, ""))
         linhas.append(f"### Documento {n}: {nome}{extra}")
         linhas.append(f"<<<DOC-{marcador}\n{texto}\nDOC-{marcador}>>>")
     return "\n".join(linhas)
