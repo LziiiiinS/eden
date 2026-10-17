@@ -67,3 +67,101 @@ export const apagarTrajeto = (id: number) =>
   edenJson<{ ok: boolean }>(`/rotas/trajetos/${id}`, { method: 'DELETE' });
 export const temposTrajetos = (atualizar = false) =>
   edenJson<{ configurado: boolean; tempos: TempoTrajeto[] }>(`/rotas/tempos${atualizar ? '?atualizar=true' : ''}`);
+
+// ── caminhos (alternativas) ──────────────────────────────────────────────
+
+export interface Caminho {
+  segundos: number;
+  sem_transito_s?: number | null;
+  atraso_s?: number;
+  metros?: number | null;
+  chegada?: string | null;
+  vias: string[];
+}
+
+/** "28 min · +8 min de trânsito · 14,2 km · via Av. das Américas, Av. Ayrton Senna". */
+export function resumoCaminho(c: Caminho): string {
+  const partes = [minutos(c.segundos)];
+  if (c.atraso_s && c.atraso_s >= 60) partes.push(`+${minutos(c.atraso_s)} de trânsito`);
+  if (c.metros) partes.push(`${(c.metros / 1000).toFixed(1).replace('.', ',')} km`);
+  if (c.vias.length) partes.push(`via ${c.vias.join(', ')}`);
+  return partes.join(' · ');
+}
+
+/** Quanto o caminho é mais lento que o mais rápido ("+4 min"), ou "". */
+export function diferenca(c: Caminho, maisRapido: Caminho): string {
+  const extra = c.segundos - maisRapido.segundos;
+  return extra >= 60 ? `+${minutos(extra)}` : '';
+}
+
+export const caminhosDoTrajeto = (id: number, atualizar = false) =>
+  edenJson<{ rotas: Caminho[]; calculado_em: number }>(
+    `/rotas/caminhos?trajeto=${id}${atualizar ? '&atualizar=true' : ''}`,
+  );
+export const caminhosEntre = (origem: string, destino: string) =>
+  edenJson<{ rotas: Caminho[]; calculado_em: number }>(
+    `/rotas/caminhos?origem=${encodeURIComponent(origem)}&destino=${encodeURIComponent(destino)}`,
+  );
+
+// ── localização do aparelho (opcional, só para perguntas de caminho) ─────
+
+const CHAVE_LOCAL = 'eden.rotas.usarLocal';
+
+export function usarLocalNaConversa(): boolean {
+  try {
+    return window.localStorage.getItem(CHAVE_LOCAL) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function definirUsarLocal(ligado: boolean): void {
+  try {
+    if (ligado) window.localStorage.setItem(CHAVE_LOCAL, '1');
+    else window.localStorage.removeItem(CHAVE_LOCAL);
+  } catch {
+    // sem armazenamento: fica desligado
+  }
+}
+
+function semAcento(texto: string): string {
+  return texto.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Igual ao _INTENCAO de src/openjarvis/eden/rotas.py: a localização só vai
+// quando a mensagem é pedido de caminho ("melhor rota pro…", "como chego…").
+const ASSUNTO =
+  /\b(rota\w*|caminho\w*|transito|trajet\w*|engarraf\w*|congestion\w*|de carro|como (?:eu )?cheg\w*|(?:chegar|chego|ir|vou|indo) (?:pra|pro|pras|pros|para|ao|aos|ate|no|na|em)|quanto tempo (?:ate|de carro))\b/;
+
+export function pareceRota(texto: string): boolean {
+  return ASSUNTO.test(semAcento(texto));
+}
+
+/** "lat,lon" com 4 casas (~10 m), ou null se não der (sem permissão etc.). */
+export function localDoAparelho(esperaMs = 5000): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    let feito = false;
+    const fim = (valor: string | null) => {
+      if (!feito) {
+        feito = true;
+        resolve(valor);
+      }
+    };
+    const relogio = window.setTimeout(() => fim(null), esperaMs + 500);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        window.clearTimeout(relogio);
+        fim(`${pos.coords.latitude.toFixed(4)},${pos.coords.longitude.toFixed(4)}`);
+      },
+      () => {
+        window.clearTimeout(relogio);
+        fim(null);
+      },
+      { enableHighAccuracy: false, timeout: esperaMs, maximumAge: 60_000 },
+    );
+  });
+}

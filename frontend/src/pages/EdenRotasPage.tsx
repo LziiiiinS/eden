@@ -1,20 +1,30 @@
 // Éden (Parte 4): rotas e trânsito. Trajetos salvos (ex.: Casa → Trabalho)
-// com o tempo agora, com trânsito (TomTom). Precisa da chave do TomTom no
-// .env do servidor; sem ela, a página só explica como ligar.
+// com o tempo agora, com trânsito (TomTom), e a comparação de caminhos (até 3,
+// com as vias principais). Precisa da chave do TomTom no .env do servidor;
+// sem ela, a página só explica como ligar.
 import { useCallback, useEffect, useState } from 'react';
-import { Car, MapPin, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Car, LocateFixed, MapPin, RefreshCw, Route, Search, Trash2 } from 'lucide-react';
 import { EdenPage, EdenSection, Empty, ErrorLine, GhostButton, PrimaryButton, inputStyle } from '../components/Eden/EdenUi';
 import {
   apagarTrajeto,
   buscarEndereco,
+  caminhosDoTrajeto,
+  caminhosEntre,
   criarTrajeto,
+  definirUsarLocal,
+  diferenca,
   lerCoordenadas,
+  localDoAparelho,
+  resumoCaminho,
   resumoTempo,
   statusRotas,
   temposTrajetos,
+  usarLocalNaConversa,
+  type Caminho,
   type Ponto,
   type ResultadoEndereco,
   type TempoTrajeto,
+  type Trajeto,
 } from '../lib/eden-rotas';
 
 const cor2 = { color: 'var(--color-text-secondary)' };
@@ -103,6 +113,155 @@ function EscolherPonto({ rotulo, valor, onEscolher }: { rotulo: string; valor: P
   );
 }
 
+function ListaCaminhos({ rotas }: { rotas: Caminho[] }) {
+  if (rotas.length === 0) return null;
+  const maisRapido = rotas[0];
+  return (
+    <ol className="flex flex-col gap-1 mt-1">
+      {rotas.map((c, i) => (
+        <li key={i} className="text-xs flex gap-1.5" style={i === 0 ? { color: 'var(--color-text)' } : cor2}>
+          <span className="shrink-0 font-medium">{i + 1}.</span>
+          <span>
+            {resumoCaminho(c)}
+            {i === 0 ? (
+              <strong style={{ color: 'var(--color-success)' }}> · mais rápido</strong>
+            ) : (
+              <span style={cor3}> · {diferenca(c, maisRapido) || 'quase igual'}</span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function CaminhosDoTrajeto({ id }: { id: number }) {
+  const [rotas, setRotas] = useState<Caminho[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  useEffect(() => {
+    let ativo = true;
+    caminhosDoTrajeto(id)
+      .then((r) => {
+        if (ativo) setRotas(r.rotas);
+      })
+      .catch((e) => {
+        if (ativo) setErro((e as Error).message);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [id]);
+  if (erro) return <ErrorLine message={erro} />;
+  if (!rotas) return <p className="text-xs mt-1" style={cor3}>Comparando caminhos…</p>;
+  return <ListaCaminhos rotas={rotas} />;
+}
+
+const MINHA_LOCALIZACAO = 'local';
+
+function ParaOndeAgora({ trajetos }: { trajetos: Trajeto[] }) {
+  // Pontos salvos (sem repetir) para servir de partida.
+  const pontos: Ponto[] = [];
+  for (const t of trajetos) {
+    for (const p of [t.origem, t.destino]) {
+      if (!pontos.some((q) => q.latitude === p.latitude && q.longitude === p.longitude)) pontos.push(p);
+    }
+  }
+  const [partida, setPartida] = useState<string>(MINHA_LOCALIZACAO);
+  const [destino, setDestino] = useState<Ponto | null>(null);
+  const [rotas, setRotas] = useState<Caminho[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  const ver = async () => {
+    if (!destino) return;
+    setErro(null);
+    setRotas(null);
+    setOcupado(true);
+    try {
+      let origem: string | null;
+      if (partida === MINHA_LOCALIZACAO) {
+        origem = await localDoAparelho();
+        if (!origem) {
+          setErro('Não consegui a localização. Permita a localização para o Éden no navegador ou escolha um ponto salvo.');
+          return;
+        }
+      } else {
+        const p = pontos[Number(partida)];
+        origem = `${p.latitude},${p.longitude}`;
+      }
+      setRotas((await caminhosEntre(origem, `${destino.latitude},${destino.longitude}`)).rotas);
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <span className="w-16 shrink-0 text-xs" style={cor3}>Saindo de</span>
+        <select
+          value={partida}
+          onChange={(e) => setPartida(e.target.value)}
+          aria-label="Saindo de"
+          className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm outline-none"
+          style={inputStyle}
+        >
+          <option value={MINHA_LOCALIZACAO}>Minha localização agora</option>
+          {pontos.map((p, i) => (
+            <option key={`${p.latitude},${p.longitude}`} value={String(i)}>
+              {p.nome}
+            </option>
+          ))}
+        </select>
+      </div>
+      <EscolherPonto rotulo="Para" valor={destino} onEscolher={setDestino} />
+      <div>
+        <PrimaryButton onClick={() => void ver()} disabled={!destino || ocupado}>
+          <Route size={12} /> {ocupado ? 'Comparando…' : 'Comparar caminhos'}
+        </PrimaryButton>
+      </div>
+      <ErrorLine message={erro} />
+      {rotas && <ListaCaminhos rotas={rotas} />}
+    </div>
+  );
+}
+
+function LocalNaConversa() {
+  const [ligado, setLigado] = useState(usarLocalNaConversa);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const trocar = async (valor: boolean) => {
+    setAviso(null);
+    if (valor) {
+      // Pede a permissão agora (no iPhone aparece o aviso do navegador).
+      const local = await localDoAparelho();
+      if (!local) {
+        setAviso('O navegador não deu a localização. Permita a localização para o Éden e tente de novo.');
+        return;
+      }
+    }
+    definirUsarLocal(valor);
+    setLigado(valor);
+  };
+  return (
+    <div className="flex flex-col gap-1 text-sm" style={cor2}>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input type="checkbox" checked={ligado} onChange={(e) => void trocar(e.target.checked)} className="mt-1" />
+        <span>
+          Quando eu perguntar um caminho na conversa, sair da <strong>localização deste aparelho</strong>.
+        </span>
+      </label>
+      <p className="text-[11px]" style={cor3}>
+        <LocateFixed size={11} className="inline -mt-0.5 mr-1" />
+        Só vai quando a mensagem é sobre caminho ou trânsito, arredondada (~10 m), e o Éden não guarda. Desligado, ele sai da
+        origem do primeiro trajeto salvo.
+      </p>
+      <ErrorLine message={aviso} />
+    </div>
+  );
+}
+
 function NovoTrajeto({ onCriado }: { onCriado: () => void }) {
   const [nome, setNome] = useState('');
   const [origem, setOrigem] = useState<Ponto | null>(null);
@@ -151,6 +310,7 @@ export function EdenRotasPage() {
   const [tempos, setTempos] = useState<TempoTrajeto[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+  const [comparando, setComparando] = useState<number | null>(null);
 
   const carregar = useCallback(async (atualizar = false) => {
     setCarregando(true);
@@ -232,7 +392,19 @@ export function EdenRotasPage() {
                       <div className="text-[11px] truncate" style={cor3}>
                         {t.trajeto.origem.nome} → {t.trajeto.destino.nome}
                       </div>
+                      {comparando === t.trajeto.id && <CaminhosDoTrajeto id={t.trajeto.id} />}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setComparando((atual) => (atual === t.trajeto.id ? null : t.trajeto.id))}
+                      aria-expanded={comparando === t.trajeto.id}
+                      aria-label={`Comparar caminhos de ${t.trajeto.nome}`}
+                      title="Comparar caminhos"
+                      className="p-1 rounded cursor-pointer"
+                      style={comparando === t.trajeto.id ? { color: 'var(--color-accent)' } : cor3}
+                    >
+                      <Route size={13} />
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -254,8 +426,18 @@ export function EdenRotasPage() {
               De carro, com o trânsito de agora. Dados: TomTom. O Éden guarda o resultado por 5 minutos.
             </p>
           </EdenSection>
+          <EdenSection title="Para onde agora?">
+            <ParaOndeAgora trajetos={tempos.map((t) => t.trajeto)} />
+          </EdenSection>
           <EdenSection title="Novo trajeto">
             <NovoTrajeto onCriado={() => void carregar()} />
+          </EdenSection>
+          <EdenSection title="Na conversa">
+            <LocalNaConversa />
+            <p className="text-[11px] mt-2" style={cor3}>
+              Pergunte, por exemplo: "melhor caminho agora para o Posto 4?". O Éden compara até 3 caminhos com o trânsito de
+              agora.
+            </p>
           </EdenSection>
         </>
       )}

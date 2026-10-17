@@ -1,6 +1,6 @@
 // Éden: testes dos textos de rotas e trânsito.
 import { describe, expect, it } from 'vitest';
-import { lerCoordenadas, minutos, resumoTempo } from './eden-rotas';
+import { diferenca, lerCoordenadas, minutos, pareceRota, resumoCaminho, resumoTempo } from './eden-rotas';
 
 const trajeto = {
   id: 1,
@@ -24,5 +24,28 @@ describe('rotas', () => {
     expect(lerCoordenadas('-22.97, -43.18')).toEqual({ latitude: -22.97, longitude: -43.18 });
     expect(lerCoordenadas('Av. das Américas 500')).toBeNull();
     expect(lerCoordenadas('91, 0')).toBeNull();
+  });
+});
+
+describe('caminhos', () => {
+  const rapido = { segundos: 1680, atraso_s: 480, metros: 14200, vias: ['Av. das Américas', 'Av. Ayrton Senna'] };
+  const lento = { segundos: 1920, atraso_s: 0, metros: 15000, vias: ['Av. Lúcio Costa'] };
+
+  it('summarises each alternative', () => {
+    expect(resumoCaminho(rapido)).toBe('28 min · +8 min de trânsito · 14,2 km · via Av. das Américas, Av. Ayrton Senna');
+    expect(resumoCaminho({ segundos: 600, vias: [] })).toBe('10 min');
+    expect(diferenca(lento, rapido)).toBe('+4 min');
+    expect(diferenca(rapido, rapido)).toBe('');
+  });
+
+  it('only sends the location for route questions', () => {
+    expect(pareceRota('Me dá a melhor rota pro posto 4')).toBe(true);
+    expect(pareceRota('Como está o TRÂNSITO?')).toBe(true);
+    expect(pareceRota('qual o caminho mais rápido')).toBe(true);
+    expect(pareceRota('resume esse documento')).toBe(false);
+    expect(pareceRota('anota uma tarefa')).toBe(false);
+    expect(pareceRota('quanto tempo leva pra curar uma gripe?')).toBe(false);
+    expect(pareceRota('vou sair com a Ana, me lembra de ligar pro João')).toBe(false);
+    expect(pareceRota('como chego no Recreio?')).toBe(true);
   });
 });

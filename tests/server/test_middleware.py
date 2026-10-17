@@ -134,10 +134,12 @@ class TestSpeechHeaders:
         assert "microphone=(self)" in policy
         assert "microphone=()" not in policy
 
-    def test_camera_and_geolocation_stay_blocked(self):
+    def test_camera_stays_blocked_and_geolocation_only_same_origin(self):
         policy = SECURITY_HEADERS["Permissions-Policy"]
         assert "camera=()" in policy
-        assert "geolocation=()" in policy
+        # Éden: a página Rotas pede a localização (só a própria origem).
+        assert "geolocation=(self)" in policy
+        assert "geolocation=*" not in policy
 
 
 class TestEdenEmbeddedAssets:

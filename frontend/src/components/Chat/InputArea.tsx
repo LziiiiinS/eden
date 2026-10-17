@@ -18,6 +18,7 @@ import { EdenDocumentos } from './EdenDocumentos';
 import { avisarMudanca } from './EdenActionCards';
 import { parseActionsEvent, removeActionBlocks, type EdenActionRef } from '../../lib/eden-acoes';
 import { CAMINHO_PESQUISA, ULTIMAS_NA_PESQUISA, mensagensParaIa } from '../../lib/eden-pesquisa';
+import { localDoAparelho, pareceRota, usarLocalNaConversa } from '../../lib/eden-rotas';
 import { useEdenOrg } from '../../lib/eden-org';
 import { useSpeech } from '../../hooks/useSpeech';
 import {
@@ -293,6 +294,13 @@ export function InputArea() {
         : `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" → ${selectedModel}`,
     });
 
+    // Éden (Parte 4): localização do aparelho para "melhor caminho para…".
+    let local: string | null = null;
+    if (edenServer && !pesquisar && usarLocalNaConversa() && pareceRota(content)) {
+      setStreamState({ phase: 'Pegando a sua localização…' });
+      local = await localDoAparelho(4000);
+    }
+
     try {
       if (deepResearch) {
         for await (const ev of streamResearch(
@@ -431,9 +439,14 @@ export function InputArea() {
         controller.signal,
         // Éden: em qual espaço a conversa acontece (o servidor usa as
         // tarefas, notas e memórias desse espaço). A pesquisa na internet
-        // não recebe nada disso.
+        // não recebe nada disso. A localização só vai se a pessoa ligou e a
+        // pergunta é sobre caminho.
         edenServer && !pesquisar
-          ? { 'X-Eden-Espaco': useEdenOrg.getState().espacoAtivo, 'X-Eden-Conversa': convId }
+          ? {
+              'X-Eden-Espaco': useEdenOrg.getState().espacoAtivo,
+              'X-Eden-Conversa': convId,
+              ...(local ? { 'X-Eden-Local': local } : {}),
+            }
           : {},
         pesquisar ? CAMINHO_PESQUISA : undefined,
       )) {

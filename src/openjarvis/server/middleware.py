@@ -18,7 +18,7 @@ def create_security_middleware() -> Any:
     - X-XSS-Protection: 1; mode=block
     - Strict-Transport-Security: max-age=31536000; includeSubDomains
     - Referrer-Policy: strict-origin-when-cross-origin
-    - Permissions-Policy: camera=(), microphone=(), geolocation=()
+    - Permissions-Policy: camera=(), microphone=(self), geolocation=(self)
 
     OPTIONS requests are passed through without headers so that
     CORS preflight is not blocked.
@@ -51,9 +51,11 @@ def create_security_middleware() -> Any:
             )
             # microphone=(self): the chat UI records voice input from this same
             # origin. An empty allowlist blocked its own feature.
-            response.headers["Permissions-Policy"] = (
-                "camera=(), microphone=(self), geolocation=()"
-            )
+            # Éden: geolocation=(self) para "melhor caminho saindo daqui" (só
+            # quando a pessoa liga na página Rotas; o navegador pede permissão).
+            response.headers["Permissions-Policy"] = SECURITY_HEADERS[
+                "Permissions-Policy"
+            ]
             # media-src blob: lets the UI play synthesized speech, which arrives
             # as a blob URL; default-src alone refused it.
             # Éden: o app traz fontes (KaTeX) e uma textura de fundo embutidas
@@ -74,7 +76,7 @@ SECURITY_HEADERS = {
     "X-XSS-Protection": "1; mode=block",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Permissions-Policy": "camera=(), microphone=(self), geolocation=()",
+    "Permissions-Policy": "camera=(), microphone=(self), geolocation=(self)",
     "Content-Security-Policy": (
         "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "img-src 'self' data: blob:; font-src 'self' data:; "

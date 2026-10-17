@@ -148,6 +148,20 @@ A página **Hoje** mostra o tempo dos dois primeiros trajetos, e na conversa dá
 para perguntar "quanto tempo até o trabalho agora?". O TomTom recebe só as
 coordenadas de origem e destino (e o texto da busca de endereço).
 
+**Comparar caminhos.** O Éden mostra até 3 caminhos com o trânsito de agora e
+as vias principais de cada um (por exemplo, pelas Américas ou pela Lúcio
+Costa), o mais rápido primeiro:
+- na página, toque no ícone de caminho ao lado de um trajeto, ou use **Para
+  onde agora?** (saindo da sua localização ou de um ponto salvo);
+- na conversa, pergunte "melhor caminho agora para o Posto 4?" ou "qual a
+  melhor rota pro Recreio?". Se o lugar não estiver salvo, o Éden procura o
+  endereço e diz qual usou.
+- Na conversa, o ponto de partida é a origem do primeiro trajeto salvo. Para
+  sair de onde você está, ligue em **Rotas e trânsito → Na conversa** (o
+  celular pede permissão de localização). A localização só vai quando a
+  pergunta é sobre caminho, arredondada, e o Éden não guarda.
+- Os nomes das vias vêm do TomTom; às vezes aparece só o número da estrada.
+
 ## Pesquisa na internet
 
 Para perguntas sobre coisas de agora (notícias, preços, horários, resultados),
