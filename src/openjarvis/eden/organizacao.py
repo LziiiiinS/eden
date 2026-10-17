@@ -170,6 +170,17 @@ CREATE TABLE IF NOT EXISTS lugares (
     principal INTEGER NOT NULL DEFAULT 0,
     criado_em INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS trajetos (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome         TEXT    NOT NULL,
+    origem_nome  TEXT    NOT NULL,
+    origem_lat   REAL    NOT NULL,
+    origem_lon   REAL    NOT NULL,
+    destino_nome TEXT    NOT NULL,
+    destino_lat  REAL    NOT NULL,
+    destino_lon  REAL    NOT NULL,
+    criado_em    INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS push_inscricoes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint   TEXT    NOT NULL UNIQUE,

@@ -159,6 +159,35 @@ def eden_system_extra() -> str:
         return ""
 
 
+async def antes_da_conversa(request_body: Any, request: Any = None) -> None:
+    """Antes de montar o contexto: se a pergunta é sobre trânsito, atualiza
+    os trajetos salvos (TomTom). Espera no máximo 8 s; falha não impede a
+    conversa (o contexto diz que não há dado)."""
+    settings = get_settings()
+    if not settings.enabled or request is None:
+        return
+    ultima = _last_user(request_body)
+    pergunta = ultima.content if ultima and isinstance(ultima.content, str) else None
+    try:
+        from openjarvis.eden import rotas
+
+        if not rotas.configurado() or not rotas.pergunta_sobre_rotas(pergunta):
+            return
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                rotas.atualizar_para_pergunta,
+                _organizacao(request),
+                pergunta,
+                rotas.cliente_do_app(request.app),
+            ),
+            timeout=8,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Éden: trajetos não atualizaram a tempo")
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: falha ao atualizar os trajetos")
+
+
 def prepare_chat(
     request_body: Any,
     request: Any = None,

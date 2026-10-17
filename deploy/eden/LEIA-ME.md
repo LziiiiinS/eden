@@ -129,6 +129,25 @@ chave). Só vão as coordenadas dos lugares que você cadastrar.
 - A tabela mostra vento e rajadas em nós, ondas e swell (altura e período),
   temperatura e chuva, de 3 em 3 horas, por 3 dias.
 
+## Rotas e trânsito
+
+O Éden mostra o tempo de carro com o trânsito de agora para os seus trajetos
+salvos (ex.: Casa → Trabalho), pelo **TomTom** (conta grátis, sem cartão).
+
+1. Crie a conta em **developer.tomtom.com** (Register) e confirme pelo e-mail.
+2. No painel (**Dashboard → Keys**), copie a chave ("My first API key").
+3. No `.env` desta pasta, na linha `TOMTOM_API_KEY=`, cole a chave depois do
+   `=` (a linha não começa com `#`, sem espaços). Se a linha não existir,
+   escreva no fim. Salve com **Ctrl + S**. **Não mande essa chave para
+   ninguém.**
+4. Rode o `iniciar-eden`.
+5. No menu, **Rotas e trânsito**: escolha a origem e o destino (endereço,
+   lugar ou coordenadas do Google Maps) e toque em **Salvar trajeto**.
+
+A página **Hoje** mostra o tempo dos dois primeiros trajetos, e na conversa dá
+para perguntar "quanto tempo até o trabalho agora?". O TomTom recebe só as
+coordenadas de origem e destino (e o texto da busca de endereço).
+
 ## Segurança
 
 - O `.env` tem as chaves. Não mande esse arquivo para ninguém, não cole as
