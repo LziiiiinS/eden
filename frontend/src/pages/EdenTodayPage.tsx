@@ -3,11 +3,12 @@
 // "Pedir um plano ao Éden" leva o pedido para a conversa.
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CalendarCheck, MessageSquare, Pin } from 'lucide-react';
+import { CalendarCheck, CalendarDays, MessageSquare, Pin } from 'lucide-react';
 import { EdenSpaceSelect } from '../components/Chat/EdenSpaceSelect';
 import { Badge, EdenPage, EdenSection, Empty, ErrorLine, PrimaryButton } from '../components/Eden/EdenUi';
 import { LinhaTarefa } from './EdenTasksPage';
 import { edenJson, nomeEspaco, useEdenOrg, type ResumoHoje } from '../lib/eden-org';
+import { eventosDoDia, horarioEvento, type EventoAgenda } from '../lib/eden-agenda';
 
 function saudacao(agora: Date): string {
   const h = agora.getHours();
@@ -26,6 +27,20 @@ export function EdenTodayPage() {
   const [soAtivo, setSoAtivo] = useState(false);
   const [resumo, setResumo] = useState<ResumoHoje | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // Éden (Parte 3): eventos de hoje da Google Agenda (se estiver ligada).
+  const [agenda, setAgenda] = useState<EventoAgenda[] | null>(null);
+
+  const carregarAgenda = useCallback(() => {
+    eventosDoDia()
+      .then((r) => setAgenda(r.conectado ? r.eventos : null))
+      .catch(() => setAgenda(null));
+  }, []);
+
+  useEffect(() => {
+    carregarAgenda();
+    window.addEventListener('focus', carregarAgenda);
+    return () => window.removeEventListener('focus', carregarAgenda);
+  }, [carregarAgenda]);
 
   const carregar = useCallback(() => {
     const q = soAtivo ? `?espaco=${encodeURIComponent(espacoAtivo)}` : '';
@@ -90,6 +105,32 @@ export function EdenTodayPage() {
                   <LinhaTarefa key={t.id} tarefa={t} mostrarEspaco={mostrarEspaco} onMudou={carregar} />
                 ))}
               </ul>
+            </EdenSection>
+          )}
+          {agenda !== null && (
+            <EdenSection title="Agenda do Google">
+              {agenda.length === 0 ? (
+                <Empty>Nenhum evento hoje.</Empty>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {agenda.map((e) => (
+                    <li key={e.id} className="text-sm flex items-baseline gap-2">
+                      <CalendarDays size={12} className="shrink-0 translate-y-0.5" style={{ color: 'var(--color-accent)' }} />
+                      <span className="tabular-nums shrink-0" style={{ color: 'var(--color-text-secondary)' }}>
+                        {horarioEvento(e)}
+                      </span>
+                      <span style={{ color: 'var(--color-text)' }}>
+                        {e.titulo}
+                        {e.local && (
+                          <span className="text-xs ml-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                            · {e.local}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </EdenSection>
           )}
           <EdenSection title="Hoje">

@@ -221,6 +221,8 @@ def main() -> int:
         pg.get_by_role("button", name="Esconder código").click()
         expect(codigo_tela).to_have_count(0)
         passo("Configurações: mostrar e esconder o código curto")
+        expect(pg.get_by_text("Ainda não configurada")).to_be_visible()
+        passo("Configurações: Google Agenda aparece (sem configurar)")
         ctx.close()
 
         # ── aparelho novo: código curto ────────────────────────────────────

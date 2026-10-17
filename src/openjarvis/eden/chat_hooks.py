@@ -122,8 +122,14 @@ def eden_system_extra() -> str:
     if not settings.enabled or pedido is None or pedido.store is None:
         return ""
     try:
+        from openjarvis.eden.google import CACHE
+
         return montar(
-            pedido.store, pedido.espaco, settings.tz, conversa_id=pedido.conversa_id
+            pedido.store,
+            pedido.espaco,
+            settings.tz,
+            conversa_id=pedido.conversa_id,
+            agenda=CACHE.retrato(),
         )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui montar o contexto")
@@ -196,12 +202,19 @@ def _evento_acoes(resposta: str, pedido: Any) -> Optional[str]:
     if pedido is None or pedido.store is None:
         return None
     try:
+        from openjarvis.eden.google import CACHE
+
+        retrato = CACHE.retrato()
         criadas, recusadas = propor(
             resposta,
             pedido.store,
             pedido.espaco,
             get_settings().tz,
             conversa_id=pedido.conversa_id,
+            agenda={
+                "conectado": retrato["conectado"],
+                "eventos": {e["id"]: e for e in retrato["eventos"]},
+            },
         )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui ler as ações da resposta")

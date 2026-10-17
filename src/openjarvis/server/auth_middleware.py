@@ -20,7 +20,14 @@ logger = logging.getLogger(__name__)
 # que o roteador usa (scope["path"], já decodificado), não request.url.path:
 # "/usar%3Fx" vira url.path == "/usar" mas é roteado como "/usar?x" (revisão
 # independente de 15/10).
-_ROTAS_SEM_CHAVE = frozenset({("POST", "/v1/eden/pareamento/usar")})
+_ROTAS_SEM_CHAVE = frozenset(
+    {
+        ("POST", "/v1/eden/pareamento/usar"),
+        # Volta da autorização do Google (o navegador não leva a chave aqui);
+        # só aceita um "state" de uso único criado por quem tem a chave.
+        ("GET", "/v1/eden/google/retorno"),
+    }
+)
 
 _WS_AUTH_PROTOCOL = "openjarvis.auth.v1"
 _WS_KEY_PROTOCOL_PREFIX = "openjarvis.key.b64url."
