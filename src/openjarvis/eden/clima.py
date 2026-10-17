@@ -145,6 +145,14 @@ TEMPO = {
 _RUMOS = ("N", "NE", "L", "SE", "S", "SO", "O", "NO")
 
 
+class _Passageiro(Exception):
+    """Falha de rede ou 5xx: vale tentar de novo uma vez."""
+
+    def __init__(self, motivo: str) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
 class ErroClima(Exception):
     def __init__(self, mensagem: str, codigo: str = "eden_clima") -> None:
         super().__init__(mensagem)
@@ -440,8 +448,30 @@ class ClienteClima:
         return self._http
 
     def _get(self, url: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Uma consulta ao Open-Meteo. Falha de rede ou erro 5xx tenta mais
+        uma vez (falhas passageiras acontecem); o resto vira ErroClima."""
         if url not in (URL_PREVISAO, URL_MAR, URL_BUSCA):
             raise ErroClima("endereço não permitido")
+        for tentativa in (1, 2):
+            try:
+                return self._get_uma_vez(url, params)
+            except _Passageiro as exc:
+                logger.warning(
+                    "Éden: Open-Meteo sem resposta (%s, tentativa %d)",
+                    exc.motivo,
+                    tentativa,
+                )
+                if tentativa == 2:
+                    raise ErroClima(
+                        "Sem resposta do serviço de previsão agora. Tente de novo.",
+                        "eden_clima_rede",
+                    ) from exc
+                time.sleep(1)
+        raise ErroClima(
+            "Sem resposta do serviço de previsão agora."
+        )  # pragma: no cover
+
+    def _get_uma_vez(self, url: str, params: Dict[str, Any]) -> Dict[str, Any]:
         inicio = time.monotonic()
         try:
             # Lê em pedaços, contando: para no teto (sem descompactar, com
@@ -449,6 +479,8 @@ class ClienteClima:
             with self._cliente_http().stream(
                 "GET", url, params=params, headers={"Accept-Encoding": "identity"}
             ) as resposta:
+                if resposta.status_code >= 500:
+                    raise _Passageiro(f"erro {resposta.status_code}")
                 if resposta.status_code != 200:
                     raise ErroClima(
                         "O serviço de previsão recusou o pedido "
@@ -467,12 +499,10 @@ class ClienteClima:
                             "O serviço de previsão demorou demais.", "eden_clima_rede"
                         )
                     pedacos.append(pedaco)
-        except ErroClima:
+        except (ErroClima, _Passageiro):
             raise
         except Exception as exc:  # noqa: BLE001 - rede, tempo esgotado
-            raise ErroClima(
-                "Sem resposta do serviço de previsão agora.", "eden_clima_rede"
-            ) from exc
+            raise _Passageiro(type(exc).__name__) from exc
         try:
             dados = json.loads(b"".join(pedacos))
         except (ValueError, RecursionError) as exc:
