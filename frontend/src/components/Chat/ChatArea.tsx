@@ -5,6 +5,8 @@ import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
+import { useEdenVozStore } from '../../lib/eden-voz';
+import { isEdenModel } from '../../lib/eden-ai';
 import { stripThinkTags } from '../../lib/message-text';
 import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
@@ -40,14 +42,17 @@ export function ChatArea() {
   // autoSpokenId fences the message so re-renders cannot repeat it.
   const voiceOutputEnabled = useAppStore((s) => s.settings.voiceOutputEnabled);
   const voiceAutoplay = useAppStore((s) => s.settings.voiceAutoplay);
+  // Éden: voz da OpenAI pelo servidor do Éden (com limite de gastos).
+  const edenServer = useAppStore((s) => s.models.some((m) => isEdenModel(m.id)));
+  const vozStore = edenServer ? useEdenVozStore : useTtsStore;
   // Probe the backend as soon as voice output is switched on. Without this the
   // first reply could never autoplay: `available` is only set by ensureHealth,
   // which until now ran solely from the per-message read-aloud button -- and
   // that button does not exist until a reply is already on screen.
   useEffect(() => {
     if (!voiceOutputEnabled) return;
-    useTtsStore.getState().ensureHealth();
-  }, [voiceOutputEnabled]);
+    vozStore.getState().ensureHealth();
+  }, [voiceOutputEnabled, vozStore]);
 
   // Speak on the falling edge of a stream -- the moment a reply finishes -- and
   // never merely because a finished reply happens to be on screen. Opening the
@@ -57,7 +62,7 @@ export function ChatArea() {
   const streamingConversationRef = useRef<string | null>(null);
   useEffect(() => {
     const last = messages[messages.length - 1];
-    const tts = useTtsStore.getState();
+    const tts = vozStore.getState();
     const justFinished = shouldAutoplayFinishedReply(
       streamingConversationRef.current,
       activeId,
@@ -78,7 +83,7 @@ export function ChatArea() {
     const completedMessageId = last.id;
     void tts.ensureHealth().then(() => {
       const app = useAppStore.getState();
-      const currentTts = useTtsStore.getState();
+      const currentTts = vozStore.getState();
       const currentLast = app.messages[app.messages.length - 1];
       if (app.activeId !== completedConversationId || app.streamState.isStreaming) return;
       if (!app.settings.voiceOutputEnabled || !app.settings.voiceAutoplay) return;
@@ -90,7 +95,7 @@ export function ChatArea() {
       currentTts.markAutoSpoken(completedMessageId);
       void currentTts.speak(completedMessageId, text);
     });
-  }, [activeId, messages, streamState.isStreaming, isCurrentChatStreaming, voiceOutputEnabled, voiceAutoplay]);
+  }, [activeId, messages, streamState.isStreaming, isCurrentChatStreaming, voiceOutputEnabled, voiceAutoplay, vozStore]);
   const currentStreamContent = isCurrentChatStreaming ? streamState.content : '';
 
   // Check if any data sources are connected

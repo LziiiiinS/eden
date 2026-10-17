@@ -7,6 +7,7 @@ import { EdenSpacesSettings } from '../components/Eden/EdenSpacesSettings';
 import { EdenPushSettings } from '../components/Eden/EdenPushSettings';
 import { EdenGoogleSettings } from '../components/Eden/EdenGoogleSettings';
 import { EdenNotionSettings } from '../components/Eden/EdenNotionSettings';
+import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
@@ -511,6 +512,7 @@ export function EdenSettingsPage() {
               text={speechOk === null ? 'Conferindo…' : speechOk ? 'Funcionando' : 'Não configurada no servidor'}
             />
           </Row>
+          <EdenVozSettings />
         </Section>
 
         <Section title="Sobre">

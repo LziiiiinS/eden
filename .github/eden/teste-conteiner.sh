@@ -132,6 +132,14 @@ codigo=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $KEY"
 [ "$codigo" = "409" ] || { echo "error: Notion sem chave devolveu $codigo"; exit 1; }
 echo "ok: Notion desligado sem a chave"
 
+# Voz: protegida pela chave de acesso; o status responde (sem chamar a OpenAI).
+com_chave "$BASE/v1/eden/voz/status" | grep -q '"modelo":"gpt-4o-mini-tts"' \
+  || { echo "error: status da voz não respondeu"; exit 1; }
+codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  -d '{"texto":"oi"}' "$BASE/v1/eden/voz")
+[ "$codigo" = "401" ] || { echo "error: voz sem a chave de acesso devolveu $codigo"; exit 1; }
+echo "ok: voz protegida pela chave de acesso"
+
 docker restart eden-teste >/dev/null
 esperar
 com_chave "$BASE/v1/eden/conversations/c1" | grep -q '"m1"' || { echo "error: conversa sumiu depois de reiniciar"; exit 1; }

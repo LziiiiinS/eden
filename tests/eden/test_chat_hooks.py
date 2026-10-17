@@ -217,3 +217,22 @@ def test_route_question_gets_alternatives_in_the_context(eden, tmp_path, monkeyp
     # A localização foi só para o TomTom, arredondada.
     assert any("-22.980100,-43.200100" in u for u, _ in falso.pedidos)
     store.close()
+
+
+def test_voice_header_marks_the_request(eden, tmp_path):
+    from types import SimpleNamespace
+
+    from openjarvis.eden.chat_hooks import _definir_pedido
+    from openjarvis.eden.contexto import pedido_atual
+    from openjarvis.eden.organizacao import Organizacao
+
+    store = Organizacao(tmp_path / "org.db")
+    for cabecalhos, esperado in (({"x-eden-voz": "1"}, True), ({}, False)):
+        request = SimpleNamespace(
+            headers=cabecalhos,
+            app=SimpleNamespace(state=SimpleNamespace(eden_organizacao=store)),
+            state=SimpleNamespace(),
+        )
+        _definir_pedido(request, "oi")
+        assert pedido_atual().voz is esperado
+    store.close()

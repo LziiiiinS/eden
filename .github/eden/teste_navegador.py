@@ -220,6 +220,18 @@ def main() -> int:
         assert status == 200 and estado["disponivel"] is False, estado
         passo("pesquisa na internet: botão liga/desliga; sem chave da Anthropic")
 
+        # ── resposta em voz (Parte 4): modo conversa liga e desliga ─────────
+        voz = pg.get_by_role("button", name="Responder em voz")
+        expect(voz).to_have_attribute("aria-pressed", "false")
+        voz.click()
+        expect(voz).to_have_attribute("aria-pressed", "true")
+        expect(pg.get_by_text("O Éden fala as respostas")).to_be_visible()
+        voz.click()
+        expect(voz).to_have_attribute("aria-pressed", "false")
+        status, estado = api("GET", "/v1/eden/voz/status")
+        assert status == 200 and "marin" in estado["vozes"], estado
+        passo("resposta em voz: botão liga/desliga; status da voz responde")
+
         # ── organização pessoal (Parte 2) e Configurações ─────────────────
         status, _ = api(
             "POST",
@@ -285,6 +297,9 @@ def main() -> int:
         passo("Configurações: Google Agenda aparece (sem configurar)")
         expect(pg.get_by_text("notion.so/profile/integrations")).to_be_visible()
         passo("Configurações: Notion aparece (sem configurar)")
+        expect(pg.get_by_role("switch", name="Modo conversa")).to_be_visible()
+        expect(pg.get_by_label("Voz", exact=True)).to_be_visible()
+        passo("Configurações: voz (modo conversa e escolha da voz)")
         ctx.close()
 
         # ── aparelho novo: código curto ────────────────────────────────────

@@ -143,6 +143,7 @@ def _definir_pedido(request: Any, pergunta: Optional[str] = None) -> None:
                 store=store,
                 pergunta=pergunta if isinstance(pergunta, str) else None,
                 caminhos=_caminhos_do_pedido(request),
+                voz=request.headers.get("x-eden-voz") == "1",
             )
         )
     except Exception:  # noqa: BLE001
@@ -184,6 +185,7 @@ def eden_system_extra() -> str:
             agenda=CACHE.retrato(),
             pergunta=pedido.pergunta,
             caminhos=pedido.caminhos,
+            voz=pedido.voz,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui montar o contexto")
