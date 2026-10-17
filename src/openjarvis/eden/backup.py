@@ -403,6 +403,7 @@ ESQUEMA_PERMITIDO = {
         "ajustes",
         "documentos",
         "conversa_documentos",
+        "lugares",
     },
 }
 

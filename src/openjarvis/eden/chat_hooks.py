@@ -93,7 +93,7 @@ def _organizacao(request: Any):
     return store
 
 
-def _definir_pedido(request: Any) -> None:
+def _definir_pedido(request: Any, pergunta: Optional[str] = None) -> None:
     """Guarda o espaço e a conversa deste pedido (cabeçalhos do app)."""
     from openjarvis.eden.contexto import PedidoEden, definir_pedido
     from openjarvis.eden.conversations import is_valid_id
@@ -107,7 +107,14 @@ def _definir_pedido(request: Any) -> None:
         conversa = request.headers.get("x-eden-conversa") or None
         if conversa is not None and not is_valid_id(conversa):
             conversa = None
-        definir_pedido(PedidoEden(espaco=espaco, conversa_id=conversa, store=store))
+        definir_pedido(
+            PedidoEden(
+                espaco=espaco,
+                conversa_id=conversa,
+                store=store,
+                pergunta=pergunta if isinstance(pergunta, str) else None,
+            )
+        )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui preparar o contexto da conversa")
         definir_pedido(None)
@@ -145,6 +152,7 @@ def eden_system_extra() -> str:
             settings.tz,
             conversa_id=pedido.conversa_id,
             agenda=CACHE.retrato(),
+            pergunta=pedido.pergunta,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Éden: não consegui montar o contexto")
@@ -161,9 +169,9 @@ def prepare_chat(
         refusal = _eden_gate(request_body, settings)
         if refusal is not None:
             return None, refusal
-        if request is not None:
-            _definir_pedido(request)
     last_user = _last_user(request_body)
+    if settings.enabled and request is not None:
+        _definir_pedido(request, last_user.content if last_user else None)
     decision = resolve(
         request_body.model, last_user.content if last_user else "", settings
     )

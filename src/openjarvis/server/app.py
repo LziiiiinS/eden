@@ -539,6 +539,15 @@ def create_app(
         registrar_agenda(app)
     except Exception as exc:
         logger.warning("Éden: Google Agenda não ligada: %s", exc)
+    # Éden (Parte 4): clima, vento e ondas (desligado até a pessoa ligar).
+    try:
+        from openjarvis.eden.clima import registrar_clima
+        from openjarvis.eden.routes_clima import router as eden_clima_router
+
+        app.include_router(eden_clima_router)
+        registrar_clima(app)
+    except Exception as exc:
+        logger.warning("Éden: clima não ligado: %s", exc)
     # Éden (Parte 3): documentos escolhidos pela pessoa para a conversa.
     try:
         from openjarvis.eden.routes_documentos import router as eden_docs_router

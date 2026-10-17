@@ -46,6 +46,7 @@ class PedidoEden:
     espaco: str = "pessoal"
     conversa_id: Optional[str] = None
     store: Any = None  # Organizacao
+    pergunta: Optional[str] = None  # última mensagem da pessoa
 
 
 _pedido: contextvars.ContextVar[Optional[PedidoEden]] = contextvars.ContextVar(
@@ -176,8 +177,11 @@ def montar(
     agora: Optional[int] = None,
     conversa_id: Optional[str] = None,
     agenda: Optional[Dict[str, Any]] = None,
+    pergunta: Optional[str] = None,
 ) -> str:
-    """``agenda``: retrato da Google Agenda em cache (``google.CACHE``)."""
+    """``agenda``: retrato da Google Agenda em cache (``google.CACHE``).
+    ``pergunta``: última mensagem da pessoa (o clima só entra se for sobre
+    tempo, vento ou mar)."""
     agora = agora or agora_ms()
     momento = local_de_ms(agora, tz)
     hoje = momento.date()
@@ -294,6 +298,13 @@ def montar(
                     f"{quando.day:02d}/{quando.month:02d}){detalhe}"
                 )
             partes.append("## Sugestões feitas nesta conversa\n" + "\n".join(linhas))
+
+    # Clima, vento e ondas (Parte 4): só se ligado e se a pergunta pedir.
+    from openjarvis.eden.clima import secao_contexto as secao_clima
+
+    clima_txt = secao_clima(store, pergunta)
+    if clima_txt:
+        partes.append(clima_txt)
 
     # Documentos que a pessoa anexou a esta conversa (só deste espaço).
     secao_docs = ""
