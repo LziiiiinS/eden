@@ -169,6 +169,37 @@ mensagem e desliga sozinho depois.
   **platform.claude.com/settings/capabilities** e confira se a busca na
   internet (web search) não foi desligada.
 
+## Notion
+
+Com o Notion ligado, dá para **trazer uma página do Notion** para a conversa
+(como um documento) e **salvar uma folha do Éden** como página nova no Notion.
+O Éden só enxerga as páginas que você compartilhar com ele e não muda nem
+apaga páginas que já existem.
+
+1. Entre em **notion.so/profile/integrations** → **Nova conexão** (ou "New
+   integration"). Tipo **Interna**, nome **Éden**, no seu espaço de trabalho.
+2. Em **Capacidades**, deixe marcado só **Ler conteúdo** e **Inserir
+   conteúdo**. Desmarque "Atualizar conteúdo" (ele **vem marcado**),
+   comentários e informações de usuários. Salve. Assim o Éden não consegue
+   mudar nem apagar páginas que já existem.
+3. Copie a **chave secreta** (começa com `ntn_`). No `.env` desta pasta, na
+   linha `NOTION_API_KEY=`, cole depois do `=` (sem `#`, sem espaços). Se a
+   linha não existir, escreva no fim. Salve com **Ctrl + S**. **Não mande
+   essa chave para ninguém.**
+4. Rode o `iniciar-eden`.
+5. No Notion, em cada página que o Éden pode ver: **•••** (canto de cima) →
+   **Conexões** → **Éden**. As páginas de dentro entram junto.
+6. No Éden, **Configurações → Notion → Escolher**: a página onde o Éden vai
+   criar as páginas novas (por exemplo, uma página "Éden").
+
+Depois:
+- **Trazer do Notion:** no campo de mensagem, **Documentos → Do Notion**,
+  procure a página e toque em **Trazer**. Ela vira um documento do espaço
+  ativo (só o texto) e já fica em uso na conversa.
+- **Salvar no Notion:** abra a folha de uma resposta e toque em **Salvar no
+  Notion**. Imagens de fora não vão junto.
+- Se você mudar a página no Notion, traga de novo para atualizar.
+
 ## Segurança
 
 - O `.env` tem as chaves. Não mande esse arquivo para ninguém, não cole as

@@ -5,8 +5,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Download, FolderUp, Pencil, Printer, X } from 'lucide-react';
+import { BookOpen, Download, FolderUp, Pencil, Printer, X } from 'lucide-react';
 import { salvarNoDrive, statusAgenda } from '../../lib/eden-agenda';
+import { salvarNoNotion, statusNotion } from '../../lib/eden-notion';
 import { SafeImage, SafeLink } from './EdenSafeMarkdown';
 import {
   FOLHA_PAGE_RULE,
@@ -124,8 +125,11 @@ export function EdenPageView({ content, onClose }: Props) {
   const [aviso, setAviso] = useState('');
   // Éden (Parte 3): salvar no Google Drive, se a pessoa tiver permitido.
   const [driveOk, setDriveOk] = useState(false);
-  const [noDrive, setNoDrive] = useState<{ texto: string; link: string | null } | null>(null);
+  const [noDrive, setNoDrive] = useState<{ texto: string; link: string | null; abrir?: string } | null>(null);
   const [salvandoDrive, setSalvandoDrive] = useState(false);
+  // Éden (Parte 4): salvar no Notion, dentro da página escolhida.
+  const [paiNotion, setPaiNotion] = useState<string | null>(null);
+  const [salvandoNotion, setSalvandoNotion] = useState(false);
   const hoje = useMemo(() => new Date(), []);
   const deck = useMemo(() => splitSlides(texto), [texto]);
   const titulo = modo === 'slides' ? deck.titulo : pageTitle(texto);
@@ -144,6 +148,11 @@ export function EdenPageView({ content, onClose }: Props) {
     statusAgenda()
       .then((s) => {
         if (ativo) setDriveOk(Boolean(s.conectado && s.drive));
+      })
+      .catch(() => {});
+    statusNotion()
+      .then((s) => {
+        if (ativo) setPaiNotion(s.configurado && s.pai ? s.pai.titulo : null);
       })
       .catch(() => {});
     return () => {
@@ -165,6 +174,26 @@ export function EdenPageView({ content, onClose }: Props) {
       setAviso((e as Error).message || 'Não consegui salvar no Drive.');
     } finally {
       setSalvandoDrive(false);
+    }
+  };
+
+  const salvarNotion = async () => {
+    if (!paiNotion) return;
+    if (!window.confirm(`Salvar "${titulo}" como página nova no Notion, dentro de "${paiNotion}"?`)) return;
+    setAviso('');
+    setNoDrive(null);
+    setSalvandoNotion(true);
+    try {
+      const { pagina } = await salvarNoNotion(titulo, texto);
+      setNoDrive({
+        texto: `Salvo no Notion (dentro de "${paiNotion}"): ${pagina.titulo}.`,
+        link: pagina.link,
+        abrir: 'Abrir no Notion',
+      });
+    } catch (e) {
+      setAviso((e as Error).message || 'Não consegui salvar no Notion.');
+    } finally {
+      setSalvandoNotion(false);
     }
   };
 
@@ -298,6 +327,12 @@ export function EdenPageView({ content, onClose }: Props) {
             {salvandoDrive ? 'Salvando…' : 'Salvar no Drive'}
           </button>
         )}
+        {paiNotion && modo === 'folha' && (
+          <button type="button" onClick={() => void salvarNotion()} disabled={salvandoNotion} className={botao} style={botaoNormal}>
+            <BookOpen size={14} />
+            {salvandoNotion ? 'Salvando…' : 'Salvar no Notion'}
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}
@@ -323,7 +358,7 @@ export function EdenPageView({ content, onClose }: Props) {
             {noDrive.texto}{' '}
             {noDrive.link && (
               <a href={noDrive.link} target="_blank" rel="noopener noreferrer" className="underline">
-                Abrir no Google Docs
+                {noDrive.abrir ?? 'Abrir no Google Docs'}
               </a>
             )}
           </p>
