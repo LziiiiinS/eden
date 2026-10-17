@@ -261,6 +261,11 @@ def inteiro(valor: Any, campo: str = "id") -> int:
 # ── banco ────────────────────────────────────────────────────────────────
 
 
+# Cartão em "executando" há mais que isto ficou preso (a chamada ao Google
+# tem 15 s de limite).
+PRESO_EXECUTANDO_MS = 10 * 60 * 1000
+
+
 class Organizacao:
     """Banco da organização pessoal do Éden."""
 
@@ -1091,15 +1096,21 @@ class Organizacao:
     def limpar_antigos(self, agora: int, dias: int = 90) -> Dict[str, int]:
         """Apaga de vez as sugestões (cartões) e as linhas do registro de ações
         com mais de ``dias`` dias. Tarefas, notas, memórias e conversas não
-        são tocadas. Sugestão ainda pendente nunca é apagada."""
+        são tocadas. Sugestão pendente só sai depois de vencida.
+
+        Também fecha cartões presos em "executando" (ex.: o servidor caiu no
+        meio da chamada ao Google): viram "falhou", com aviso para conferir
+        na agenda."""
         if dias < 1:
             raise ValueError("dias precisa ser 1 ou mais")
         limite = agora - dias * 24 * 3600 * 1000
 
         def fazer(conn: sqlite3.Connection) -> Dict[str, int]:
+            presas = self._fechar_presas(conn, agora - PRESO_EXECUTANDO_MS)
             acoes = conn.execute(
-                "DELETE FROM acoes WHERE criado_em < ? AND estado != 'pendente'",
-                (limite,),
+                "DELETE FROM acoes WHERE criado_em < ? "
+                "AND (estado != 'pendente' OR expira_em <= ?)",
+                (limite, agora),
             ).rowcount
             registro = conn.execute(
                 "DELETE FROM registro WHERE quando < ?", (limite,)
@@ -1109,9 +1120,25 @@ class Organizacao:
                 "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
                 (str(agora),),
             )
-            return {"acoes": acoes, "registro": registro}
+            return {"acoes": acoes, "registro": registro, "presas": presas}
 
         return self.transacao(fazer)
+
+    @staticmethod
+    def _fechar_presas(conn: sqlite3.Connection, antes_de: int) -> int:
+        erro = json.dumps(
+            {"erro": "sem resposta do Google; confira na agenda antes de pedir de novo"}
+        )
+        return conn.execute(
+            "UPDATE acoes SET estado = 'falhou', resultado = ? "
+            "WHERE estado = 'executando' AND decidido_em < ?",
+            (erro, antes_de),
+        ).rowcount
+
+    def fechar_presas(self, antes_de: int) -> int:
+        """Cartões em "executando" decididos antes de ``antes_de`` viram
+        "falhou". Ao ligar o servidor, todos (nenhuma chamada está no ar)."""
+        return self.transacao(lambda conn: self._fechar_presas(conn, antes_de))
 
     def ultima_limpeza(self) -> Optional[int]:
         rows = self._ler("SELECT valor FROM ajustes WHERE chave = 'ultima_limpeza'")

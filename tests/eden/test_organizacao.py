@@ -720,13 +720,17 @@ def test_weird_block_does_not_break_the_others(store):
 DIA_MS = 24 * 3600 * 1000
 
 
-def _acao_antiga(store, acao_id, criado_em, estado="feita"):
+def _acao_antiga(
+    store, acao_id, criado_em, estado="feita", expira_em=None, decidido_em=None
+):
+    if expira_em is None:
+        expira_em = criado_em + 15 * 60 * 1000
     store.transacao(
         lambda c: c.execute(
             "INSERT INTO acoes (id, tipo, parametros, assinatura, resumo, "
-            "conversa_id, estado, criado_em, expira_em) "
-            "VALUES (?, 'memoria.criar', '{}', 'x', 'r', NULL, ?, ?, ?)",
-            (acao_id, estado, criado_em, criado_em + 15 * 60 * 1000),
+            "conversa_id, estado, criado_em, expira_em, decidido_em) "
+            "VALUES (?, 'memoria.criar', '{}', 'x', 'r', NULL, ?, ?, ?, ?)",
+            (acao_id, estado, criado_em, expira_em, decidido_em),
         )
     )
 
@@ -745,7 +749,15 @@ def test_cleanup_removes_only_old_cards_and_log_lines(store):
     agora = AGORA
     _acao_antiga(store, "velha", agora - 91 * DIA_MS)
     _acao_antiga(store, "recente", agora - 89 * DIA_MS)
+    # Pendente vencida sai; pendente que ainda vale fica (mesmo velha).
     _acao_antiga(store, "pendente-velha", agora - 200 * DIA_MS, estado="pendente")
+    _acao_antiga(
+        store,
+        "pendente-valendo",
+        agora - 200 * DIA_MS,
+        estado="pendente",
+        expira_em=agora + 60_000,
+    )
     _registro(store, agora - 120 * DIA_MS)
     _registro(store, agora - 10 * DIA_MS)
     tarefa = store.criar_tarefa({"titulo": "Fica", "espaco": "pessoal"}, TZ)
@@ -753,15 +765,41 @@ def test_cleanup_removes_only_old_cards_and_log_lines(store):
 
     apagados = store.limpar_antigos(agora, 90)
 
-    assert apagados == {"acoes": 1, "registro": 1}
+    assert apagados == {"acoes": 2, "registro": 1, "presas": 0}
     restantes = {r["id"] for r in store._ler("SELECT id FROM acoes")}
-    assert restantes == {"recente", "pendente-velha"}
+    assert restantes == {"recente", "pendente-valendo"}
     antigas = store._ler("SELECT id FROM registro WHERE quando < ?", (agora - DIA_MS,))
     assert len(antigas) == 1
     # Tarefas e memórias não são tocadas.
     assert store.tarefa(tarefa["id"]) is not None
     assert any(m["id"] == memoria["id"] for m in store.listar_memorias(todas=True))
     assert store.ultima_limpeza() == agora
+
+
+def test_cards_stuck_while_talking_to_google_become_failed(store):
+    agora = AGORA
+    _acao_antiga(
+        store,
+        "presa-0001",
+        agora - DIA_MS,
+        estado="executando",
+        decidido_em=agora - DIA_MS,
+    )
+    _acao_antiga(
+        store,
+        "no-ar-0001",
+        agora - 60_000,
+        estado="executando",
+        decidido_em=agora - 60_000,
+    )
+    apagados = store.limpar_antigos(agora, 90)
+    assert apagados["presas"] == 1
+    assert store.acao("presa-0001")["estado"] == "falhou"
+    assert "confira na agenda" in store.acao("presa-0001")["resultado"]["erro"]
+    assert store.acao("no-ar-0001")["estado"] == "executando"
+    # Ao ligar o servidor: nenhuma chamada está no ar, então fecha todas.
+    assert store.fechar_presas(agora + 1) == 1
+    assert store.acao("no-ar-0001")["estado"] == "falhou"
 
 
 def test_cleanup_rejects_zero_days(store):

@@ -271,3 +271,19 @@ def test_eden_server_only_answers_its_own_addresses(eden_app):
     ):
         client = TestClient(eden_app, base_url=f"http://{host}")
         assert client.get("/health").status_code == esperado, host
+
+
+def test_google_return_keeps_its_stricter_referrer_policy(eden_app, monkeypatch):
+    # A volta do Google tem o código na URL: a resposta pede "no-referrer" e
+    # o cabeçalho de segurança geral não pode trocar por um mais solto.
+    monkeypatch.delenv("OPENJARVIS_API_KEY", raising=False)
+    client = TestClient(eden_app, base_url="http://localhost", follow_redirects=False)
+    r = client.get("/v1/eden/google/retorno?state=" + "x" * 40 + "&code=abc")
+    assert r.status_code == 303
+    assert r.headers["referrer-policy"] == "no-referrer"
+    assert r.headers["cache-control"] == "no-store"
+    # As outras rotas continuam com o padrão.
+    assert (
+        client.get("/health").headers["referrer-policy"]
+        == "strict-origin-when-cross-origin"
+    )

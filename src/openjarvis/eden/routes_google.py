@@ -109,10 +109,13 @@ async def retorno(request: Request):
 @router.post("/desconectar")
 async def desconectar(request: Request):
     cliente = google.cliente_do_app(request.app)
-    await asyncio.to_thread(cliente.desconectar)
+    google.CACHE.limpar()
+    revogado = await asyncio.to_thread(cliente.desconectar)
     google.CACHE.limpar()
     logger.info("Éden: Google Agenda desconectada")
-    return {"ok": True}
+    # revogado False: desligou aqui, mas o Google não confirmou (a tela diz
+    # onde retirar o acesso na conta do Google).
+    return {"ok": True, "revogado": revogado is not False}
 
 
 @router.get("/eventos")

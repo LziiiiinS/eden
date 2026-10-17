@@ -31,7 +31,7 @@ export async function urlParaConectar(): Promise<string> {
   return destino.toString();
 }
 
-export function desconectarAgenda(): Promise<{ ok: boolean }> {
+export function desconectarAgenda(): Promise<{ ok: boolean; revogado?: boolean }> {
   return edenJson('/google/desconectar', { method: 'POST' });
 }
 

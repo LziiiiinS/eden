@@ -25,6 +25,7 @@ class ClienteFalso:
     def __init__(self) -> None:
         self.ligado = False
         self.codigos = []
+        self.revogar_falha = False
 
     def conectado(self):
         return self.ligado
@@ -35,6 +36,7 @@ class ClienteFalso:
 
     def desconectar(self):
         self.ligado = False
+        return not self.revogar_falha
 
     def listar(self, inicio, fim, tz):
         if not self.ligado:
@@ -141,6 +143,18 @@ def test_disconnect_clears_cache(ambiente):
     falso.ligado = True
     assert c.post("/v1/eden/google/atualizar", headers=AUTH).json()["conectado"] is True
     assert google.CACHE.retrato()["conectado"] is True
-    assert c.post("/v1/eden/google/desconectar", headers=AUTH).json() == {"ok": True}
+    assert c.post("/v1/eden/google/desconectar", headers=AUTH).json() == {
+        "ok": True,
+        "revogado": True,
+    }
     assert google.CACHE.retrato()["conectado"] is False
     assert c.get("/v1/eden/google/eventos?dias=99", headers=AUTH).status_code == 400
+
+
+def test_disconnect_tells_when_google_did_not_confirm(ambiente):
+    c, falso = ambiente
+    falso.ligado = True
+    falso.revogar_falha = True
+    r = c.post("/v1/eden/google/desconectar", headers=AUTH).json()
+    assert r == {"ok": True, "revogado": False}
+    assert falso.ligado is False

@@ -426,6 +426,11 @@ def limpar_se_preciso(store, agora: Optional[int] = None) -> Optional[Dict[str, 
     if ultima is not None and agora - ultima < INTERVALO_LIMPEZA_MS:
         return None
     apagados = store.limpar_antigos(agora, DIAS_GUARDADOS)
+    if apagados.get("presas"):
+        logger.warning(
+            "Éden: %d sugestão(ões) da agenda ficaram sem resposta do Google",
+            apagados["presas"],
+        )
     if apagados["acoes"] or apagados["registro"]:
         logger.info(
             "Éden: limpeza automática (%d dias): %d sugestões e %d linhas do "
@@ -478,6 +483,12 @@ def registrar_lembretes(app) -> None:
             app.state.eden_organizacao = store
         if conferir_troca_de_chave(store, os.environ.get("OPENJARVIS_API_KEY", "")):
             logger.info("Éden: chave de acesso nova; avisos dos aparelhos reiniciados")
+        # Servidor acabou de ligar: nenhuma chamada ao Google está no ar.
+        presas = store.fechar_presas(int(time.time() * 1000) + 1)
+        if presas:
+            logger.warning(
+                "Éden: %d sugestão(ões) da agenda ficaram sem resposta", presas
+            )
 
     @app.on_event("startup")
     async def _ligar() -> None:  # pragma: no cover - roda com o servidor de verdade

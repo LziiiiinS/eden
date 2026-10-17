@@ -31,7 +31,7 @@ export function EdenGoogleSettings() {
   const [status, setStatus] = useState<StatusAgenda | null>(null);
   const [erro, setErro] = useState('');
   const [busy, setBusy] = useState(false);
-  const [volta] = useState(() => mensagemDaVolta(lerVolta()));
+  const [volta, setVolta] = useState(() => mensagemDaVolta(lerVolta()));
   const [copiado, setCopiado] = useState(false);
 
   const carregar = useCallback(() => {
@@ -62,7 +62,16 @@ export function EdenGoogleSettings() {
     if (!window.confirm('Desligar a Google Agenda do Éden? A sua agenda no Google não muda.')) return;
     setBusy(true);
     try {
-      await desconectarAgenda();
+      const r = await desconectarAgenda();
+      setVolta(
+        r.revogado === false
+          ? {
+              ok: false,
+              texto:
+                'Desligada aqui. O Google não confirmou: se quiser, remova o acesso do "Éden" na sua conta do Google (Segurança → Apps e serviços de terceiros).',
+            }
+          : { ok: true, texto: 'Desligada. O Google também retirou o acesso do Éden.' },
+      );
       carregar();
     } catch (e) {
       setErro((e as Error).message);

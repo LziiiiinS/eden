@@ -81,6 +81,13 @@ precisa de cartão. Faça no notebook.
    No aviso "o Google não verificou este app", toque em **Avançado → Acessar
    Éden**. Marque a caixa da **agenda** e continue.
 
+**Dica de segurança (convites):** qualquer pessoa pode mandar um convite que
+aparece na sua agenda, e o título dele chega ao Éden. O Éden trata título como
+dado (nunca como ordem), marca "convite ainda não aceito" e ignora convites
+recusados. Para reduzir convites estranhos: no Google Agenda, **Configurações →
+Configurações de eventos → Adicionar convites à minha agenda → "Somente se o
+remetente for conhecido"**.
+
 Para desligar: **Configurações → Google Agenda → Desconectar**. Ao mudar o
 Éden para outro computador ou servidor, a ligação precisa ser feita de novo
 (a autorização não vai no backup).

@@ -67,6 +67,9 @@ class GoogleFalso:
         self.expirar_proximo_acesso = False
         self.escopo = google.ESCOPO_AGENDA
         self.mandar_refresh = True
+        self.refresh = "refresh-secreto"
+        self.revogar_falha = False
+        self.rede_falha = None  # exceção a lançar no próximo pedido de agenda
 
     def _anotar(self, metodo, url, **kw):
         assert urlparse(url).hostname in HOSTS_GOOGLE, url
@@ -82,26 +85,32 @@ class GoogleFalso:
                     "scope": self.escopo,
                 }
                 if self.mandar_refresh:
-                    resposta["refresh_token"] = "refresh-secreto"
+                    resposta["refresh_token"] = self.refresh
                 return Resposta(200, resposta)
             if self.refresh_invalido:
                 return Resposta(400, {"error": "invalid_grant"})
             return Resposta(200, {"access_token": "acesso-2", "expires_in": 3600})
         if url == google.URL_REVOGAR:
-            return Resposta(200, {})
+            return Resposta(400 if self.revogar_falha else 200, {})
         raise AssertionError(url)
 
     def request(self, metodo, url, headers=None, params=None, json=None):
         self._anotar(metodo, url, headers=headers, params=params, json=json)
         assert headers["Authorization"].startswith("Bearer acesso-")
+        if self.rede_falha is not None:
+            erro, self.rede_falha = self.rede_falha, None
+            raise erro
         if self.expirar_proximo_acesso:
             self.expirar_proximo_acesso = False
             return Resposta(401, {"error": "expired"})
         if metodo == "GET" and url == google.URL_AGENDA:
             return Resposta(200, {"items": list(self.eventos.values())})
         if metodo == "POST" and url == google.URL_AGENDA:
-            novo = dict(json, id="novo1")
-            self.eventos["novo1"] = novo
+            novo_id = json.get("id") or "novo1"
+            if novo_id in self.eventos:
+                return Resposta(409, {"error": "duplicate"})
+            novo = dict(json, id=novo_id)
+            self.eventos[novo_id] = novo
             return Resposta(200, novo)
         evento_id = url.rsplit("/", 1)[1]
         if evento_id not in self.eventos:
@@ -374,8 +383,9 @@ def test_create_event_only_after_confirmation(store, cliente, falso):
         store, acao["id"], acao["assinatura"], TZ, AGORA + 1000, google=cliente
     )
     assert feita["estado"] == "feita"
-    assert feita["resultado"] == {"evento": "novo1"}
-    assert falso.eventos["novo1"]["summary"] == "Dentista"
+    novo_id = google.id_para_criar(acao["id"])
+    assert feita["resultado"] == {"evento": novo_id}
+    assert falso.eventos[novo_id]["summary"] == "Dentista"
     # Uso único.
     with pytest.raises(acoes.ErroAcao):
         acoes.confirmar(
@@ -384,7 +394,7 @@ def test_create_event_only_after_confirmation(store, cliente, falso):
     registro = store._ler(
         "SELECT o_que, alvo FROM registro WHERE acao_id = ?", (acao["id"],)
     )
-    assert [tuple(r) for r in registro] == [("criou evento", "agenda:novo1")]
+    assert [tuple(r) for r in registro] == [("criou evento", f"agenda:{novo_id}")]
 
 
 def test_edit_event_checks_the_event_did_not_change(store, cliente, falso):
@@ -475,6 +485,224 @@ def test_failed_google_call_marks_card_as_failed(store, cliente, falso):
     assert store.acao(criadas[0]["id"])["estado"] == "falhou"
 
 
+def _propor(store, cliente, dados, agenda=None):
+    return acoes.propor(
+        _bloco(dados),
+        store,
+        "pessoal",
+        TZ,
+        "conv-1",
+        AGORA,
+        agenda=agenda or _agenda(cliente),
+    )
+
+
+def _confirmar(store, acao, google_cliente, quando=AGORA + 1000):
+    return acoes.confirmar(
+        store, acao["id"], acao["assinatura"], TZ, quando, google=google_cliente
+    )
+
+
+def test_edit_card_shows_the_final_times(store, cliente, falso):
+    _ligar(cliente)
+    criadas, _ = _propor(
+        store, cliente, {"tipo": "agenda.editar", "id": "abc123", "hora": "16:00"}
+    )
+    acao = criadas[0]
+    # O cartão mostra início e fim que vão para o Google (mantém 1h30).
+    assert "para amanhã 16:00–17:30" in acao["resumo"]
+    assert acao["parametros"]["corpo"]["end"] == {
+        "dateTime": "2026-10-17T17:30:00-03:00"
+    }
+
+
+def test_edit_refuses_if_the_time_changed_after_the_card(store, cliente, falso):
+    _ligar(cliente)
+    criadas, _ = _propor(
+        store, cliente, {"tipo": "agenda.editar", "id": "abc123", "titulo": "Novo"}
+    )
+    # Alguém mudou o horário no Google (o título continua igual).
+    falso.eventos["abc123"]["start"] = {"dateTime": "2026-10-17T10:00:00-03:00"}
+    with pytest.raises(acoes.ErroAcao):
+        _confirmar(store, criadas[0], cliente)
+    assert store.acao(criadas[0]["id"])["estado"] == "falhou"
+    assert falso.eventos["abc123"]["summary"] == "Reunião com cliente"
+
+
+def test_all_day_event_keeps_its_days(store, cliente, falso):
+    _ligar(cliente)
+    falso.eventos["ferias"] = {
+        "id": "ferias",
+        "summary": "Férias",
+        "start": {"date": "2026-10-18"},
+        "end": {"date": "2026-10-21"},  # 3 dias
+    }
+    criadas, recusadas = _propor(
+        store, cliente, {"tipo": "agenda.editar", "id": "ferias", "data": "2026-10-19"}
+    )
+    assert recusadas == []
+    acao = criadas[0]
+    assert "dia inteiro" in acao["resumo"] and " a " in acao["resumo"]
+    _confirmar(store, acao, cliente)
+    assert falso.eventos["ferias"]["start"] == {"date": "2026-10-19"}
+    assert falso.eventos["ferias"]["end"] == {"date": "2026-10-22"}
+    # Duração sem hora num evento de dia inteiro: recusado (não adivinha).
+    criadas, recusadas = _propor(
+        store,
+        cliente,
+        {"tipo": "agenda.editar", "id": "dia1", "duracao_min": 30},
+    )
+    assert criadas == [] and "dia inteiro" in recusadas[0]
+
+
+def test_edit_card_shows_guests_and_pending_invites(store, cliente, falso):
+    _ligar(cliente)
+    falso.eventos["conv1"] = {
+        "id": "conv1",
+        "summary": "Almoço",
+        "start": {"dateTime": "2026-10-17T12:00:00-03:00"},
+        "end": {"dateTime": "2026-10-17T13:00:00-03:00"},
+        "attendees": [
+            {"email": "eu@exemplo.com", "self": True, "responseStatus": "needsAction"},
+            {"email": "a@exemplo.com"},
+            {"email": "b@exemplo.com"},
+        ],
+    }
+    criadas, _ = _propor(
+        store, cliente, {"tipo": "agenda.editar", "id": "conv1", "hora": "12:30"}
+    )
+    resumo = criadas[0]["resumo"]
+    assert "2 convidados" in resumo and "ainda não aceitou" in resumo
+
+
+def test_declined_and_broken_events_do_not_break_the_list(cliente, falso):
+    _ligar(cliente)
+    falso.eventos["recusado"] = {
+        "id": "recusado",
+        "summary": "Não vou",
+        "start": {"dateTime": "2026-10-17T09:00:00-03:00"},
+        "attendees": [{"self": True, "responseStatus": "declined"}],
+    }
+    falso.eventos["quebrado"] = {
+        "id": "quebrado",
+        "summary": "x",
+        "start": {"dateTime": "2026-10-17T09:00:00-03:00"},
+        "attendees": 5,
+    }
+    falso.eventos["linha"] = {
+        "id": "abc\n",
+        "summary": "id com quebra",
+        "start": {"date": "2026-10-18"},
+    }
+    inicio = datetime(2026, 10, 16, tzinfo=TZ)
+    ids = [e["id"] for e in cliente.listar(inicio, inicio + timedelta(days=7), TZ)]
+    assert ids == ["abc123", "dia1"]
+
+
+def test_create_is_not_duplicated_if_repeated(cliente, falso):
+    _ligar(cliente)
+    params = {"titulo": "Dentista", "data": "2026-10-20", "hora": "09:30"}
+    evento_id = google.id_para_criar("acao-x")
+    assert cliente.criar(params, TZ, evento_id=evento_id) == {"evento": evento_id}
+    # A resposta "se perdeu" e o pedido foi de novo: o Google diz que já existe.
+    assert cliente.criar(params, TZ, evento_id=evento_id) == {"evento": evento_id}
+    assert sum(1 for e in falso.eventos.values() if e.get("summary") == "Dentista") == 1
+
+
+def test_network_failure_marks_card_failed_and_asks_to_check(store, cliente, falso):
+    _ligar(cliente)
+    criadas, _ = _propor(
+        store, cliente, {"tipo": "agenda.criar", "titulo": "Z", "data": "2026-10-20"}
+    )
+    falso.rede_falha = TimeoutError("demorou")  # como um timeout do httpx
+    with pytest.raises(acoes.ErroAcao) as exc:
+        _confirmar(store, criadas[0], cliente)
+    assert "Confira na agenda" in str(exc.value)
+    acao = store.acao(criadas[0]["id"])
+    assert acao["estado"] == "falhou"
+
+
+def test_unexpected_error_never_leaves_card_stuck(store, cliente, falso):
+    _ligar(cliente)
+    criadas, _ = _propor(
+        store, cliente, {"tipo": "agenda.criar", "titulo": "W", "data": "2026-10-20"}
+    )
+
+    class Quebrado:
+        def criar(self, *a, **kw):
+            raise RuntimeError("bug")
+
+    with pytest.raises(acoes.ErroAcao):
+        _confirmar(store, criadas[0], Quebrado())
+    assert store.acao(criadas[0]["id"])["estado"] == "falhou"
+
+
+def test_old_edit_cards_are_refused(store, cliente, falso):
+    # Cartão criado antes desta versão (sem "corpo"): pede de novo.
+    _ligar(cliente)
+    proposta = acoes.Proposta(
+        "agenda.editar",
+        {"id": "abc123", "titulo_atual": "Reunião com cliente", "mudancas": {}},
+        "Mudar (antigo)",
+    )
+    acao = acoes._gravar(store, proposta, "conv-1", AGORA)
+    with pytest.raises(acoes.ErroAcao) as exc:
+        _confirmar(store, acao, cliente)
+    assert "peça de novo" in str(exc.value)
+
+
+def test_long_event_ids_are_not_offered_to_the_ai(store, cliente, falso):
+    _ligar(cliente)
+    longo = "a" * (google.MAX_ID_PARA_IA + 1)
+    falso.eventos[longo] = {
+        "id": longo,
+        "summary": "Convite de fora",
+        "start": {"dateTime": "2026-10-17T09:00:00-03:00"},
+    }
+    criadas, recusadas = _propor(
+        store, cliente, {"tipo": "agenda.editar", "id": longo, "titulo": "x"}
+    )
+    assert criadas == [] and "não encontrado" in recusadas[0]
+
+
+def test_reconnect_revokes_the_old_authorization(cliente, falso):
+    _ligar(cliente)
+    falso.refresh = "refresh-novo"
+    _ligar(cliente)
+    revogados = [
+        p[2]["data"]["token"] for p in falso.pedidos if p[1] == google.URL_REVOGAR
+    ]
+    assert revogados == ["refresh-secreto"]
+    assert cliente.cofre.ler()["refresh"] == "refresh-novo"
+
+
+def test_disconnect_reports_when_google_did_not_confirm(cliente, falso):
+    _ligar(cliente)
+    falso.revogar_falha = True
+    assert cliente.desconectar() is False
+    assert not cliente.conectado()  # aqui desliga mesmo assim
+
+
+def test_cache_ignores_a_refresh_that_ended_after_disconnect():
+    cache = google.AgendaEmCache()
+    geracao = cache.geracao
+    cache.limpar()  # desconectou enquanto buscava
+    assert cache.guardar([{"id": "x"}], AGORA, geracao) is False
+    assert cache.retrato()["conectado"] is False
+
+
+def test_key_file_is_fixed_or_reported(store, tmp_path):
+    caminho = tmp_path / "eden" / "google.key"
+    google.Cofre(store, caminho).salvar("r", google.ESCOPO_AGENDA)
+    caminho.chmod(0o644)
+    assert google.Cofre(store, caminho).ler()["refresh"] == "r"
+    assert oct(caminho.stat().st_mode & 0o777) == "0o600"
+    caminho.write_bytes(b"estragada")
+    with pytest.raises(google.ErroGoogle) as exc:
+        google.Cofre(store, caminho).ler()
+    assert exc.value.codigo == "eden_google_chave"
+
+
 # ── contexto da IA ───────────────────────────────────────────────────────
 
 
@@ -500,3 +728,24 @@ def test_context_shows_calendar_as_quoted_data(store):
     assert "agenda.criar" in texto
     sem = montar(store, "pessoal", TZ, AGORA)
     assert "Agenda do Google" not in sem and "agenda.criar" not in sem
+
+
+def test_context_labels_invites_and_hides_long_ids(store):
+    longo = "b" * (google.MAX_ID_PARA_IA + 1)
+    base = {
+        "local": "",
+        "inicio": "2026-10-17T14:00:00-03:00",
+        "fim": None,
+        "dia_inteiro": False,
+    }
+    agenda = {
+        "conectado": True,
+        "atualizado_em": AGORA,
+        "eventos": [
+            dict(base, id="conv1", titulo="Almoço", convite="pendente"),
+            dict(base, id=longo, titulo="Festa"),
+        ],
+    }
+    texto = montar(store, "pessoal", TZ, AGORA, agenda=agenda)
+    assert "[conv1]" in texto and "convite ainda não aceito" in texto
+    assert longo not in texto and '"Festa"' in texto
