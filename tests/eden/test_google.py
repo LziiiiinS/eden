@@ -665,14 +665,13 @@ def test_long_event_ids_are_not_offered_to_the_ai(store, cliente, falso):
     assert criadas == [] and "não encontrado" in recusadas[0]
 
 
-def test_reconnect_revokes_the_old_authorization(cliente, falso):
+def test_reconnect_does_not_revoke_the_new_authorization(cliente, falso):
+    # A revogação do Google vale para a autorização inteira (app + conta):
+    # revogar a antiga ao religar derrubaria a nova também.
     _ligar(cliente)
     falso.refresh = "refresh-novo"
     _ligar(cliente)
-    revogados = [
-        p[2]["data"]["token"] for p in falso.pedidos if p[1] == google.URL_REVOGAR
-    ]
-    assert revogados == ["refresh-secreto"]
+    assert not any(p[1] == google.URL_REVOGAR for p in falso.pedidos)
     assert cliente.cofre.ler()["refresh"] == "refresh-novo"
 
 
