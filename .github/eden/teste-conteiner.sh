@@ -62,6 +62,11 @@ echo "ok: gastos do mês"
 curl -fsS "$BASE/" | grep -qi '<html' || { echo "error: página do app não abriu"; exit 1; }
 echo "ok: página do app"
 
+# Página de privacidade (pedida pelo Google para publicar o app): pública.
+curl -fsS "$BASE/privacidade.html" | grep -q 'Política de privacidade' \
+  || { echo "error: página de privacidade não abriu"; exit 1; }
+echo "ok: página de privacidade (sem chave)"
+
 com_chave "$BASE/v1/eden/espacos" | grep -q '"pessoal"' || { echo "error: espaços não responderam"; exit 1; }
 echo "ok: organização pessoal (espaços)"
 
