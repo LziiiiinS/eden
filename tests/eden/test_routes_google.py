@@ -26,6 +26,8 @@ class ClienteFalso:
         self.ligado = False
         self.codigos = []
         self.revogar_falha = False
+        self.cofre = object()
+        self.drive = False
 
     def conectado(self):
         return self.ligado
@@ -65,6 +67,7 @@ def ambiente(tmp_path, monkeypatch):
     app.state.eden_google = falso
     app.include_router(router)
     app.add_middleware(AuthMiddleware, api_key=CHAVE)
+    monkeypatch.setattr(google, "tem_drive", lambda cofre: falso.drive)
     google.CACHE.limpar()
     yield TestClient(app, follow_redirects=False), falso
     google.CACHE.limpar()
@@ -93,6 +96,7 @@ def test_connect_flow_with_state_and_pkce(ambiente):
     assert status == {
         "configurado": True,
         "conectado": False,
+        "drive": False,
         "endereco_retorno": "https://eden-notebook.tail1234.ts.net/v1/eden/google/retorno",
         "atualizado_em": None,
     }
@@ -158,3 +162,50 @@ def test_disconnect_tells_when_google_did_not_confirm(ambiente):
     r = c.post("/v1/eden/google/desconectar", headers=AUTH).json()
     assert r == {"ok": True, "revogado": False}
     assert falso.ligado is False
+
+
+def test_connect_can_ask_for_drive_too(ambiente):
+    c, _ = ambiente
+    url = urlparse(
+        c.post("/v1/eden/google/conectar?drive=true", headers=AUTH).json()["url"]
+    )
+    assert parse_qs(url.query)["scope"][0].split() == [
+        google.ESCOPO_AGENDA,
+        google.ESCOPO_DRIVE,
+    ]
+
+
+def test_save_to_drive_route(ambiente, monkeypatch):
+    c, falso = ambiente
+    falso.ligado = True
+    falso.drive = True
+    assert c.get("/v1/eden/google/status", headers=AUTH).json()["drive"] is True
+    chamadas = []
+
+    def salvar(cliente, titulo, html):
+        chamadas.append((titulo, html))
+        if not titulo:
+            raise google.ErroGoogle("sem título", "eden_google_dados")
+        return {"id": "arquivo123456", "nome": titulo, "link": None}
+
+    monkeypatch.setattr(google, "salvar_no_drive", salvar)
+    assert c.post("/v1/eden/google/drive/salvar", json={}).status_code == 401
+    r = c.post(
+        "/v1/eden/google/drive/salvar",
+        headers=AUTH,
+        json={"titulo": "Plano", "html": "<h1>Plano</h1>"},
+    )
+    assert r.json() == {
+        "ok": True,
+        "id": "arquivo123456",
+        "nome": "Plano",
+        "link": None,
+    }
+    ruim = c.post("/v1/eden/google/drive/salvar", headers=AUTH, json={"html": "x"})
+    assert ruim.status_code == 400
+    grande = c.post(
+        "/v1/eden/google/drive/salvar",
+        headers={**AUTH, "Content-Type": "application/json"},
+        content=b"x" * (google.MAX_HTML_DRIVE + 70 * 1024),
+    )
+    assert grande.status_code == 413

@@ -44,6 +44,13 @@ URL_TOKEN = "https://oauth2.googleapis.com/token"
 URL_REVOGAR = "https://oauth2.googleapis.com/revoke"
 URL_AGENDA = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 ESCOPO_AGENDA = "https://www.googleapis.com/auth/calendar.events"
+# Drive: só os arquivos que o próprio Éden cria (não enxerga o resto do Drive).
+ESCOPO_DRIVE = "https://www.googleapis.com/auth/drive.file"
+URL_DRIVE = "https://www.googleapis.com/drive/v3/files"
+URL_DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
+NOME_PASTA_DRIVE = "Éden"
+AJUSTE_PASTA_DRIVE = "google_drive_pasta"
+MAX_HTML_DRIVE = 2 * 1024 * 1024
 CAMINHO_RETORNO = "/v1/eden/google/retorno"
 
 VALIDADE_AUTORIZACAO_S = 10 * 60
@@ -233,7 +240,12 @@ def desafio_pkce(verificador: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def url_de_autorizacao(cfg: Dict[str, str], state: str, verificador: str) -> str:
+def url_de_autorizacao(
+    cfg: Dict[str, str], state: str, verificador: str, drive: bool = False
+) -> str:
+    """``drive``: pede também a permissão de criar arquivos no Drive (só os
+    que o Éden cria). Sem ela, só a agenda."""
+    escopos = [ESCOPO_AGENDA, ESCOPO_DRIVE] if drive else [ESCOPO_AGENDA]
     return (
         URL_AUTORIZAR
         + "?"
@@ -242,7 +254,7 @@ def url_de_autorizacao(cfg: Dict[str, str], state: str, verificador: str) -> str
                 "client_id": cfg["client_id"],
                 "redirect_uri": cfg["retorno"],
                 "response_type": "code",
-                "scope": ESCOPO_AGENDA,
+                "scope": " ".join(escopos),
                 "access_type": "offline",
                 "prompt": "consent",
                 "include_granted_scopes": "false",
@@ -581,11 +593,20 @@ class ClienteGoogle:
             raise ErroGoogle("O Google não respondeu agora. Tente de novo.")
         return self._guardar_acesso(self._json(resposta))
 
-    def _pedir(self, metodo: str, url: str, **kw: Any) -> Any:
+    def _pedir(
+        self,
+        metodo: str,
+        url: str,
+        cabecalhos: Optional[Dict[str, str]] = None,
+        **kw: Any,
+    ) -> Any:
         for tentativa in (0, 1):
             token = self._token_de_acesso(forcar=tentativa == 1)
             resposta = self._rede(
-                metodo, url, headers={"Authorization": f"Bearer {token}"}, **kw
+                metodo,
+                url,
+                headers={**(cabecalhos or {}), "Authorization": f"Bearer {token}"},
+                **kw,
             )
             if resposta.status_code == 401 and tentativa == 0:
                 continue
@@ -654,6 +675,132 @@ class ClienteGoogle:
             json=mudancas,
         )
         return {"evento": evento_id}
+
+
+# ── Google Drive: salvar a folha como documento (só o que o Éden cria) ──
+
+
+_ID_DRIVE = re.compile(r"[A-Za-z0-9_-]{10,200}")
+
+
+def tem_drive(cofre: "Cofre") -> bool:
+    guardado = cofre.ler()
+    return bool(guardado) and ESCOPO_DRIVE in str(guardado.get("escopo", "")).split()
+
+
+def _pasta_guardada(store) -> Optional[str]:  # noqa: ANN001
+    rows = store._ler(
+        "SELECT valor FROM ajustes WHERE chave = ?", (AJUSTE_PASTA_DRIVE,)
+    )
+    valor = rows[0][0] if rows else None
+    return valor if isinstance(valor, str) and _ID_DRIVE.fullmatch(valor) else None
+
+
+def _guardar_pasta(store, pasta_id: str) -> None:  # noqa: ANN001
+    store.transacao(
+        lambda c: c.execute(
+            "INSERT INTO ajustes (chave, valor) VALUES (?, ?) "
+            "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+            (AJUSTE_PASTA_DRIVE, pasta_id),
+        )
+    )
+
+
+def corpo_multipart(metadados: Dict[str, Any], html: str) -> Tuple[bytes, str]:
+    """Corpo "multipart/related" do Drive: metadados (JSON) + o HTML."""
+    fronteira = "eden" + secrets.token_hex(16)
+    partes = (
+        f"--{fronteira}\r\n"
+        "Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{json.dumps(metadados, ensure_ascii=False)}\r\n"
+        f"--{fronteira}\r\n"
+        "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+    ).encode("utf-8")
+    corpo = partes + html.encode("utf-8") + f"\r\n--{fronteira}--\r\n".encode()
+    return corpo, f"multipart/related; boundary={fronteira}"
+
+
+def _criar_pasta(cliente: "ClienteGoogle") -> str:
+    criada = cliente._pedir(
+        "POST",
+        URL_DRIVE,
+        params={"fields": "id"},
+        json={
+            "name": NOME_PASTA_DRIVE,
+            "mimeType": "application/vnd.google-apps.folder",
+        },
+    )
+    pasta = criada.get("id") if isinstance(criada, dict) else None
+    if not isinstance(pasta, str) or not _ID_DRIVE.fullmatch(pasta):
+        raise ErroGoogle("O Drive não criou a pasta do Éden.")
+    _guardar_pasta(cliente.cofre.store, pasta)
+    return pasta
+
+
+def _pasta_existe(cliente: "ClienteGoogle", pasta: str) -> bool:
+    try:
+        info = cliente._pedir(
+            "GET", f"{URL_DRIVE}/{pasta}", params={"fields": "id,trashed"}
+        )
+    except ErroGoogle as exc:
+        if exc.codigo == "eden_google_404":
+            return False
+        raise
+    return isinstance(info, dict) and not info.get("trashed")
+
+
+def salvar_no_drive(cliente: "ClienteGoogle", titulo: Any, html: Any) -> Dict[str, Any]:
+    """Cria um Google Docs com a folha, na pasta "Éden" do Drive."""
+    from openjarvis.eden.organizacao import ErroOrganizacao, texto
+
+    if not tem_drive(cliente.cofre):
+        raise ErroGoogle(
+            "O Éden ainda não tem permissão para salvar no Drive "
+            "(Configurações → Google).",
+            "eden_google_sem_drive",
+        )
+    try:
+        nome = texto(titulo, "titulo", 120, uma_linha=True)
+    except ErroOrganizacao as exc:
+        raise ErroGoogle(str(exc), "eden_google_dados") from None
+    if not isinstance(html, str) or not html.strip():
+        raise ErroGoogle("A folha está vazia.", "eden_google_dados")
+    if len(html.encode("utf-8")) > MAX_HTML_DRIVE:
+        raise ErroGoogle(
+            "A folha é grande demais para o Drive (até 2 MB).", "eden_google_dados"
+        )
+    pasta = _pasta_guardada(cliente.cofre.store)
+    if pasta is None or not _pasta_existe(cliente, pasta):
+        pasta = _criar_pasta(cliente)
+    corpo, tipo = corpo_multipart(
+        {
+            "name": nome,
+            "mimeType": "application/vnd.google-apps.document",
+            "parents": [pasta],
+        },
+        html,
+    )
+    criado = cliente._pedir(
+        "POST",
+        URL_DRIVE_UPLOAD,
+        cabecalhos={"Content-Type": tipo},
+        params={"uploadType": "multipart", "fields": "id,name,webViewLink"},
+        content=corpo,
+    )
+    arquivo = criado.get("id") if isinstance(criado, dict) else None
+    if not isinstance(arquivo, str) or not _ID_DRIVE.fullmatch(arquivo):
+        raise ErroGoogle("O Drive não confirmou o arquivo.")
+    link = criado.get("webViewLink")
+    # Só devolve link do próprio Google Docs/Drive.
+    if not (
+        isinstance(link, str)
+        and (
+            link.startswith("https://docs.google.com/")
+            or link.startswith("https://drive.google.com/")
+        )
+    ):
+        link = None
+    return {"id": arquivo, "nome": nome, "link": link}
 
 
 # ── agenda em cache (para o contexto da IA, sem esperar o Google) ────────

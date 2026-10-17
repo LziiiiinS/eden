@@ -1,7 +1,7 @@
 // Éden (Parte 3): ligar a Google Agenda (Configurações). O Éden só ganha a
 // permissão de eventos da agenda; a autorização fica cifrada no servidor.
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, Copy, RefreshCw, Unlink } from 'lucide-react';
+import { CalendarDays, Copy, FolderUp, RefreshCw, Unlink } from 'lucide-react';
 import { GhostButton, PrimaryButton } from './EdenUi';
 import { edenJson } from '../../lib/eden-org';
 import {
@@ -47,11 +47,11 @@ export function EdenGoogleSettings() {
     carregar();
   }, [carregar]);
 
-  const conectar = async () => {
+  const conectar = async (drive = false) => {
     setBusy(true);
     setErro('');
     try {
-      window.location.assign(await urlParaConectar());
+      window.location.assign(await urlParaConectar(drive));
     } catch (e) {
       setErro((e as Error).message);
       setBusy(false);
@@ -153,7 +153,7 @@ export function EdenGoogleSettings() {
             O Éden vai poder ler os seus eventos e sugerir eventos novos ou mudanças, sempre com o cartão de
             confirmação. Só a permissão da agenda é pedida. Faça de preferência no notebook.
           </p>
-          <PrimaryButton onClick={conectar} disabled={busy}>
+          <PrimaryButton onClick={() => void conectar()} disabled={busy}>
             <CalendarDays size={14} /> {busy ? 'Abrindo o Google…' : 'Conectar a Google Agenda'}
           </PrimaryButton>
         </>
@@ -173,6 +173,22 @@ export function EdenGoogleSettings() {
               <Unlink size={12} /> Desconectar
             </GhostButton>
           </div>
+          {status.drive ? (
+            <p className={texto} style={cor}>
+              Google Drive: o Éden pode salvar folhas na pasta "Éden" (só enxerga os arquivos que ele mesmo
+              cria). Na folha, toque em "Salvar no Drive".
+            </p>
+          ) : (
+            <div className="flex flex-col items-start gap-1.5">
+              <p className={texto} style={cor}>
+                Opcional: deixar o Éden salvar folhas como Google Docs numa pasta "Éden" do seu Drive. Ele só
+                enxerga os arquivos que ele mesmo criar, não o resto do Drive.
+              </p>
+              <GhostButton onClick={() => void conectar(true)} disabled={busy}>
+                <FolderUp size={12} /> Permitir salvar no Drive
+              </GhostButton>
+            </div>
+          )}
         </>
       )}
     </div>
