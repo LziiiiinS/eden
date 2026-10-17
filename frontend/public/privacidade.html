@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Éden — Política de privacidade</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; background: #f7f7f5; color: #1d1d1b; }
+  @media (prefers-color-scheme: dark) { body { background: #141414; color: #e8e8e6; } a { color: #7cc4ff; } }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  h2 { font-size: 1.1rem; margin-top: 28px; }
+  p.data { opacity: .7; margin-top: 0; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Éden — Política de privacidade</h1>
+  <p class="data">Atualizada em 17/10/2026</p>
+
+  <p>O Éden é um assistente pessoal privado. Ele roda num servidor do próprio dono, numa rede privada (Tailscale), e é usado só por ele. Não é vendido, não tem anúncios e não é oferecido ao público.</p>
+
+  <h2>O que o Éden acessa no Google</h2>
+  <ul>
+    <li><strong>Google Agenda</strong> (permissão <code>calendar.events</code>): lê os eventos dos próximos dias e cria ou muda eventos <strong>só depois que o dono toca em Confirmar</strong> num cartão.</li>
+    <li><strong>Google Drive</strong> (opcional, permissão <code>drive.file</code>): cria documentos numa pasta "Éden" quando o dono pede. O Éden só enxerga os arquivos que ele mesmo criou; não vê o resto do Drive.</li>
+  </ul>
+  <p>O Éden não pede acesso a e-mail, contatos, fotos ou qualquer outro serviço do Google.</p>
+
+  <h2>Onde ficam os dados</h2>
+  <ul>
+    <li>A autorização do Google fica <strong>cifrada</strong> no servidor do dono. A chave da cifra não vai para backups.</li>
+    <li>Os eventos lidos ficam em memória no servidor, para mostrar a agenda e responder perguntas.</li>
+    <li>Nada é vendido, compartilhado com terceiros para publicidade ou usado para treinar modelos pelo Éden.</li>
+  </ul>
+
+  <h2>Inteligência artificial</h2>
+  <p>Para responder ao dono, o Éden envia o texto da conversa e, quando relevante, títulos e horários de eventos da agenda para os serviços de IA que o dono escolheu (OpenAI e Anthropic), pelas APIs dessas empresas.</p>
+
+  <h2>Como retirar o acesso</h2>
+  <ul>
+    <li>No Éden: <strong>Configurações → Google Agenda → Desconectar</strong> (apaga a autorização e avisa o Google).</li>
+    <li>Na conta do Google: <a href="https://myaccount.google.com/permissions" rel="noopener noreferrer">myaccount.google.com/permissions</a>, remover "Éden".</li>
+  </ul>
+
+  <p>O uso dos dados recebidos das APIs do Google segue a <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener noreferrer">Política de Dados do Usuário dos Serviços de API do Google</a>, incluindo os requisitos de uso limitado.</p>
+</main>
+</body>
+</html>
