@@ -6,6 +6,7 @@ confere, como uma pessoa faria:
 3. o ícone de folha abre a resposta como folha e como slides, o texto pode
    ser editado e o arquivo salvo não tem scripts; as páginas da organização
    (tarefas, notas, hoje, memória) e as Configurações abrem;
+   um documento enviado pelo clipe é lido e anexado à conversa;
 4. um "aparelho novo" entra com o código curto (iPhone pela tela de início),
    e o código não vale uma segunda vez;
 5. nenhuma regra de segurança da página (CSP) bloqueou nada e não houve erro
@@ -178,6 +179,33 @@ def main() -> int:
         expect(folha).to_have_count(0)
         expect(pg.locator(".eden-slide")).to_have_count(0)
         passo("página fechou")
+
+        # ── documentos na conversa (Parte 3) ──────────────────────────────
+        pg.get_by_role("button", name=re.compile(r"^Documentos")).click()
+        painel = pg.get_by_role("region", name="Documentos do espaço")
+        expect(painel).to_be_visible()
+        pg.get_by_label("Escolher arquivo").set_input_files(
+            {
+                "name": "Orçamento do teste.txt",
+                "mimeType": "text/plain",
+                "buffer": "Aluguel: 1500\nLuz: 200\n".encode(),
+            }
+        )
+        expect(painel.get_by_role("button", name="Em uso")).to_be_visible(
+            timeout=30_000
+        )
+        chip = pg.get_by_label("Tirar Orçamento do teste.txt da conversa")
+        expect(chip).to_be_visible()
+        status, anexados = api("GET", "/v1/eden/documentos/conversa/teste-pagina")
+        assert status == 200 and len(anexados["documentos"]) == 1, anexados
+        passo("documento enviado, lido e anexado à conversa")
+        chip.click()
+        expect(chip).to_have_count(0)
+        status, anexados = api("GET", "/v1/eden/documentos/conversa/teste-pagina")
+        assert anexados["documentos"] == [], anexados
+        pg.get_by_label("Fechar documentos").click()
+        expect(painel).to_have_count(0)
+        passo("documento tirado da conversa")
 
         # ── organização pessoal (Parte 2) e Configurações ─────────────────
         status, _ = api(

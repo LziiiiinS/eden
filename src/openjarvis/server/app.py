@@ -539,6 +539,13 @@ def create_app(
         registrar_agenda(app)
     except Exception as exc:
         logger.warning("Éden: Google Agenda não ligada: %s", exc)
+    # Éden (Parte 3): documentos escolhidos pela pessoa para a conversa.
+    try:
+        from openjarvis.eden.routes_documentos import router as eden_docs_router
+
+        app.include_router(eden_docs_router)
+    except Exception as exc:
+        logger.warning("Éden: documentos não ligados: %s", exc)
 
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)

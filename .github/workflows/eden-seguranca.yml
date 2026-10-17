@@ -52,7 +52,7 @@ jobs:
       - name: Python (as mesmas bibliotecas da imagem do Éden)
         run: |
           python -m pip install "pip-audit==2.10.1"
-          uv export --frozen --no-dev --no-emit-project --no-header --extra server --extra inference-cloud --extra security-signing > requirements.txt
+          uv export --frozen --no-dev --no-emit-project --no-header --extra server --extra inference-cloud --extra security-signing --extra pdf > requirements.txt
           set +e
           pip-audit -r requirements.txt --disable-pip --require-hashes \
             --progress-spinner off --format json --output pip-audit.json

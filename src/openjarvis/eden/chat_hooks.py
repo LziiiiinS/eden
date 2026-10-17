@@ -113,6 +113,21 @@ def _definir_pedido(request: Any) -> None:
         definir_pedido(None)
 
 
+def _caracteres_documentos() -> int:
+    from openjarvis.eden.contexto import pedido_atual
+
+    pedido = pedido_atual()
+    if pedido is None or pedido.store is None or not pedido.conversa_id:
+        return 0
+    try:
+        from openjarvis.eden.documentos import caracteres_no_contexto
+
+        return caracteres_no_contexto(pedido.store, pedido.conversa_id, pedido.espaco)
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: não consegui medir os documentos anexados")
+        return 0
+
+
 def eden_system_extra() -> str:
     """Contexto do Éden para a mensagem de sistema ("" fora do Éden)."""
     from openjarvis.eden.contexto import montar, pedido_atual
@@ -174,6 +189,9 @@ def prepare_chat(
         )
     if provider in TRACKED_PROVIDERS:
         chars = sum(len(m.content or "") for m in request_body.messages or [])
+        if settings.enabled:
+            # Os documentos anexados entram no contexto: contam na reserva.
+            chars += _caracteres_documentos()
         reserve = settings.token_cost(
             provider, model, estimate_tokens(chars), settings.max_output_tokens
         )

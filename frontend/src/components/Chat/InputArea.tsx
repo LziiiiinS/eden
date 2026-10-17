@@ -14,6 +14,7 @@ import {
 import { MicButton } from './MicButton';
 import { EdenModeSwitch } from './EdenModeSwitch';
 import { EdenSpaceSelect } from './EdenSpaceSelect';
+import { EdenDocumentos } from './EdenDocumentos';
 import { avisarMudanca } from './EdenActionCards';
 import { parseActionsEvent, removeActionBlocks, type EdenActionRef } from '../../lib/eden-acoes';
 import { useEdenOrg } from '../../lib/eden-org';
@@ -639,6 +640,11 @@ export function InputArea() {
           <div className="flex flex-col gap-1">
             <EdenModeSwitch disabled={streamState.isStreaming} />
             <EdenSpaceSelect disabled={streamState.isStreaming} />
+            <EdenDocumentos
+              conversaId={activeId}
+              garantirConversa={() => activeId ?? createConversation(selectedModel)}
+              disabled={streamState.isStreaming}
+            />
           </div>
         ) : (
         <div className="flex items-center gap-2">

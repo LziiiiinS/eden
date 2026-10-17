@@ -77,7 +77,7 @@ class ConversationValidationError(ValueError):
 
 
 def is_valid_id(value: Any) -> bool:
-    return isinstance(value, str) and bool(_ID_RE.match(value))
+    return isinstance(value, str) and bool(_ID_RE.fullmatch(value))
 
 
 def _as_ms(value: Any, field: str) -> int:

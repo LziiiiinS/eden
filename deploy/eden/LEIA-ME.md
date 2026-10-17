@@ -92,6 +92,20 @@ Para desligar: **Configurações → Google Agenda → Desconectar**. Ao mudar o
 Éden para outro computador ou servidor, a ligação precisa ser feita de novo
 (a autorização não vai no backup).
 
+## Documentos na conversa
+
+No campo de mensagem, toque em **Documentos** → **Enviar arquivo** e escolha um
+PDF, Word (.docx), .txt ou .md (até 10 MB). No celular, o seletor de arquivos
+também mostra o Google Drive. O Éden guarda **só o texto** do arquivo, no
+espaço ativo, e usa nas conversas em que você marcar **Usar aqui** (até 3 por
+conversa).
+
+- PDF escaneado (só imagem) não tem texto para ler.
+- Documento grande vai só em parte para a IA, e cada mensagem daquela conversa
+  custa um pouco mais. Tire da conversa (×) quando não precisar mais.
+- O que está escrito num documento é tratado como dado, nunca como ordem.
+- Para apagar de vez: **Documentos** → lixeira.
+
 ## Segurança
 
 - O `.env` tem as chaves. Não mande esse arquivo para ninguém, não cole as
@@ -115,8 +129,9 @@ apaga nada. Só apaga se o volume for removido no Docker Desktop.
 - **Fazer**: dois cliques em `backup-eden.cmd`. O arquivo vai para a pasta
   `backups`, com data e hora no nome (ex.:
   `eden-backup-manual-20261015-221500.tar.gz`).
-- **O que entra**: conversas, gastos do mês, perfil (`USER.md`) e memória
-  (`MEMORY.md`). **Não entram chaves** (o `.env` nunca vai para o backup).
+- **O que entra**: conversas, gastos do mês, perfil (`USER.md`), memória
+  (`MEMORY.md`), tarefas, notas e o texto dos documentos. **Não entram chaves**
+  (o `.env` nunca vai para o backup).
 - **Guarde uma cópia fora do computador** (pendrive, HD externo) de vez em
   quando: se o computador estragar, o backup da pasta `backups` vai junto.
 - O backup tem as suas conversas: trate como documento pessoal e não mande

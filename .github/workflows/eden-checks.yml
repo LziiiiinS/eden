@@ -40,7 +40,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Instalar dependências
-        run: bash .github/eden/anotar.sh "Dependências" uv sync --extra dev --extra server --extra inference-cloud --extra security-signing
+        run: bash .github/eden/anotar.sh "Dependências" uv sync --extra dev --extra server --extra inference-cloud --extra security-signing --extra pdf
 
       - name: Montar a extensão em Rust
         run: bash .github/eden/anotar.sh "Rust" uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml

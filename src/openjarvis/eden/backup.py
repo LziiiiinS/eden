@@ -401,6 +401,8 @@ ESQUEMA_PERMITIDO = {
         "registro",
         "push_inscricoes",
         "ajustes",
+        "documentos",
+        "conversa_documentos",
     },
 }
 

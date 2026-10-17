@@ -142,6 +142,25 @@ CREATE TABLE IF NOT EXISTS ajustes (
     chave TEXT PRIMARY KEY,
     valor TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS documentos (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    espaco    TEXT    NOT NULL,
+    nome      TEXT    NOT NULL,
+    tipo      TEXT    NOT NULL,
+    bytes     INTEGER NOT NULL,
+    paginas   INTEGER,
+    texto     TEXT    NOT NULL,
+    cortado   INTEGER NOT NULL DEFAULT 0,
+    sha256    TEXT    NOT NULL,
+    criado_em INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_documentos_espaco ON documentos (espaco, criado_em);
+CREATE TABLE IF NOT EXISTS conversa_documentos (
+    conversa_id  TEXT    NOT NULL,
+    documento_id INTEGER NOT NULL,
+    criado_em    INTEGER NOT NULL,
+    PRIMARY KEY (conversa_id, documento_id)
+);
 CREATE TABLE IF NOT EXISTS push_inscricoes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint   TEXT    NOT NULL UNIQUE,
