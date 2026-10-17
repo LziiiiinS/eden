@@ -2,7 +2,9 @@
 // celular, o seletor do aparelho também mostra o Google Drive) e escolhe
 // quais vão junto nesta conversa. O Éden guarda só o texto.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, Paperclip, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, FileText, Paperclip, Trash2, Upload, X } from 'lucide-react';
+import { EdenNotionPicker } from '../Eden/EdenNotionPicker';
+import { importarDoNotion, statusNotion, type PaginaNotion } from '../../lib/eden-notion';
 import { useEdenOrg } from '../../lib/eden-org';
 import {
   ACCEPT,
@@ -40,6 +42,9 @@ export function EdenDocumentos({ conversaId, garantirConversa, disabled = false 
   const [anexados, setAnexados] = useState<Documento[]>([]);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // Éden (Parte 4): trazer uma página do Notion (se a chave estiver no .env).
+  const [notionOk, setNotionOk] = useState(false);
+  const [doNotion, setDoNotion] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,6 +79,19 @@ export function EdenDocumentos({ conversaId, garantirConversa, disabled = false 
     if (aberto) void carregarLista();
   }, [aberto, carregarLista]);
 
+  useEffect(() => {
+    if (!aberto) return;
+    let ativo = true;
+    statusNotion()
+      .then((s) => {
+        if (ativo) setNotionOk(s.configurado);
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, [aberto]);
+
   const anexar = async (doc: Documento) => {
     setErro(null);
     try {
@@ -106,6 +124,22 @@ export function EdenDocumentos({ conversaId, garantirConversa, disabled = false 
     } finally {
       setOcupado(null);
       if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const trazerDoNotion = async (pagina: PaginaNotion) => {
+    setErro(null);
+    setOcupado(`Trazendo "${pagina.titulo}" do Notion…`);
+    try {
+      const { documento } = await importarDoNotion(espacoAtivo, pagina.id);
+      setDoNotion(false);
+      await carregarLista();
+      await anexar(documento);
+      if (documento.aviso) setErro(documento.aviso);
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setOcupado(null);
     }
   };
 
@@ -210,7 +244,22 @@ export function EdenDocumentos({ conversaId, garantirConversa, disabled = false 
             >
               <Upload size={12} /> Enviar arquivo
             </button>
+            {notionOk && (
+              <button
+                type="button"
+                onClick={() => setDoNotion((v) => !v)}
+                disabled={disabled || ocupado !== null}
+                aria-expanded={doNotion}
+                className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer disabled:cursor-default disabled:opacity-50"
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
+              >
+                <BookOpen size={12} /> Do Notion
+              </button>
+            )}
           </div>
+          {notionOk && doNotion && (
+            <EdenNotionPicker acao="Trazer" onEscolher={trazerDoNotion} disabled={disabled || ocupado !== null} />
+          )}
           {ocupado && (
             <p role="status" style={{ color: 'var(--color-text-secondary)' }}>
               {ocupado}

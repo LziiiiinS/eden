@@ -124,6 +124,14 @@ codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: applic
 [ "$codigo" = "401" ] || { echo "error: pesquisa sem a chave de acesso devolveu $codigo"; exit 1; }
 echo "ok: pesquisa na internet protegida e desligada sem a chave da Anthropic"
 
+# Notion: sem a NOTION_API_KEY, fica desligado e não chama ninguém.
+com_chave "$BASE/v1/eden/notion/status" | grep -q '"configurado":false' \
+  || { echo "error: o Notion diz que está configurado sem a chave"; exit 1; }
+codigo=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $KEY" \
+  "$BASE/v1/eden/notion/buscar?q=teste")
+[ "$codigo" = "409" ] || { echo "error: Notion sem chave devolveu $codigo"; exit 1; }
+echo "ok: Notion desligado sem a chave"
+
 docker restart eden-teste >/dev/null
 esperar
 com_chave "$BASE/v1/eden/conversations/c1" | grep -q '"m1"' || { echo "error: conversa sumiu depois de reiniciar"; exit 1; }

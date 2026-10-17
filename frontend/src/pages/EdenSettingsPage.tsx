@@ -6,6 +6,7 @@ import { EdenPhoneQr } from '../components/EdenPhoneQr';
 import { EdenSpacesSettings } from '../components/Eden/EdenSpacesSettings';
 import { EdenPushSettings } from '../components/Eden/EdenPushSettings';
 import { EdenGoogleSettings } from '../components/Eden/EdenGoogleSettings';
+import { EdenNotionSettings } from '../components/Eden/EdenNotionSettings';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
@@ -454,6 +455,12 @@ export function EdenSettingsPage() {
         {settings.apiKey && (
           <Section title="Google Agenda">
             <EdenGoogleSettings />
+          </Section>
+        )}
+
+        {settings.apiKey && (
+          <Section title="Notion">
+            <EdenNotionSettings />
           </Section>
         )}
 

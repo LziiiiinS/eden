@@ -283,6 +283,8 @@ def main() -> int:
         passo("Configurações: mostrar e esconder o código curto")
         expect(pg.get_by_text("Ainda não configurada")).to_be_visible()
         passo("Configurações: Google Agenda aparece (sem configurar)")
+        expect(pg.get_by_text("notion.so/profile/integrations")).to_be_visible()
+        passo("Configurações: Notion aparece (sem configurar)")
         ctx.close()
 
         # ── aparelho novo: código curto ────────────────────────────────────

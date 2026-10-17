@@ -562,6 +562,13 @@ def create_app(
         app.include_router(eden_pesquisa_router)
     except Exception as exc:
         logger.warning("Éden: pesquisa na internet não ligada: %s", exc)
+    # Éden (Parte 4): Notion (precisa da NOTION_API_KEY no .env).
+    try:
+        from openjarvis.eden.routes_notion import router as eden_notion_router
+
+        app.include_router(eden_notion_router)
+    except Exception as exc:
+        logger.warning("Éden: Notion não ligado: %s", exc)
     # Éden (Parte 3): documentos escolhidos pela pessoa para a conversa.
     try:
         from openjarvis.eden.routes_documentos import router as eden_docs_router
