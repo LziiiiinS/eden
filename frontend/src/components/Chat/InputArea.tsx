@@ -132,7 +132,7 @@ export function InputArea() {
   const voiceAutoplay = useAppStore((s) => s.settings.voiceAutoplay);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const modoVoz = edenServer && voiceOutputEnabled && voiceAutoplay;
-  const enviarRef = useRef<((texto?: string) => Promise<void>) | null>(null);
+  const enviarRef = useRef<((texto?: string) => Promise<boolean>) | null>(null);
 
   // Éden: pedido vindo de outra tela (ex.: "Pedir um plano ao Éden" no Hoje).
   // Abre uma conversa nova com o texto na caixa; a pessoa confere e envia.
@@ -194,13 +194,15 @@ export function InputArea() {
       try {
         const text = await stopRecording();
         if (text) {
-          if (modoVoz && enviarRef.current) {
-            // Modo conversa: falou, enviou.
-            const atual = textareaRef.current?.value.trim() ?? '';
-            await enviarRef.current(atual ? `${atual} ${text}` : text);
-          } else {
-            setInput((prev) => (prev ? prev + ' ' + text : text));
+          // Modo conversa: falou, enviou — só com a caixa vazia e com pelo
+          // menos duas palavras (ruído às vezes vira "Obrigado.").
+          const caixaVazia = (textareaRef.current?.value.trim() ?? '') === '';
+          const palavras = text.trim().split(/\s+/).filter(Boolean).length;
+          let enviou = false;
+          if (modoVoz && enviarRef.current && caixaVazia && palavras >= 2) {
+            enviou = await enviarRef.current(text);
           }
+          if (!enviou) setInput((prev) => (prev ? prev + ' ' + text : text));
         }
       } catch {
         // Error is captured in useSpeech
@@ -228,13 +230,13 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  const sendMessage = useCallback(async (texto?: string) => {
+  const sendMessage = useCallback(async (texto?: string): Promise<boolean> => {
     const content = (texto ?? input).trim();
     if (modoVoz) desbloquearAudio();
-    if (!content || streamState.isStreaming) return;
+    if (!content || streamState.isStreaming) return false;
     if (!selectedModel) {
       toast.error('Escolha um modelo primeiro (⌘K)');
-      return;
+      return false;
     }
 
     setInput('');
@@ -658,6 +660,7 @@ export function InputArea() {
           .catch(() => {});
       }
     }
+    return true;
   }, [
     input,
     activeId,

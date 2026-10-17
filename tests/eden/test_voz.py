@@ -25,8 +25,9 @@ class RespostaFalsa:
         return self._corpo
 
     async def aiter_bytes(self):
-        for i in range(0, len(self._audio), 64):
-            yield self._audio[i : i + 64]
+        dados = self._corpo if self.status_code >= 400 else self._audio
+        for i in range(0, len(dados), 64):
+            yield dados[i : i + 64]
 
     async def __aenter__(self):
         return self
@@ -198,3 +199,26 @@ def test_spoken_answers_rule_only_in_voice_mode(tmp_path):
     # As regras ficam no fim, depois de tudo.
     assert com.index(REGRAS_VOZ) > com.index(REGRAS_ACOES)
     store.close()
+
+
+def test_mp3_duration_and_real_cost():
+    quadro = bytes([0xFF, 0xFB, 0x90, 0x00])  # MPEG-1 Layer III, 128 kbit/s
+    um_segundo = quadro + b"\x00" * (16000 - 4)
+    assert abs(voz.duracao_mp3(um_segundo) - 1.0) < 0.01
+    com_id3 = b"ID3\x04\x00\x00\x00\x00\x00\x0a" + b"x" * 10 + um_segundo
+    assert abs(voz.duracao_mp3(com_id3) - 1.0) < 0.01
+    # Sem quadro reconhecível: supõe 32 kbit/s (duração maior, custo por cima).
+    assert abs(voz.duracao_mp3(b"\x00" * 4000) - 1.0) < 0.01
+    # 60 s de áudio para 10 caracteres: vale o custo por minuto (com folga).
+    um_minuto = quadro + b"\x00" * (16000 * 60 - 4)
+    assert abs(voz.custo_real_usd(10, um_minuto) - 0.015 * 1.2) < 1e-6
+    assert voz.custo_real_usd(1000, quadro) == voz.custo_usd(1000)
+
+
+def test_long_audio_is_charged_by_duration(ledger):
+    quadro = bytes([0xFF, 0xFB, 0x90, 0x00])
+    dois_minutos = quadro + b"\x00" * (16000 * 120 - 4)
+    falsa = OpenAIFalsa(RespostaFalsa(audio=dois_minutos))
+    rodar(ledger, texto="1234567890", falsa=falsa)
+    total, _ = gasto(ledger)
+    assert abs(total - 2 * 0.015 * 1.2) < 1e-6

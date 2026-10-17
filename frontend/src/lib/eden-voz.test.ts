@@ -19,6 +19,8 @@ class FakeAudio {
   static instances: FakeAudio[] = [];
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  onpause: (() => void) | null = null;
+  ended = false;
   src = '';
   preload = '';
   plays: string[] = [];
@@ -107,5 +109,35 @@ describe('tocador', () => {
     await useEdenVozStore.getState().ensureHealth();
     expect(useEdenVozStore.getState().available).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('/v1/eden/voz/status');
+  });
+});
+
+describe('interrupções', () => {
+  it('stops for good when the phone pauses the audio (call, Siri)', async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob(['mp3'])) } as unknown as Response),
+    );
+    const texto = 'Primeira frase curta. ' + 'Outra frase que continua a resposta. '.repeat(10);
+    const fala = useEdenVozStore.getState().speak('m3', texto);
+    for (let i = 0; i < 5 && !FakeAudio.instances[0]?.onpause; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    FakeAudio.instances[0]?.onpause?.();
+    await fala;
+    expect(useEdenVozStore.getState().state).toBe('idle');
+    expect(FakeAudio.instances[0].plays).toHaveLength(1);
+  });
+
+  it('stop() ends a speech that is waiting', async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob(['mp3'])) } as unknown as Response),
+    );
+    const fala = useEdenVozStore.getState().speak('m4', 'Uma frase. Outra frase.');
+    for (let i = 0; i < 5 && !FakeAudio.instances[0]?.onended; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    useEdenVozStore.getState().stop();
+    await fala; // não fica pendurado
+    expect(useEdenVozStore.getState().state).toBe('idle');
   });
 });

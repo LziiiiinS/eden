@@ -116,6 +116,8 @@ let urlAtual: string | null = null;
 let controle: AbortController | null = null;
 let vez = 0;
 let sonda: Promise<void> | null = null;
+// Termina o pedaço que está tocando (para o laço não ficar esperando à toa).
+let terminarAtual: ((fim: 'fim' | 'pausa') => void) | null = null;
 
 function audio(): HTMLAudioElement {
   if (!elemento) {
@@ -174,8 +176,12 @@ function soltar(): void {
   if (elemento) {
     elemento.onended = null;
     elemento.onerror = null;
+    elemento.onpause = null;
     elemento.pause();
   }
+  const terminar = terminarAtual;
+  terminarAtual = null;
+  terminar?.('pausa');
   if (urlAtual) {
     URL.revokeObjectURL(urlAtual);
     urlAtual = null;
@@ -206,17 +212,32 @@ async function sintetizar(texto: string, signal: AbortSignal): Promise<Blob> {
   return res.blob();
 }
 
-function tocar(blob: Blob, minha: number): Promise<void> {
+/** Toca um pedaço. 'pausa' = o aparelho parou o som (ligação, Siri, app em
+ * segundo plano) ou a pessoa parou: aí a fala para de vez. */
+function tocar(blob: Blob, minha: number): Promise<'fim' | 'pausa'> {
   return new Promise((resolve, reject) => {
     if (minha !== vez) {
-      resolve();
+      resolve('pausa');
       return;
     }
     const el = audio();
     if (urlAtual) URL.revokeObjectURL(urlAtual);
     urlAtual = URL.createObjectURL(blob);
-    el.onended = () => resolve();
-    el.onerror = () => reject(new Error('Não consegui tocar o áudio.'));
+    terminarAtual = resolve;
+    el.onended = () => {
+      terminarAtual = null;
+      resolve('fim');
+    };
+    el.onpause = () => {
+      if (!el.ended) {
+        terminarAtual = null;
+        resolve('pausa');
+      }
+    };
+    el.onerror = () => {
+      terminarAtual = null;
+      reject(new Error('Não consegui tocar o áudio.'));
+    };
     el.src = urlAtual;
     const p = el.play();
     if (p && typeof p.then === 'function') {
@@ -292,8 +313,15 @@ export const useEdenVozStore = create<EdenVozStore>((set) => ({
         pedir(i + 1);
         const blob = await prontos[i]!;
         if (minha !== vez) return;
-        await tocar(blob, minha);
+        const fim = await tocar(blob, minha);
         if (minha !== vez) return;
+        if (fim === 'pausa') {
+          // Interrompido pelo aparelho: não continua sozinho depois.
+          vez += 1;
+          soltar();
+          set({ state: 'idle', speakingId: null });
+          return;
+        }
       }
       if (minha === vez) {
         soltar();
@@ -301,7 +329,11 @@ export const useEdenVozStore = create<EdenVozStore>((set) => ({
       }
     } catch (err) {
       if (minha !== vez) return;
-      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        soltar();
+        set({ state: 'idle', speakingId: null });
+        return;
+      }
       soltar();
       let msg = err instanceof Error ? err.message : 'A voz falhou.';
       if (err instanceof DOMException && err.name === 'NotAllowedError') {

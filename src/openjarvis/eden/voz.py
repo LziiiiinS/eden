@@ -26,6 +26,11 @@ PROVEDOR = "openai"
 URL = "https://api.openai.com/v1/audio/speech"
 MODELO = "gpt-4o-mini-tts"
 PRECO_POR_1000_CARACTERES = 0.02  # por cima do preço da OpenAI (~0,015/min)
+# A OpenAI cobra pela duração do áudio: o Éden mede o MP3 e anota o maior
+# entre a conta por caracteres e a por minuto (com folga de 20%).
+PRECO_POR_MINUTO = 0.015 * 1.2
+_KBPS_MPEG1 = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+_KBPS_MPEG2 = (0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)
 MAX_CARACTERES = 1500  # por pedido (o app manda pedaços menores)
 MAX_CARACTERES_POR_HORA = 40_000  # ~US$ 0,80 por hora, no máximo
 MAX_PEDIDOS_POR_HORA = 400
@@ -107,6 +112,37 @@ def custo_usd(caracteres: int) -> float:
     return max(1, caracteres) * PRECO_POR_1000_CARACTERES / 1000
 
 
+def duracao_mp3(audio: bytes) -> float:
+    """Duração (segundos) pelo tamanho e pela taxa do 1º quadro do MP3.
+    Sem quadro reconhecível, supõe 32 kbit/s (dá uma duração maior)."""
+    inicio = 0
+    if audio[:3] == b"ID3" and len(audio) >= 10:
+        tamanho = (
+            (audio[6] & 0x7F) << 21
+            | (audio[7] & 0x7F) << 14
+            | (audio[8] & 0x7F) << 7
+            | (audio[9] & 0x7F)
+        )
+        inicio = 10 + tamanho
+    kbps = 0
+    fim = min(len(audio) - 3, inicio + 8192)
+    for i in range(inicio, max(inicio, fim)):
+        if audio[i] == 0xFF and (audio[i + 1] & 0xE0) == 0xE0:
+            versao = (audio[i + 1] >> 3) & 0x03  # 3 = MPEG-1
+            camada = (audio[i + 1] >> 1) & 0x03  # 1 = Layer III
+            indice = (audio[i + 2] >> 4) & 0x0F
+            if camada == 1 and 0 < indice < 15 and versao != 1:
+                tabela = _KBPS_MPEG1 if versao == 3 else _KBPS_MPEG2
+                kbps = tabela[indice]
+                break
+    kbps = kbps or 32
+    return max(0.0, len(audio) - inicio) * 8 / (kbps * 1000)
+
+
+def custo_real_usd(caracteres: int, audio: bytes) -> float:
+    return max(custo_usd(caracteres), duracao_mp3(audio) / 60 * PRECO_POR_MINUTO)
+
+
 def tem_chave() -> bool:
     try:
         return bool(_chave())
@@ -149,7 +185,9 @@ async def falar(
             "eden_voz_sem_chave",
         )
     custo = custo_usd(len(texto))
-    reserva = ledger.reserve(PROVEDOR, settings, custo)
+    # Reserva o dobro: o custo anotado (pela duração) pode passar da conta
+    # por caracteres (números e siglas viram muitas palavras faladas).
+    reserva = ledger.reserve(PROVEDOR, settings, 2 * custo)
     corpo: Dict[str, Any] = {
         "model": MODELO,
         "input": texto,
@@ -162,16 +200,20 @@ async def falar(
         "Content-Type": "application/json",
     }
     aceito = False
+    audio = b""
     try:
         async with client_factory() as cliente:
             async with cliente.stream(
                 "POST", URL, json=corpo, headers=cabecalhos
             ) as resposta:
                 if resposta.status_code >= 400:
+                    erro = b""
+                    async for pedaco in resposta.aiter_bytes():
+                        erro += pedaco
+                        if len(erro) > 65536:  # só o começo do erro
+                            break
                     raise ProviderError(
-                        explain_http_error(
-                            PROVEDOR, resposta.status_code, await resposta.aread()
-                        )
+                        explain_http_error(PROVEDOR, resposta.status_code, erro)
                     )
                 aceito = True
                 pedacos = []
@@ -192,7 +234,7 @@ async def falar(
                     provider=PROVEDOR,
                     model=MODELO,
                     kind="voz",
-                    cost_usd=custo,
+                    cost_usd=custo_real_usd(len(texto), audio) if audio else 2 * custo,
                     settings=settings,
                     input_tokens=len(texto),
                     estimated=True,
