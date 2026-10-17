@@ -68,7 +68,11 @@ async def status(request: Request):
 
 @router.post("/conectar")
 async def conectar(request: Request, drive: bool = False):
-    """``drive=true``: pede também a permissão de salvar no Drive."""
+    """``drive=true``: pede também a permissão de salvar no Drive. Só o
+    notebook (chave principal) liga contas."""
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
     cfg = google.configuracao()
     if cfg is None:
         raise HTTPException(
@@ -111,6 +115,9 @@ async def retorno(request: Request):
 
 @router.post("/desconectar")
 async def desconectar(request: Request):
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
     cliente = google.cliente_do_app(request.app)
     google.CACHE.limpar()
     revogado = await asyncio.to_thread(cliente.desconectar)

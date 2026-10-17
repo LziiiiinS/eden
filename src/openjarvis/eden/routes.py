@@ -172,6 +172,9 @@ async def criar_pareamento(request: Request):
 
 @router.delete("/pareamento")
 async def cancelar_pareamento(request: Request):
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
     _pareamento(request).cancelar()
     return {"ok": True}
 
@@ -208,6 +211,15 @@ async def usar_pareamento(request: Request):
     if not chave:
         raise HTTPException(
             status_code=409, detail="O servidor está sem chave de acesso"
+        )
+    from openjarvis.eden.aparelhos import registro as aparelhos_registro
+
+    # Lista cheia: recusa antes de gastar o código.
+    if not await asyncio.to_thread(aparelhos_registro().pode_criar):
+        raise HTTPException(
+            status_code=409,
+            detail="Muitos aparelhos ligados. No notebook, desligue algum em "
+            "Configurações → Aparelhos ligados.",
         )
     resultado = _pareamento(request).usar(codigo)
     if resultado == pareamento.MUITAS_TENTATIVAS:

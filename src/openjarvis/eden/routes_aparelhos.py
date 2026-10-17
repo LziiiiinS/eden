@@ -60,8 +60,13 @@ async def criar(request: Request):
     nome = dados.get("nome") or aparelhos.nome_pelo_navegador(
         request.headers.get("user-agent")
     )
+    # Chave para o QR code: vale só 10 min se ninguém usar (foto esquecida).
+    sem_uso = aparelhos.QR_SEM_USO_MS if dados.get("qr") is True else None
     try:
-        novo = await _rodar(aparelhos.registro().criar, nome)
+        if sem_uso is None:
+            novo = await _rodar(aparelhos.registro().criar, nome)
+        else:
+            novo = await _rodar(aparelhos.registro().criar, nome, sem_uso)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     return JSONResponse(novo, headers=_SEM_GUARDAR)
@@ -79,4 +84,11 @@ async def desligar(aparelho_id: int, request: Request):
         aparelhos.registro().desligar, aparelho_id
     ):
         raise HTTPException(status_code=404, detail="Aparelho não encontrado")
+    # Avisos (push) não sabem de qual aparelho são: apaga todos. Os aparelhos
+    # que continuam ligados se inscrevem de novo sozinhos ao abrir o Éden; o
+    # desligado não consegue (a chave dele não vale mais).
+    from openjarvis.eden import push
+    from openjarvis.eden.routes_organizacao import _store
+
+    await _rodar(push.remover_todas_inscricoes, _store(request))
     return {"ok": True}

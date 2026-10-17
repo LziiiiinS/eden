@@ -23,7 +23,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ MAX_NOME = 60
 # Grava "último uso" no máximo a cada 10 min; chave nunca usada some em 1 dia.
 INTERVALO_ULTIMO_USO_MS = 10 * 60 * 1000
 NUNCA_USADO_MS = 24 * 3600 * 1000
+QR_SEM_USO_MS = 10 * 60 * 1000  # chave do QR code: vale 10 min para o 1º uso
 _FORMATO = re.compile(r"oj_ap_[A-Za-z0-9_-]{40,60}")
 
 _SCHEMA = """
@@ -42,7 +43,13 @@ CREATE TABLE IF NOT EXISTS aparelhos (
     resumo      TEXT    NOT NULL UNIQUE,
     criado_em   INTEGER NOT NULL,
     ultimo_uso  INTEGER,
-    desligado   INTEGER NOT NULL DEFAULT 0
+    desligado   INTEGER NOT NULL DEFAULT 0,
+    -- até quando vale sem ter sido usada (ex.: QR code: 10 minutos)
+    expira_sem_uso INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS meta (
+    chave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
 );
 """
 
@@ -97,7 +104,8 @@ class Aparelhos:
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
         # Resumos válidos na memória (para não ir ao banco a cada pedido).
-        self._validos: Dict[str, int] = {}
+        # resumo → (id, expira_sem_uso; 0 = já foi usada)
+        self._validos: Dict[str, Tuple[int, int]] = {}
         self._ultimo_gravado: Dict[int, int] = {}
         self._recarregar()
 
@@ -108,22 +116,34 @@ class Aparelhos:
     def _recarregar(self) -> None:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, resumo FROM aparelhos WHERE desligado = 0"
+                "SELECT id, resumo, ultimo_uso, expira_sem_uso FROM aparelhos "
+                "WHERE desligado = 0"
             ).fetchall()
-            self._validos = {r["resumo"]: r["id"] for r in rows}
+            self._validos = {
+                r["resumo"]: (r["id"], 0 if r["ultimo_uso"] else r["expira_sem_uso"])
+                for r in rows
+            }
 
     # ── criar, listar, desligar ──────────────────────────────────────────
 
-    def criar(self, nome: Any) -> Dict[str, Any]:
-        """Cria a chave de um aparelho. A chave só aparece aqui, uma vez."""
+    def pode_criar(self) -> bool:
+        with self._lock:
+            ativos = self._conn.execute(
+                "SELECT COUNT(*) FROM aparelhos WHERE desligado = 0"
+            ).fetchone()[0]
+        return ativos < MAX_APARELHOS
+
+    def criar(self, nome: Any, sem_uso_ms: int = NUNCA_USADO_MS) -> Dict[str, Any]:
+        """Cria a chave de um aparelho. A chave só aparece aqui, uma vez.
+        ``sem_uso_ms``: até quando vale se ninguém usar (QR: 10 min)."""
         chave = PREFIXO + secrets.token_urlsafe(36)
         with self._lock:
             # Chave criada e nunca usada há mais de 1 dia (ex.: QR code que
             # ninguém leu) é desligada.
             self._conn.execute(
                 "UPDATE aparelhos SET desligado = 1 WHERE desligado = 0 "
-                "AND ultimo_uso IS NULL AND criado_em < ?",
-                (_agora_ms() - NUNCA_USADO_MS,),
+                "AND ultimo_uso IS NULL AND expira_sem_uso < ?",
+                (_agora_ms(),),
             )
             ativos = self._conn.execute(
                 "SELECT COUNT(*) FROM aparelhos WHERE desligado = 0"
@@ -132,9 +152,11 @@ class Aparelhos:
                 raise ValueError(
                     f"no máximo {MAX_APARELHOS} aparelhos; desligue algum antes"
                 )
+            agora = _agora_ms()
             cur = self._conn.execute(
-                "INSERT INTO aparelhos (nome, resumo, criado_em) VALUES (?, ?, ?)",
-                (limpar_nome(nome), _resumo(chave), _agora_ms()),
+                "INSERT INTO aparelhos (nome, resumo, criado_em, expira_sem_uso) "
+                "VALUES (?, ?, ?, ?)",
+                (limpar_nome(nome), _resumo(chave), agora, agora + max(0, sem_uso_ms)),
             )
             self._conn.commit()
             aparelho_id = int(cur.lastrowid)
@@ -149,6 +171,40 @@ class Aparelhos:
                 "WHERE desligado = 0 ORDER BY id"
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def desligar_todos(self) -> int:
+        with self._lock:
+            mudou = self._conn.execute(
+                "UPDATE aparelhos SET desligado = 1 WHERE desligado = 0"
+            ).rowcount
+            self._conn.commit()
+            self._recarregar()
+        if mudou:
+            logger.info("Éden: %d aparelho(s) desligado(s)", mudou)
+        return mudou
+
+    def conferir_troca_da_chave_principal(self, chave_principal: str) -> bool:
+        """Se a chave principal (.env) mudou, desliga todos os aparelhos:
+        chaves criadas com a chave antiga (talvez vazada) param de valer."""
+        if not chave_principal:
+            return False
+        marca = hashlib.sha256(
+            ("eden-principal:" + chave_principal).encode()
+        ).hexdigest()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT valor FROM meta WHERE chave = 'principal'"
+            ).fetchone()
+            self._conn.execute(
+                "INSERT INTO meta (chave, valor) VALUES ('principal', ?) "
+                "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+                (marca,),
+            )
+            self._conn.commit()
+        if row is not None and row["valor"] != marca:
+            self.desligar_todos()
+            return True
+        return False
 
     def desligar(self, aparelho_id: Any) -> bool:
         if isinstance(aparelho_id, bool) or not isinstance(aparelho_id, int):
@@ -182,25 +238,39 @@ class Aparelhos:
         if not parece_chave_de_aparelho(chave):
             return None
         resumo = _resumo(chave)
+        agora = _agora_ms()
         with self._lock:
-            aparelho_id = self._validos.get(resumo)
-            if aparelho_id is None:
+            achado = self._validos.get(resumo)
+            if achado is None:
                 return None
-            agora = _agora_ms()
-            if (
+            aparelho_id, expira_sem_uso = achado
+            if expira_sem_uso and agora > expira_sem_uso:
+                return None  # nunca usada e venceu (ex.: QR esquecido)
+            if expira_sem_uso:
+                self._validos[resumo] = (aparelho_id, 0)  # agora já foi usada
+            gravar = bool(expira_sem_uso) or (
                 agora - self._ultimo_gravado.get(aparelho_id, 0)
                 > INTERVALO_ULTIMO_USO_MS
-            ):
+            )
+            if gravar:
                 self._ultimo_gravado[aparelho_id] = agora
-                try:
-                    self._conn.execute(
-                        "UPDATE aparelhos SET ultimo_uso = ? WHERE id = ?",
-                        (agora, aparelho_id),
-                    )
-                    self._conn.commit()
-                except sqlite3.Error:
-                    logger.warning("Éden: não consegui anotar o último uso")
+        if gravar:
+            # Fora do caminho do pedido: gravar no banco não segura a resposta.
+            threading.Thread(
+                target=self._gravar_uso, args=(aparelho_id, agora), daemon=True
+            ).start()
         return aparelho_id
+
+    def _gravar_uso(self, aparelho_id: int, agora: int) -> None:
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "UPDATE aparelhos SET ultimo_uso = ? WHERE id = ?",
+                    (agora, aparelho_id),
+                )
+                self._conn.commit()
+        except sqlite3.Error:
+            logger.warning("Éden: não consegui anotar o último uso")
 
 
 _registro: Optional[Aparelhos] = None

@@ -19,6 +19,12 @@ def test_create_check_and_turn_off(reg, tmp_path):
     chave = novo["chave"]
     assert chave.startswith("oj_ap_") and aparelhos.parece_chave_de_aparelho(chave)
     assert reg.conferir(chave) == novo["id"]
+    import time as _time
+
+    for _ in range(50):  # o "último uso" é gravado em segundo plano
+        if reg.listar()[0]["ultimo_uso"]:
+            break
+        _time.sleep(0.02)
     lista = reg.listar()
     assert lista[0]["nome"] == "iPhone do Levi" and lista[0]["ultimo_uso"]
     assert "chave" not in lista[0] and "resumo" not in lista[0]
@@ -89,9 +95,12 @@ def test_module_check_never_raises(monkeypatch):
 
 
 def test_never_used_keys_expire_after_a_day(reg, monkeypatch):
+    import time as _time
+
     velho = reg.criar("QR esquecido")
     usado = reg.criar("iPhone")
     reg.conferir(usado["chave"])
+    _time.sleep(0.2)  # o "último uso" é gravado em segundo plano
     agora = aparelhos._agora_ms()
     monkeypatch.setattr(aparelhos, "_agora_ms", lambda: agora + 2 * 24 * 3600 * 1000)
     reg.criar("novo")
@@ -128,3 +137,42 @@ def test_websocket_accepts_device_key(reg):
         assert authenticate_websocket(falsa, "oj_sk_principal")[0] is False
     finally:
         aparelhos.definir_registro(None)
+
+
+def test_qr_key_expires_if_not_used_soon(reg, monkeypatch):
+    qr = reg.criar("Celular (QR code)", aparelhos.QR_SEM_USO_MS)
+    agora = aparelhos._agora_ms()
+    monkeypatch.setattr(aparelhos, "_agora_ms", lambda: agora + 11 * 60 * 1000)
+    assert reg.conferir(qr["chave"]) is None  # venceu sem uso
+
+
+def test_used_qr_key_keeps_working(reg, monkeypatch):
+    qr = reg.criar("Celular (QR code)", aparelhos.QR_SEM_USO_MS)
+    assert reg.conferir(qr["chave"]) == qr["id"]
+    agora = aparelhos._agora_ms()
+    monkeypatch.setattr(aparelhos, "_agora_ms", lambda: agora + 30 * 24 * 3600 * 1000)
+    assert reg.conferir(qr["chave"]) == qr["id"]
+
+
+def test_unused_pairing_key_expires_without_creating_others(reg, monkeypatch):
+    velha = reg.criar("Esquecida")
+    agora = aparelhos._agora_ms()
+    monkeypatch.setattr(aparelhos, "_agora_ms", lambda: agora + 2 * 24 * 3600 * 1000)
+    assert reg.conferir(velha["chave"]) is None
+
+
+def test_master_key_change_turns_off_all_devices(reg):
+    a = reg.criar("iPhone")["chave"]
+    assert reg.conferir_troca_da_chave_principal("oj_sk_antiga") is False
+    assert reg.conferir(a) is not None
+    assert reg.conferir_troca_da_chave_principal("oj_sk_antiga") is False
+    assert reg.conferir_troca_da_chave_principal("oj_sk_nova") is True
+    assert reg.conferir(a) is None and reg.listar() == []
+    assert reg.conferir_troca_da_chave_principal("") is False
+
+
+def test_can_create_respects_the_cap(reg, monkeypatch):
+    monkeypatch.setattr(aparelhos, "MAX_APARELHOS", 1)
+    assert reg.pode_criar() is True
+    reg.criar("um")
+    assert reg.pode_criar() is False

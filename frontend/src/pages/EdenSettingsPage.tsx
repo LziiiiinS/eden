@@ -225,7 +225,7 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
             }
             setQrErro(null);
             try {
-              setQrKey((await criarAparelho('Celular (QR code)')).chave);
+              setQrKey((await criarAparelho('Celular (QR code)', true)).chave);
             } catch (e) {
               if (e instanceof ErroEden && e.status === 404) {
                 setQrKey(apiKey); // servidor antigo, sem chave por aparelho
@@ -251,9 +251,9 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
           <div className="flex flex-col items-center gap-2 self-center">
             <EdenPhoneQr text={buildPhoneLink(phoneUrl, qrKey)} />
             <p className="text-xs text-center max-w-xs" style={{ color: 'var(--color-warning)' }}>
-              Este QR code leva uma chave de acesso só para o celular novo (aparece em Aparelhos
-              ligados, onde dá para desligar). Mostre só para os seus aparelhos, não fotografe nem
-              mande para ninguém. Ele some sozinho em 5 minutos.
+              Este QR code leva uma chave só para o celular novo (aparece em Aparelhos ligados,
+              onde dá para desligar). Ela vale 10 minutos para o primeiro uso. Mostre só para os
+              seus aparelhos, não fotografe nem mande para ninguém. O QR some da tela em 5 minutos.
             </p>
           </div>
         )}

@@ -9,8 +9,8 @@ export interface Aparelho {
 }
 
 export const listarAparelhos = () => edenJson<{ aparelhos: Aparelho[]; eu: number | null }>('/aparelhos');
-export const criarAparelho = (nome: string) =>
-  edenJson<{ id: number; chave: string }>('/aparelhos', { method: 'POST', body: { nome } });
+export const criarAparelho = (nome: string, qr = false) =>
+  edenJson<{ id: number; chave: string }>('/aparelhos', { method: 'POST', body: { nome, qr } });
 export const desligarAparelho = (id: number) => edenJson<{ ok: boolean }>(`/aparelhos/${id}`, { method: 'DELETE' });
 
 /** "hoje 14:05", "ontem 09:10", "12/10", ou "nunca usado". */

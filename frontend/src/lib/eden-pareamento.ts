@@ -28,7 +28,7 @@ export function isCompletePairingCode(value: string): boolean {
 
 export type PairingResult =
   | { ok: true; key: string }
-  | { ok: false; reason: 'invalid' | 'too-many' | 'offline' };
+  | { ok: false; reason: 'invalid' | 'too-many' | 'full' | 'offline' };
 
 /** Troca o código pela chave de acesso do servidor. */
 export async function redeemPairingCode(code: string): Promise<PairingResult> {
@@ -44,6 +44,7 @@ export async function redeemPairingCode(code: string): Promise<PairingResult> {
   }
   if (res.status === 429) return { ok: false, reason: 'too-many' };
   if (res.status === 400) return { ok: false, reason: 'invalid' };
+  if (res.status === 409) return { ok: false, reason: 'full' };
   if (!res.ok) return { ok: false, reason: 'offline' };
   try {
     const data = await res.json();

@@ -313,3 +313,49 @@ def test_device_keys_can_be_turned_off_one_by_one(tmp_path):
     # Chave inventada no formato certo não entra.
     falsa = {"Authorization": "Bearer oj_ap_" + "A" * 48}
     assert c.get("/v1/eden/conversations", headers=falsa).status_code == 401
+
+
+def test_revoking_a_device_resets_push_and_full_list_keeps_the_code(
+    tmp_path, monkeypatch, _aparelhos_isolados
+):
+    from openjarvis.eden import aparelhos, push
+
+    apagados = []
+    monkeypatch.setattr(
+        push, "remover_todas_inscricoes", lambda store: apagados.append(1)
+    )
+    c = _app_com_chave(tmp_path)
+    principal = {"Authorization": f"Bearer {CHAVE}"}
+    a = c.post("/v1/eden/aparelhos", json={"nome": "iPhone"}, headers=principal).json()
+    assert (
+        c.delete(f"/v1/eden/aparelhos/{a['id']}", headers=principal).status_code == 200
+    )
+    assert apagados == [1]
+    # Lista cheia: o código não é gasto (dá para usar depois de liberar).
+    monkeypatch.setattr(aparelhos, "MAX_APARELHOS", 0)
+    codigo = c.post("/v1/eden/pareamento", headers=principal).json()["codigo"]
+    r = c.post("/v1/eden/pareamento/usar", json={"codigo": codigo})
+    assert r.status_code == 409
+    monkeypatch.setattr(aparelhos, "MAX_APARELHOS", 30)
+    assert (
+        c.post("/v1/eden/pareamento/usar", json={"codigo": codigo}).status_code == 200
+    )
+
+
+def test_qr_keys_are_short_lived(tmp_path, _aparelhos_isolados):
+    c = _app_com_chave(tmp_path)
+    principal = {"Authorization": f"Bearer {CHAVE}"}
+    c.post("/v1/eden/aparelhos", json={"nome": "QR", "qr": True}, headers=principal)
+    linha = _aparelhos_isolados._conn.execute(
+        "SELECT criado_em, expira_sem_uso FROM aparelhos"
+    ).fetchone()
+    assert linha["expira_sem_uso"] - linha["criado_em"] == 10 * 60 * 1000
+
+
+def test_devices_cannot_cancel_codes(tmp_path):
+    c = _app_com_chave(tmp_path)
+    principal = {"Authorization": f"Bearer {CHAVE}"}
+    a = c.post("/v1/eden/aparelhos", json={"nome": "iPhone"}, headers=principal).json()
+    meu = {"Authorization": f"Bearer {a['chave']}"}
+    assert c.delete("/v1/eden/pareamento", headers=meu).status_code == 403
+    assert c.delete("/v1/eden/pareamento", headers=principal).status_code == 200

@@ -89,7 +89,9 @@ export function EdenAccessGate() {
           ? 'Código errado ou vencido. No notebook, toque em "Mostrar código" de novo e digite o código novo.'
           : result.reason === 'too-many'
             ? 'Muitas tentativas. Espere 1 minuto e tente de novo.'
-            : 'Não consegui falar com o servidor agora. Confira se o Tailscale está ligado e tente de novo.',
+            : result.reason === 'full'
+              ? 'Muitos aparelhos ligados. No notebook, desligue algum em Configurações → Aparelhos ligados.'
+              : 'Não consegui falar com o servidor agora. Confira se o Tailscale está ligado e tente de novo.',
       );
       return;
     }
