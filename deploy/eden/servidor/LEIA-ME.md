@@ -96,6 +96,29 @@ bash instalar.sh
 4. No notebook, pare o Éden local (`parar-eden.cmd`), para não ter dois Édens
    com conversas diferentes.
 
+## 6b. Avisos, celulares e Google Agenda no endereço novo
+
+O servidor tem endereço e chave de acesso novos (`https://eden-servidor.….ts.net`).
+
+- **Celulares:** leia o QR code de novo (Configurações → Conectar um celular,
+  no Éden do servidor). No **iPhone**, abra pelo Safari, toque em
+  *Compartilhar → Adicionar à Tela de Início* e entre pelo ícone novo com o
+  **código curto** (Configurações → Mostrar código). Pode apagar o ícone
+  antigo.
+- **Avisos de lembrete:** ligue de novo em cada aparelho (Configurações →
+  Avisos de lembrete neste aparelho → Ativar). Os do notebook não valem aqui.
+- **Google Agenda** (se você usa):
+  1. no Éden do servidor, **Configurações → Google Agenda**: copie o
+     endereço de retorno novo;
+  2. no Google Cloud (**Clientes → Éden**), acrescente esse endereço em
+     **URIs de redirecionamento autorizados** e salve (o do notebook pode
+     ficar);
+  3. no servidor, `nano /opt/eden/.env` e acrescente as linhas
+     `GOOGLE_CLIENT_ID=…` e `GOOGLE_CLIENT_SECRET=…` (as mesmas do notebook);
+  4. `cd /opt/eden && docker compose up -d`;
+  5. **Configurações → Google Agenda → Conectar** (a autorização não vem no
+     backup, de propósito).
+
 ## 7. Fechar o SSH para a internet
 
 Antes, dois cuidados para não ficar trancado do lado de fora:
