@@ -37,10 +37,11 @@ def _autorizacoes(request: Request) -> google.Autorizacoes:
     return atual
 
 
-def _voltar(situacao: str) -> RedirectResponse:
+def _voltar(situacao: str, tipo: str = "agenda") -> RedirectResponse:
     # Sempre um caminho fixo do próprio Éden (nunca um endereço vindo de fora).
+    chave = "email" if tipo == "email" else "google"
     return RedirectResponse(
-        f"/settings?google={situacao}", status_code=303, headers=_SEM_GUARDAR
+        f"/settings?{chave}={situacao}", status_code=303, headers=_SEM_GUARDAR
     )
 
 
@@ -90,12 +91,18 @@ async def conectar(request: Request, drive: bool = False):
 async def retorno(request: Request):
     """O Google manda o navegador para cá (sem a chave do Éden)."""
     params = request.query_params
-    verificador = _autorizacoes(request).usar(params.get("state"))
-    if verificador is None:
+    achado = _autorizacoes(request).usar_com_tipo(params.get("state"))
+    if achado is None:
         return _voltar("expirou")
+    verificador, tipo = achado
     codigo = params.get("code") or ""
     if params.get("error") or not codigo or len(codigo) > 2048:
-        return _voltar("negado")
+        return _voltar("negado", tipo)
+    if tipo == "email":
+        # Parte 5: ligação do e-mail (Gmail, só leitura).
+        from openjarvis.eden.routes_email import concluir_ligacao
+
+        return _voltar(await concluir_ligacao(request, codigo, verificador), tipo)
     cliente = google.cliente_do_app(request.app)
     try:
         await asyncio.to_thread(cliente.trocar_codigo, codigo, verificador)
@@ -120,12 +127,28 @@ async def desconectar(request: Request):
     exigir_chave_principal(request)
     cliente = google.cliente_do_app(request.app)
     google.CACHE.limpar()
-    revogado = await asyncio.to_thread(cliente.desconectar)
+    # E-mail ligado: só apaga aqui (se fosse a mesma conta do Google, revogar
+    # derrubaria o e-mail junto).
+    email = await asyncio.to_thread(_email_ligado, request)
+    revogado = await asyncio.to_thread(cliente.desconectar, not email)
     google.CACHE.limpar()
     logger.info("Éden: Google Agenda desconectada")
     # revogado False: desligou aqui, mas o Google não confirmou (a tela diz
     # onde retirar o acesso na conta do Google).
-    return {"ok": True, "revogado": revogado is not False}
+    return {
+        "ok": True,
+        "revogado": revogado is not False,
+        "motivo": "email_ligado" if email else None,
+    }
+
+
+def _email_ligado(request: Request) -> bool:
+    try:
+        from openjarvis.eden import gmail
+
+        return gmail.cliente_do_app(request.app).conectado()
+    except Exception:  # noqa: BLE001
+        return True  # na dúvida, não revoga nada no Google
 
 
 @router.get("/eventos")

@@ -7,6 +7,7 @@ import { EdenSpacesSettings } from '../components/Eden/EdenSpacesSettings';
 import { EdenPushSettings } from '../components/Eden/EdenPushSettings';
 import { EdenGoogleSettings } from '../components/Eden/EdenGoogleSettings';
 import { EdenNotionSettings } from '../components/Eden/EdenNotionSettings';
+import { EdenEmailSettings } from '../components/Eden/EdenEmailSettings';
 import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
 import { EdenAparelhosSettings } from '../components/Eden/EdenAparelhosSettings';
 import { criarAparelho } from '../lib/eden-aparelhos';
@@ -490,6 +491,12 @@ export function EdenSettingsPage() {
         {settings.apiKey && (
           <Section title="Google Agenda">
             <EdenGoogleSettings />
+          </Section>
+        )}
+
+        {settings.apiKey && (
+          <Section title="E-mail (Gmail, só leitura)">
+            <EdenEmailSettings />
           </Section>
         )}
 
