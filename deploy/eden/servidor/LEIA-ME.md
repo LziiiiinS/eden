@@ -157,6 +157,7 @@ emergência, entre pelo **console** do painel da Hetzner com a senha do root
 | Ver se está ligado            | `cd /opt/eden && docker compose ps`               |
 | Ver o registro (sem chaves)   | `cd /opt/eden && docker compose logs --tail 50 eden` |
 | Reiniciar                     | `cd /opt/eden && docker compose restart eden`     |
+| Éden para outra pessoa        | `sudo /opt/eden/nova-pessoa.sh NOME` (veja abaixo) |
 
 - **Atualizar** faz um backup antes e, se a versão nova não responder, volta
   sozinho para a anterior.
@@ -166,6 +167,41 @@ emergência, entre pelo **console** do painel da Hetzner com a senha do root
   o servidor reinicia às 04:45 e o Éden volta sozinho.
 - **Backup diário:** às 03:30, em `/opt/eden/backups` (ficam os 14 mais
   novos). Ver quando roda: `systemctl list-timers eden-backup.timer`.
+
+## Outra pessoa (namorada, pai): um Éden só dela
+
+Cada pessoa ganha o **próprio Éden**, ao lado do seu, sem nada compartilhado:
+chave de acesso, conversas, memórias, tarefas, contas e backup próprios. As
+chaves de IA são **as da pessoa** (conta dela, limite dela): o seu `.env`
+nunca é copiado.
+
+**Antes (decisões suas e dela):** quem e quando; a pessoa cria a conta de IA
+dela (com limite baixo e verificação em duas etapas); o celular dela entra na
+sua rede do Tailscale (convite ou compartilhar só o servidor). Isso mexe em
+contas reais: só com a sua autorização e a dela.
+
+1. No servidor: `sudo /opt/eden/nova-pessoa.sh ana` (só letras minúsculas e
+   números). Na 1ª vez ele prepara tudo e para pedindo a chave de IA dela.
+2. `sudo nano /opt/eden-ana/.env`: a pessoa cola a chave dela depois de
+   `OPENAI_API_KEY=` (ou `ANTHROPIC_API_KEY=`). Não mande chave por mensagem.
+3. Rode de novo `sudo /opt/eden/nova-pessoa.sh ana`. Ele liga o Éden dela e
+   mostra o endereço: `https://eden-servidor.….ts.net:8443` (a 2ª pessoa fica
+   na `:8444`).
+4. Para ligar o celular dela: abra o endereço dela no notebook, entre com a
+   chave dela e mostre o QR code das Configurações **na frente do aparelho**.
+
+- **Atualizar:** o `atualizar-eden.sh` atualiza o seu e depois o de cada
+  pessoa (com backup antes de cada um).
+- **Backup dela:** todo dia às 03:41 (a 2ª pessoa, 03:42…), em
+  `/opt/eden-ana/backups`. Agora: `sudo /opt/eden-ana/backup-eden.sh`.
+- **Voltar um backup dela:** `sudo /opt/eden-ana/restaurar-eden.sh`.
+- **Ver se está ligado:** `cd /opt/eden-ana && sudo docker compose ps`.
+- **Desligar (sem apagar nada):** `cd /opt/eden-ana && sudo docker compose
+  down` e `sudo tailscale serve --https=8443 off`. Para ligar de novo: rode o
+  `nova-pessoa.sh ana`.
+- **Memória:** cada Éden usa pouca memória parado, mas pode usar até 2 GB
+  numa conversa pesada. Com 3 Édens, acompanhe com `free -h` nos primeiros
+  dias.
 
 ## Backups fora do servidor
 
@@ -181,7 +217,8 @@ junto. Duas opções para ter uma cópia fora:
 ## Segurança
 
 - Ninguém da internet acessa o Éden: ele só escuta dentro do servidor
-  (`127.0.0.1:8000`) e o Tailscale entrega para os seus aparelhos com HTTPS.
+  (`127.0.0.1:8000`; o de outra pessoa, `8001`, `8002`…) e o Tailscale
+  entrega para os aparelhos da sua rede com HTTPS.
 - Firewall: só a rede privada (e o SSH, até o passo 7) entram. SSH só com
   chave, nunca com senha.
 - Chaves: ficam em `/opt/eden/.env`, que só o root lê. Nunca vão para o

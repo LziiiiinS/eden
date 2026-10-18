@@ -31,7 +31,10 @@ fi
 cd "$EDEN_DIR"
 [ -d backups ] || install -d -m 700 -o 10001 -g 10001 backups
 
-responde() { curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; }
+# Porta do Éden nesta pasta (8000; o Éden de outra pessoa usa 8001, 8002…).
+PORTA="$(grep -E '^EDEN_PORTA=[0-9]{4}$' "$EDEN_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2 || true)"
+PORTA="${PORTA:-8000}"
+responde() { curl -fsS "http://127.0.0.1:$PORTA/health" >/dev/null 2>&1; }
 
 if [ -z "$arquivo" ]; then
   mapfile -t lista < <(find backups -maxdepth 1 -type f -name 'eden-backup-*.tar.gz' -printf '%T@ %f\n' \

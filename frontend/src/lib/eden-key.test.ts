@@ -51,6 +51,10 @@ describe('phone link (QR code)', () => {
     expect(isPhoneReachableUrl('https://eden.tail1234.ts.net.evil.example')).toBe(false);
     expect(isPhoneReachableUrl('https://evil.example/?x=.ts.net')).toBe(false);
     expect(isPhoneReachableUrl('https://eden.tail1234.ts.net:4443')).toBe(false);
+    expect(isPhoneReachableUrl('https://eden.tail1234.ts.net:8448')).toBe(false);
+    // Éden de outra pessoa no mesmo servidor (nova-pessoa.sh).
+    expect(isPhoneReachableUrl('https://srv.tail1234.ts.net:8443')).toBe(true);
+    expect(buildPhoneLink('https://srv.tail1234.ts.net:8443/', KEY)).toBe(`https://srv.tail1234.ts.net:8443/#chave=${KEY}`);
     expect(isPhoneReachableUrl('https://eden.tail1234.ts.net/caminho')).toBe(false);
   });
 

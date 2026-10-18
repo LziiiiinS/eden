@@ -22,14 +22,19 @@ instalar() {
     bash "$RAIZ/deploy/eden/servidor/instalar.sh"
 }
 
+DIR_ANA="$DIR-ana"
+BASE_ANA="http://127.0.0.1:8001"
+
 limpar() {
   echo "--- registro do Éden (final) ---"
   (cd "$DIR" 2>/dev/null && sudo docker compose logs --tail 40 eden) || true
+  (cd "$DIR_ANA" 2>/dev/null && sudo docker compose logs --tail 20 eden) || true
+  (cd "$DIR_ANA" 2>/dev/null && sudo docker compose down -v >/dev/null 2>&1) || true
   (cd "$DIR" 2>/dev/null && sudo docker compose down -v >/dev/null 2>&1) || true
-  sudo systemctl disable --now eden-backup.timer >/dev/null 2>&1 || true
+  sudo systemctl disable --now eden-backup.timer eden-backup-ana.timer >/dev/null 2>&1 || true
   sudo rm -f /etc/systemd/system/eden-*.service /etc/systemd/system/eden-*.timer
   sudo systemctl daemon-reload || true
-  sudo rm -rf "$DIR"
+  sudo rm -rf "$DIR" "$DIR_ANA"
 }
 trap limpar EXIT
 
@@ -93,7 +98,74 @@ curl -fsS -H "Authorization: Bearer $k1" "$BASE/v1/eden/conversations" | grep -q
   || { echo "error: dados mudaram depois de um arquivo recusado"; exit 1; }
 echo "ok: arquivo danificado recusado sem mexer nos dados"
 
+# Éden de outra pessoa (nova-pessoa.sh): pasta, chave, dados e backup
+# próprios; nenhuma chave de IA copiada do Éden principal.
+nova_pessoa() {
+  sudo env EDEN_MODO_TESTE=1 EDEN_DIR="$DIR" "$DIR/nova-pessoa.sh" "$@"
+}
+set +e
+nova_pessoa ana
+codigo=$?
+set -e
+[ "$codigo" = 3 ] || { echo "error: sem chave de IA o nova-pessoa devia parar com código 3 (deu $codigo)"; exit 1; }
+[ "$(sudo stat -c '%a %U' "$DIR_ANA/.env")" = "600 root" ] || { echo "error: .env da pessoa sem a proteção 600/root"; exit 1; }
+if sudo grep -qE '^(OPENAI|ANTHROPIC)_API_KEY=[^[:space:]]+' "$DIR_ANA/.env"; then
+  echo "error: o nova-pessoa copiou uma chave de IA do Éden principal"; exit 1
+fi
+ka="$(sudo grep '^OPENJARVIS_API_KEY=' "$DIR_ANA/.env" | cut -d= -f2)"
+[[ "$ka" =~ ^oj_sk_[A-Za-z0-9_-]{40,}$ ]] && [ "$ka" != "$k1" ] \
+  || { echo "error: a pessoa não ganhou uma chave de acesso própria"; exit 1; }
+sudo grep -qx 'COMPOSE_PROJECT_NAME=eden-teste-ana' "$DIR_ANA/.env" || { echo "error: projeto do Docker da pessoa"; exit 1; }
+sudo grep -qx 'EDEN_PORTA=8001' "$DIR_ANA/.env" || { echo "error: porta da pessoa"; exit 1; }
+if nova_pessoa 'Ana;rm' >/dev/null 2>&1; then echo "error: nome inválido aceito"; exit 1; fi
+echo "ok: pessoa nova preparada (chave própria, sem chave de IA copiada)"
+
+sudo sed -i 's|^OPENAI_API_KEY=.*|OPENAI_API_KEY=sk-teste-falsa-ana|' "$DIR_ANA/.env"
+nova_pessoa ana
+nova_pessoa ana  # de novo: mesma chave, mesma porta
+[ "$(sudo grep '^OPENJARVIS_API_KEY=' "$DIR_ANA/.env" | cut -d= -f2)" = "$ka" ] \
+  || { echo "error: rodar de novo trocou a chave da pessoa"; exit 1; }
+[ "$(sudo grep -c '^EDEN_PORTA=' "$DIR_ANA/.env")" = 1 ] || { echo "error: porta repetida no .env"; exit 1; }
+curl -fsS "$BASE_ANA/health" >/dev/null || { echo "error: Éden da pessoa não respondeu"; exit 1; }
+[ "$(systemctl is-enabled eden-backup-ana.timer)" = enabled ] || { echo "error: backup da pessoa não agendado"; exit 1; }
+sudo systemd-analyze verify /etc/systemd/system/eden-backup-ana.service /etc/systemd/system/eden-backup-ana.timer
+
+# Separados de verdade: chave de um não abre o outro, dados não se misturam.
+codigo=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $k1" "$BASE_ANA/v1/eden/conversations")
+[ "$codigo" = 401 ] || { echo "error: a sua chave abriu o Éden da pessoa ($codigo)"; exit 1; }
+codigo=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ka" "$BASE/v1/eden/conversations")
+[ "$codigo" = 401 ] || { echo "error: a chave da pessoa abriu o seu Éden ($codigo)"; exit 1; }
+if curl -fsS -H "Authorization: Bearer $ka" "$BASE_ANA/v1/eden/conversations" | grep -q '"id":"s1"'; then
+  echo "error: a pessoa vê a sua conversa"; exit 1
+fi
+curl -fsS -H "Authorization: Bearer $ka" -X PUT -H 'Content-Type: application/json' \
+  -d "{\"id\":\"a1\",\"title\":\"ConversaDaAna\",\"model\":\"eden-auto\",\"createdAt\":$agora,\"updatedAt\":$agora,\"messages\":[{\"id\":\"ma1\",\"role\":\"user\",\"content\":\"oi\",\"timestamp\":$agora}]}" \
+  "$BASE_ANA/v1/eden/conversations/a1" >/dev/null
+if curl -fsS -H "Authorization: Bearer $k1" "$BASE/v1/eden/conversations" | grep -q '"id":"a1"'; then
+  echo "error: você vê a conversa da pessoa"; exit 1
+fi
+sudo docker ps --filter label=com.docker.compose.project=eden-teste-ana -q | grep -q . \
+  || { echo "error: o contêiner da pessoa não está no projeto dela"; exit 1; }
+sudo systemctl start eden-backup-ana.service
+backup_ana="$(sudo find "$DIR_ANA/backups" -name 'eden-backup-diario-*.tar.gz' | head -1)"
+[ -n "$backup_ana" ] || { echo "error: o backup da pessoa não criou arquivo"; exit 1; }
+sudo tar -xzOf "$backup_ana" | grep -ac 'ConversaDaAna' >/dev/null \
+  || { echo "error: o backup da pessoa não tem os dados dela"; exit 1; }
+if sudo tar -xzOf "$backup_ana" | grep -ac 'Servidor' >/dev/null; then
+  echo "error: o backup da pessoa tem dados do Éden principal"; exit 1
+fi
+[ "$(sudo find "$DIR/backups" -name 'eden-backup-diario-*.tar.gz' | wc -l)" = 1 ] \
+  || { echo "error: o backup da pessoa caiu na sua pasta"; exit 1; }
+echo "ok: Éden da pessoa separado (chave, conversas e backup próprios)"
+
 sudo env EDEN_DIR="$DIR" EDEN_MODO_TESTE=1 "$DIR/atualizar-eden.sh"
+curl -fsS "$BASE_ANA/health" >/dev/null || { echo "error: Éden da pessoa não voltou depois de atualizar"; exit 1; }
+curl -fsS -H "Authorization: Bearer $ka" "$BASE_ANA/v1/eden/conversations" | grep -q '"id":"a1"' \
+  || { echo "error: a conversa da pessoa sumiu depois de atualizar"; exit 1; }
+sudo find "$DIR_ANA/backups" -name 'eden-backup-auto-*.tar.gz' | grep -q . \
+  || { echo "error: atualizar não fez o backup da pessoa"; exit 1; }
+echo "ok: atualizar liga também o Éden da pessoa, com backup antes"
+
 sudo docker image inspect eden:anterior >/dev/null || { echo "error: atualizar não guardou a versão anterior"; exit 1; }
 sudo find "$DIR/backups" -name 'eden-backup-auto-*.tar.gz' | grep -q . || { echo "error: atualizar não fez backup"; exit 1; }
 echo "ok: atualizar faz backup, guarda a versão anterior e liga"

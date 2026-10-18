@@ -43,8 +43,9 @@ export function readKeyFromHash(hash: string): string | null {
 /**
  * O endereço serve para o celular abrir e para receber a chave?
  * Só o endereço com cadeado do Tailscale (https://…ts.net), sem usuário,
- * senha, porta diferente ou caminho — assim um endereço disfarçado
- * (ex.: https://eden.ts.net@site-falso.com) não recebe a chave.
+ * senha ou caminho — assim um endereço disfarçado
+ * (ex.: https://eden.ts.net@site-falso.com) não recebe a chave. Porta só
+ * 8443 a 8447: o Éden de outra pessoa no mesmo servidor (nova-pessoa.sh).
  */
 export function isPhoneReachableUrl(url: string): boolean {
   try {
@@ -53,7 +54,7 @@ export function isPhoneReachableUrl(url: string): boolean {
       u.protocol === 'https:' &&
       u.username === '' &&
       u.password === '' &&
-      u.port === '' &&
+      (u.port === '' || /^844[3-7]$/.test(u.port)) &&
       (u.pathname === '/' || u.pathname === '') &&
       u.search === '' &&
       u.hash === '' &&

@@ -13,12 +13,36 @@ EDEN_DIR="${EDEN_DIR:-/opt/eden}"
 TESTE="${EDEN_MODO_TESTE:-0}"
 cd "$EDEN_DIR"
 
-responde() {
+responde() {  # responde [PORTA]
   for _ in $(seq 1 120); do
-    if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then return 0; fi
+    if curl -fsS "http://127.0.0.1:${1:-8000}/health" >/dev/null 2>&1; then return 0; fi
     sleep 2
   done
   return 1
+}
+
+# Os Édens de outras pessoas (nova-pessoa.sh) usam a mesma imagem: depois de
+# atualizar o seu, cada um faz o próprio backup e liga na versão nova.
+atualizar_outros() {
+  local d porta falhou=0
+  for d in "$EDEN_DIR"-*/; do
+    d="${d%/}"
+    [ -f "$d/docker-compose.yml" ] && [ -f "$d/.env" ] || continue
+    porta="$(grep -E '^EDEN_PORTA=[0-9]{4}$' "$d/.env" | tail -1 | cut -d= -f2 || true)"
+    [ -n "$porta" ] || continue
+    echo "Atualizando o Éden em $d…"
+    install -m 644 "$EDEN_DIR/docker-compose.yml" "$d/"
+    install -m 755 "$EDEN_DIR/backup-eden.sh" "$EDEN_DIR/restaurar-eden.sh" "$d/"
+    EDEN_DIR="$d" "$d/backup-eden.sh" --tipo auto --manter 5 || true
+    (cd "$d" && docker compose up -d --no-build) || falhou=1
+    if responde "$porta"; then
+      echo "  ok: $d"
+    else
+      echo "  $d não respondeu: veja com: cd $d && sudo docker compose logs --tail 40 eden"
+      falhou=1
+    fi
+  done
+  return "$falhou"
 }
 
 echo "Backup antes de atualizar…"
@@ -40,6 +64,7 @@ fi
 
 if responde; then
   echo "Pronto! Éden atualizado."
+  atualizar_outros || exit 1
   exit 0
 fi
 
