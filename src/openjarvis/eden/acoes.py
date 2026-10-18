@@ -75,6 +75,9 @@ TIPOS = (
     "nota.criar",
     "agenda.criar",
     "agenda.editar",
+    "conta.criar",
+    "conta.pagar",
+    "conta.apagar",
 )
 # Ações que mexem fora do Éden (Google): executadas fora da transação do banco.
 TIPOS_EXTERNOS = ("agenda.criar", "agenda.editar")
@@ -318,6 +321,9 @@ def validar(
     if tipo in ("agenda.criar", "agenda.editar"):
         return _validar_agenda(tipo, bruto, hoje, agenda, tz)
 
+    if tipo.startswith("conta."):
+        return _validar_conta(tipo, bruto, store, espaco_ativo, hoje)
+
     # nota.criar
     _so_campos(bruto, ("texto", "titulo", "tipo_nota", "espaco"))
     txt = texto(bruto.get("texto"), "texto", MAX_IA_TEXTO_NOTA)
@@ -333,6 +339,117 @@ def validar(
     cabeca = f" {_aspas(titulo)}" if titulo else ""
     resumo = f"Guardar {rotulo}{cabeca} em {_nome_espaco(store, esp)}: {_aspas(txt)}"
     return Proposta(tipo, params, resumo)
+
+
+_REPETE_TXT = {"nao": "", "mensal": " · todo mês", "anual": " · todo ano"}
+
+
+def _validar_conta(
+    tipo: str, bruto: Dict[str, Any], store: Organizacao, espaco_ativo: str, hoje: date
+) -> Proposta:
+    """Parte 5: contas e impostos. O cartão mostra valor, data e repetição
+    exatamente como serão gravados — antes do texto da pessoa, para uma
+    descrição não conseguir imitar o resto do cartão (revisão de 18/10)."""
+    from openjarvis.eden import financas
+
+    if tipo == "conta.criar":
+        _so_campos(
+            bruto,
+            (
+                "tipo_conta",
+                "descricao",
+                "valor",
+                "vencimento",
+                "repete",
+                "categoria",
+                "aviso_dias",
+                "notas",
+                "espaco",
+            ),
+        )
+        dados = {k: v for k, v in bruto.items() if k not in ("tipo", "tipo_conta")}
+        dados["tipo"] = bruto.get("tipo_conta") or "pagar"
+        if "notas" in dados:
+            dados["notas"] = texto(
+                dados["notas"], "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False
+            )
+        c = financas.campos(dados, store, espaco_ativo)
+        params = {
+            "tipo_conta": c["tipo"],
+            "descricao": c["descricao"],
+            "valor_centavos": c["valor_centavos"],
+            "vencimento": c["vencimento"],
+            "repete": c["repete"],
+            "categoria": c["categoria"],
+            "aviso_dias": c["aviso_dias"],
+            "notas": c["notas"],
+            "espaco": c["espaco"],
+        }
+        rotulo = "conta a pagar" if c["tipo"] == "pagar" else "valor a receber"
+        quando = "vence" if c["tipo"] == "pagar" else "para"
+        aviso = (
+            "sem aviso"
+            if c["aviso_dias"] < 0
+            else "aviso no dia"
+            if c["aviso_dias"] == 0
+            else f"aviso {c['aviso_dias']} dia(s) antes"
+        )
+        resumo = (
+            f"Anotar {rotulo} ({financas.reais(c['valor_centavos'])}, {quando} "
+            f"{resumo_data(c['vencimento'], None, hoje)}"
+            f"{_REPETE_TXT[c['repete']]}, {aviso}, em "
+            f"{_nome_espaco(store, c['espaco'])}): {_aspas(c['descricao'])}"
+        )
+        if c["categoria"]:
+            resumo += f" · categoria {_aspas(c['categoria'])}"
+        if c["notas"]:
+            resumo += f" · notas: {_aspas(c['notas'])}"
+        return Proposta(tipo, params, resumo)
+
+    # conta.pagar / conta.apagar
+    _so_campos(bruto, ("id",))
+    conta = financas.conta(store, bruto.get("id"))
+    if conta is None:
+        raise ErroOrganizacao("conta não encontrada")
+    if conta["espaco"] != espaco_ativo:
+        raise ErroOrganizacao("essa conta não está no espaço ativo")
+    # A versão amarra o cartão à conta como ela estava (tipo, espaço,
+    # repetição, dia…): qualquer mudança depois invalida o cartão.
+    params = {
+        "id": conta["id"],
+        "descricao": conta["descricao"],
+        "valor_centavos": conta["valor_centavos"],
+        "vencimento": conta["vencimento"],
+        "versao": conta["versao"],
+    }
+    detalhe = (
+        f"{financas.reais(conta['valor_centavos'])}, vencimento "
+        f"{resumo_data(conta['vencimento'], None, hoje)}"
+    )
+    if tipo == "conta.pagar":
+        if conta["paga"]:
+            raise ErroOrganizacao("essa conta já está paga")
+        verbo = (
+            "Marcar como paga" if conta["tipo"] == "pagar" else "Marcar como recebido"
+        )
+        if conta["repete"] != "nao":
+            ja = financas.proxima_existente(store, conta["id"])
+            if ja is not None:
+                detalhe += (
+                    "; a próxima já está anotada para "
+                    f"{resumo_data(ja['vencimento'], None, hoje)}"
+                )
+            else:
+                proxima = financas.proximo_vencimento(
+                    conta["vencimento"], conta["repete"], conta["dia"]
+                )
+                detalhe += f"; a próxima fica para {resumo_data(proxima, None, hoje)}"
+        return Proposta(
+            tipo, params, f"{verbo} ({detalhe}): {_aspas(conta['descricao'])}"
+        )
+    return Proposta(
+        tipo, params, f"Apagar a conta ({detalhe}): {_aspas(conta['descricao'])}"
+    )
 
 
 def _duracao(valor: Any) -> int:
@@ -608,6 +725,17 @@ def _alvo_igual(
             raise ErroOrganizacao("tarefa não encontrada")
         if tarefa["titulo"] != params.get("titulo", params.get("titulo_atual")):
             raise ErroOrganizacao("a tarefa mudou depois da sugestão; peça de novo")
+    elif tipo in ("conta.pagar", "conta.apagar"):
+        from openjarvis.eden import financas
+
+        conta = financas.conta(store, params["id"], conn)
+        if conta is None:
+            raise ErroOrganizacao("conta não encontrada")
+        if "versao" not in params or any(
+            conta[k] != params[k]
+            for k in ("descricao", "valor_centavos", "vencimento", "versao")
+        ):
+            raise ErroOrganizacao("a conta mudou depois da sugestão; peça de novo")
 
 
 def _executar(
@@ -659,6 +787,36 @@ def _executar(
             conn,
         )
         return {"nota": nota["id"]}
+    if tipo.startswith("conta."):
+        from openjarvis.eden import financas
+
+        if tipo == "conta.criar":
+            campos_conta = {
+                k: params[k]
+                for k in (
+                    "descricao",
+                    "valor_centavos",
+                    "vencimento",
+                    "repete",
+                    "categoria",
+                    "aviso_dias",
+                    "notas",
+                    "espaco",
+                )
+            }
+            campos_conta["tipo"] = params["tipo_conta"]
+            store.espaco_valido(campos_conta["espaco"])
+            nova = financas.criar_limpa(store, campos_conta, quem, acao_id, conn)
+            return {"conta": nova["id"]}
+        if tipo == "conta.pagar":
+            feito = financas.marcar_paga(store, params["id"], quem, acao_id, conn)
+            proxima = feito["proxima"]
+            return {
+                "conta": params["id"],
+                "proxima": proxima["id"] if proxima else None,
+            }
+        financas.apagar(store, params["id"], quem, acao_id, conn)
+        return {"conta": params["id"]}
     raise ErroOrganizacao("tipo de ação desconhecido")
 
 

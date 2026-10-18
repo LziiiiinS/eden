@@ -331,6 +331,14 @@ def montar(
     if rotas_txt:
         partes.append(rotas_txt)
 
+    # Contas e impostos (Parte 5): só se a pergunta falar de contas.
+    from openjarvis.eden.financas import REGRAS_CONTAS
+    from openjarvis.eden.financas import secao_contexto as secao_contas
+
+    contas_txt = secao_contas(store, pergunta, hoje, tz, espaco)
+    if contas_txt:
+        partes.append(contas_txt)
+
     # Documentos que a pessoa anexou a esta conversa (só deste espaço).
     secao_docs = ""
     if conversa_id:
@@ -350,6 +358,8 @@ def montar(
 
     # As regras vêm por último, depois de todo dado de fora.
     partes.append(REGRAS_ACOES)
+    if contas_txt:
+        partes.append(REGRAS_CONTAS)
     if agenda and agenda.get("conectado"):
         partes.append(REGRAS_AGENDA)
     if secao_docs:
