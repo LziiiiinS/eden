@@ -34,7 +34,8 @@ limpar() {
   sudo systemctl disable --now eden-backup.timer eden-backup-ana.timer >/dev/null 2>&1 || true
   sudo rm -f /etc/systemd/system/eden-*.service /etc/systemd/system/eden-*.timer
   sudo systemctl daemon-reload || true
-  sudo rm -rf "$DIR" "$DIR_ANA"
+  sudo docker volume rm eden-teste-ana_eden-dados >/dev/null 2>&1 || true
+  sudo rm -rf "$DIR" "$DIR_ANA" "$DIR_ANA".desligado-* "$DIR-pai"
 }
 trap limpar EXIT
 
@@ -115,8 +116,8 @@ fi
 ka="$(sudo grep '^OPENJARVIS_API_KEY=' "$DIR_ANA/.env" | cut -d= -f2)"
 [[ "$ka" =~ ^oj_sk_[A-Za-z0-9_-]{40,}$ ]] && [ "$ka" != "$k1" ] \
   || { echo "error: a pessoa não ganhou uma chave de acesso própria"; exit 1; }
-sudo grep -qx 'COMPOSE_PROJECT_NAME=eden-teste-ana' "$DIR_ANA/.env" || { echo "error: projeto do Docker da pessoa"; exit 1; }
-sudo grep -qx 'EDEN_PORTA=8001' "$DIR_ANA/.env" || { echo "error: porta da pessoa"; exit 1; }
+sudo grep -qx 'name: eden-teste-ana' "$DIR_ANA/docker-compose.yml" || { echo "error: nome do Éden da pessoa no compose"; exit 1; }
+sudo grep -q '"127.0.0.1:8001:8000"' "$DIR_ANA/docker-compose.yml" || { echo "error: porta da pessoa no compose"; exit 1; }
 if nova_pessoa 'Ana;rm' >/dev/null 2>&1; then echo "error: nome inválido aceito"; exit 1; fi
 echo "ok: pessoa nova preparada (chave própria, sem chave de IA copiada)"
 
@@ -125,7 +126,7 @@ nova_pessoa ana
 nova_pessoa ana  # de novo: mesma chave, mesma porta
 [ "$(sudo grep '^OPENJARVIS_API_KEY=' "$DIR_ANA/.env" | cut -d= -f2)" = "$ka" ] \
   || { echo "error: rodar de novo trocou a chave da pessoa"; exit 1; }
-[ "$(sudo grep -c '^EDEN_PORTA=' "$DIR_ANA/.env")" = 1 ] || { echo "error: porta repetida no .env"; exit 1; }
+sudo grep -q '"127.0.0.1:8001:8000"' "$DIR_ANA/docker-compose.yml" || { echo "error: a porta da pessoa mudou"; exit 1; }
 curl -fsS "$BASE_ANA/health" >/dev/null || { echo "error: Éden da pessoa não respondeu"; exit 1; }
 [ "$(systemctl is-enabled eden-backup-ana.timer)" = enabled ] || { echo "error: backup da pessoa não agendado"; exit 1; }
 sudo systemd-analyze verify /etc/systemd/system/eden-backup-ana.service /etc/systemd/system/eden-backup-ana.timer
@@ -135,13 +136,15 @@ codigo=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $k1" "
 [ "$codigo" = 401 ] || { echo "error: a sua chave abriu o Éden da pessoa ($codigo)"; exit 1; }
 codigo=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ka" "$BASE/v1/eden/conversations")
 [ "$codigo" = 401 ] || { echo "error: a chave da pessoa abriu o seu Éden ($codigo)"; exit 1; }
-if curl -fsS -H "Authorization: Bearer $ka" "$BASE_ANA/v1/eden/conversations" | grep -q '"id":"s1"'; then
+lista_ana="$(curl -fsS -H "Authorization: Bearer $ka" "$BASE_ANA/v1/eden/conversations")"
+if echo "$lista_ana" | grep -q '"id":"s1"'; then
   echo "error: a pessoa vê a sua conversa"; exit 1
 fi
 curl -fsS -H "Authorization: Bearer $ka" -X PUT -H 'Content-Type: application/json' \
   -d "{\"id\":\"a1\",\"title\":\"ConversaDaAna\",\"model\":\"eden-auto\",\"createdAt\":$agora,\"updatedAt\":$agora,\"messages\":[{\"id\":\"ma1\",\"role\":\"user\",\"content\":\"oi\",\"timestamp\":$agora}]}" \
   "$BASE_ANA/v1/eden/conversations/a1" >/dev/null
-if curl -fsS -H "Authorization: Bearer $k1" "$BASE/v1/eden/conversations" | grep -q '"id":"a1"'; then
+lista_sua="$(curl -fsS -H "Authorization: Bearer $k1" "$BASE/v1/eden/conversations")"
+if echo "$lista_sua" | grep -q '"id":"a1"'; then
   echo "error: você vê a conversa da pessoa"; exit 1
 fi
 sudo docker ps --filter label=com.docker.compose.project=eden-teste-ana -q | grep -q . \
@@ -158,7 +161,39 @@ fi
   || { echo "error: o backup da pessoa caiu na sua pasta"; exit 1; }
 echo "ok: Éden da pessoa separado (chave, conversas e backup próprios)"
 
+# Os scripts copiados para a pasta dela agem no Éden DELA, mesmo sem EDEN_DIR
+# (revisão de 18/10: o backup e a restauração dela caíam no seu Éden).
+sudo "$DIR_ANA/backup-eden.sh" >/dev/null
+sudo find "$DIR_ANA/backups" -name 'eden-backup-manual-*.tar.gz' | grep -q . \
+  || { echo "error: o backup manual da pessoa não ficou na pasta dela"; exit 1; }
+if sudo find "$DIR/backups" -name 'eden-backup-manual-2026*' -newer "$backup_ana" | grep -q .; then
+  echo "error: o backup manual da pessoa caiu na sua pasta"; exit 1
+fi
+sudo "$DIR_ANA/restaurar-eden.sh" --sim "$backup_ana" >/dev/null
+curl -fsS -H "Authorization: Bearer $ka" "$BASE_ANA/v1/eden/conversations" | grep -q '"id":"a1"' \
+  || { echo "error: a restauração da pessoa perdeu a conversa dela"; exit 1; }
+lista_principal="$(curl -fsS -H "Authorization: Bearer $k1" "$BASE/v1/eden/conversations")"
+echo "$lista_principal" | grep -q '"id":"s1"' || { echo "error: a restauração da pessoa mexeu no seu Éden"; exit 1; }
+if echo "$lista_principal" | grep -q '"id":"a1"'; then echo "error: a conversa da pessoa entrou no seu Éden"; exit 1; fi
+if sudo "$DIR/restaurar-eden.sh" --sim "$backup_ana" >/dev/null 2>&1; then
+  echo "error: o seu Éden aceitou restaurar o backup da pessoa"; exit 1
+fi
+echo "ok: backup e restauração da pessoa ficam no Éden dela; backup dela recusado no seu"
+
+# Pasta copiada (mesma chave de outro Éden): recusada.
+sudo cp -a "$DIR_ANA" "$DIR-pai"
+if nova_pessoa pai >/dev/null 2>&1; then echo "error: aceitou um .env copiado de outra pessoa"; exit 1; fi
+sudo rm -rf "$DIR-pai"
+echo "ok: pasta copiada de outra pessoa recusada"
+
+# Uma linha estranha no .env dela não consegue trocar de Éden.
+echo 'COMPOSE_PROJECT_NAME=eden' | sudo tee -a "$DIR_ANA/.env" >/dev/null
 sudo env EDEN_DIR="$DIR" EDEN_MODO_TESTE=1 "$DIR/atualizar-eden.sh"
+codigo=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $k1" "$BASE/v1/eden/conversations")
+[ "$codigo" = 200 ] || { echo "error: depois de atualizar, a sua chave não abre o seu Éden ($codigo)"; exit 1; }
+codigo=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ka" "$BASE/v1/eden/conversations")
+[ "$codigo" = 401 ] || { echo "error: depois de atualizar, a chave da pessoa abre o seu Éden ($codigo)"; exit 1; }
+sudo sed -i '/^COMPOSE_PROJECT_NAME=/d' "$DIR_ANA/.env"
 curl -fsS "$BASE_ANA/health" >/dev/null || { echo "error: Éden da pessoa não voltou depois de atualizar"; exit 1; }
 curl -fsS -H "Authorization: Bearer $ka" "$BASE_ANA/v1/eden/conversations" | grep -q '"id":"a1"' \
   || { echo "error: a conversa da pessoa sumiu depois de atualizar"; exit 1; }
@@ -169,6 +204,22 @@ echo "ok: atualizar liga também o Éden da pessoa, com backup antes"
 sudo docker image inspect eden:anterior >/dev/null || { echo "error: atualizar não guardou a versão anterior"; exit 1; }
 sudo find "$DIR/backups" -name 'eden-backup-auto-*.tar.gz' | grep -q . || { echo "error: atualizar não fez backup"; exit 1; }
 echo "ok: atualizar faz backup, guarda a versão anterior e liga"
+
+# Tirar a pessoa: desliga, guarda a pasta e os dados; atualizar não religa.
+sudo env EDEN_MODO_TESTE=1 EDEN_DIR="$DIR" "$DIR/remover-pessoa.sh" ana
+if sudo docker ps --filter label=com.docker.compose.project=eden-teste-ana -q | grep -q .; then
+  echo "error: o contêiner da pessoa continuou ligado"; exit 1
+fi
+[ ! -e "$DIR_ANA" ] && ls -d "$DIR_ANA".desligado-* >/dev/null || { echo "error: a pasta da pessoa não foi guardada"; exit 1; }
+[ ! -e /etc/systemd/system/eden-backup-ana.timer ] || { echo "error: o backup diário da pessoa continuou"; exit 1; }
+sudo docker volume inspect eden-teste-ana_eden-dados >/dev/null || { echo "error: os dados da pessoa foram apagados"; exit 1; }
+sudo env EDEN_DIR="$DIR" EDEN_MODO_TESTE=1 "$DIR/atualizar-eden.sh" >/dev/null
+if sudo docker ps --filter label=com.docker.compose.project=eden-teste-ana -q | grep -q .; then
+  echo "error: atualizar religou o Éden da pessoa desligada"; exit 1
+fi
+curl -fsS -H "Authorization: Bearer $k1" "$BASE/v1/eden/conversations" | grep -q '"id":"s1"' \
+  || { echo "error: o seu Éden perdeu dados ao tirar a pessoa"; exit 1; }
+echo "ok: tirar a pessoa desliga sem apagar os dados; atualizar não religa"
 
 sudo rm -f /root/eden-backup-manual-2026101*.tar.gz
 echo "Pacote do servidor: tudo certo"

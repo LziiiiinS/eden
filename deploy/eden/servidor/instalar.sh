@@ -150,14 +150,14 @@ else
 fi
 for f in docker-compose.yml .env.exemplo servidor/backup-eden.sh servidor/restaurar-eden.sh \
   servidor/atualizar-eden.sh servidor/fechar-ssh-publico.sh servidor/nova-pessoa.sh \
-  servidor/LEIA-ME.md; do
+  servidor/remover-pessoa.sh servidor/LEIA-ME.md; do
   [ -f "$tmp/$f" ] || falhar "faltou o arquivo $f no pacote do Éden"
 done
 install -d -m 755 "$EDEN_DIR"
 install -m 644 "$tmp/docker-compose.yml" "$tmp/.env.exemplo" "$EDEN_DIR/"
 install -m 755 "$tmp/servidor/backup-eden.sh" "$tmp/servidor/restaurar-eden.sh" \
   "$tmp/servidor/atualizar-eden.sh" "$tmp/servidor/fechar-ssh-publico.sh" \
-  "$tmp/servidor/nova-pessoa.sh" "$EDEN_DIR/"
+  "$tmp/servidor/nova-pessoa.sh" "$tmp/servidor/remover-pessoa.sh" "$EDEN_DIR/"
 install -m 644 "$tmp/servidor/LEIA-ME.md" "$EDEN_DIR/LEIA-ME.md"
 # Backups: só o usuário do contêiner (10001) e o root leem.
 install -d -m 700 -o "$UID_EDEN" -g "$UID_EDEN" "$EDEN_DIR/backups"

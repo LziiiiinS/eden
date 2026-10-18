@@ -158,6 +158,7 @@ emergência, entre pelo **console** do painel da Hetzner com a senha do root
 | Ver o registro (sem chaves)   | `cd /opt/eden && docker compose logs --tail 50 eden` |
 | Reiniciar                     | `cd /opt/eden && docker compose restart eden`     |
 | Éden para outra pessoa        | `sudo /opt/eden/nova-pessoa.sh NOME` (veja abaixo) |
+| Tirar o Éden de uma pessoa    | `sudo /opt/eden/remover-pessoa.sh NOME`           |
 
 - **Atualizar** faz um backup antes e, se a versão nova não responder, volta
   sozinho para a anterior.
@@ -170,38 +171,53 @@ emergência, entre pelo **console** do painel da Hetzner com a senha do root
 
 ## Outra pessoa (namorada, pai): um Éden só dela
 
-Cada pessoa ganha o **próprio Éden**, ao lado do seu, sem nada compartilhado:
-chave de acesso, conversas, memórias, tarefas, contas e backup próprios. As
-chaves de IA são **as da pessoa** (conta dela, limite dela): o seu `.env`
-nunca é copiado.
+Cada pessoa ganha o **próprio Éden**, separado do seu: chave de acesso,
+conversas, memórias, tarefas, contas e backup próprios. As chaves de IA são
+**as da pessoa** (conta dela, limite dela): o seu `.env` nunca é copiado.
 
-**Antes (decisões suas e dela):** quem e quando; a pessoa cria a conta de IA
-dela (com limite baixo e verificação em duas etapas); o celular dela entra na
-sua rede do Tailscale (convite ou compartilhar só o servidor). Isso mexe em
-contas reais: só com a sua autorização e a dela.
+**Diga isto à pessoa antes:** quem administra o servidor (root) consegue ver
+tudo, de todos os Édens dele (conversas, backups, a chave de IA dela).
 
+**Antes (decisões suas e dela):**
+- quem e quando;
+- a pessoa cria a conta de IA dela (com limite baixo e verificação em duas
+  etapas);
+- o celular dela entra no seu Tailscale. Prefira **compartilhar só o
+  servidor** (não convidar para a rede toda) e, nas regras de acesso do
+  Tailscale, liberar para ela só o endereço dela (`eden-servidor:8443`).
+  Isso mexe em contas reais: só com a sua autorização e a dela.
+
+**Passo a passo:**
 1. No servidor: `sudo /opt/eden/nova-pessoa.sh ana` (só letras minúsculas e
-   números). Na 1ª vez ele prepara tudo e para pedindo a chave de IA dela.
-2. `sudo nano /opt/eden-ana/.env`: a pessoa cola a chave dela depois de
-   `OPENAI_API_KEY=` (ou `ANTHROPIC_API_KEY=`). Não mande chave por mensagem.
-3. Rode de novo `sudo /opt/eden/nova-pessoa.sh ana`. Ele liga o Éden dela e
-   mostra o endereço: `https://eden-servidor.….ts.net:8443` (a 2ª pessoa fica
-   na `:8444`).
-4. Para ligar o celular dela: abra o endereço dela no notebook, entre com a
-   chave dela e mostre o QR code das Configurações **na frente do aparelho**.
+   números). Ele prepara tudo e pede a chave de IA dela: a pessoa cola ali
+   mesmo (não aparece na tela). Sem a chave, ele para e dá para rodar de novo
+   depois.
+2. No fim ele mostra o endereço dela: `https://eden-servidor.….ts.net:8443`
+   (a 2ª pessoa fica na `:8444`).
+3. Para ligar o celular dela: no notebook, abra uma **janela anônima**, abra
+   o endereço dela e entre com a chave dela. Depois mostre o QR code das
+   Configurações **na frente do aparelho** e feche a janela.
 
+**No dia a dia:**
 - **Atualizar:** o `atualizar-eden.sh` atualiza o seu e depois o de cada
-  pessoa (com backup antes de cada um).
+  pessoa (com backup antes de cada um). Se o backup dela falhar, o Éden dela
+  fica como estava e o script avisa.
 - **Backup dela:** todo dia às 03:41 (a 2ª pessoa, 03:42…), em
   `/opt/eden-ana/backups`. Agora: `sudo /opt/eden-ana/backup-eden.sh`.
-- **Voltar um backup dela:** `sudo /opt/eden-ana/restaurar-eden.sh`.
+- **Voltar um backup dela:** `sudo /opt/eden-ana/restaurar-eden.sh`. Os
+  scripts da pasta dela só mexem no Éden dela, e um backup da pasta de outro
+  Éden é recusado.
 - **Ver se está ligado:** `cd /opt/eden-ana && sudo docker compose ps`.
-- **Desligar (sem apagar nada):** `cd /opt/eden-ana && sudo docker compose
-  down` e `sudo tailscale serve --https=8443 off`. Para ligar de novo: rode o
-  `nova-pessoa.sh ana`.
+- **Tirar a pessoa (sem apagar os dados):** `sudo /opt/eden/remover-pessoa.sh
+  ana`. Ele faz um último backup, desliga, tira o backup diário e o endereço
+  dela, e guarda a pasta como `/opt/eden-ana.desligado-…`. No fim ele mostra
+  os comandos para apagar os dados de vez, se você tiver certeza.
 - **Memória:** cada Éden usa pouca memória parado, mas pode usar até 2 GB
   numa conversa pesada. Com 3 Édens, acompanhe com `free -h` nos primeiros
   dias.
+- **Google para ela:** o Éden dela tem outro endereço de retorno
+  (`…ts.net:8443/v1/eden/google/retorno`). Usar o mesmo cliente do Google que
+  o seu é decisão sua; sem isso, a agenda e o e-mail dela ficam desligados.
 
 ## Backups fora do servidor
 
