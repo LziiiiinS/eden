@@ -631,7 +631,7 @@ def restaurar(
             agora_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
             try:
                 _manter_decisoes_atuais(antiga, atual, agora_ms)
-            except sqlite3.Error as exc:
+            except Exception as exc:  # noqa: BLE001
                 # Volta tudo como estava: melhor não restaurar do que desfazer
                 # um desligamento sem avisar.
                 _remover(atual)
