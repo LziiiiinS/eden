@@ -348,7 +348,8 @@ def _validar_conta(
     tipo: str, bruto: Dict[str, Any], store: Organizacao, espaco_ativo: str, hoje: date
 ) -> Proposta:
     """Parte 5: contas e impostos. O cartão mostra valor, data e repetição
-    exatamente como serão gravados."""
+    exatamente como serão gravados — antes do texto da pessoa, para uma
+    descrição não conseguir imitar o resto do cartão (revisão de 18/10)."""
     from openjarvis.eden import financas
 
     if tipo == "conta.criar":
@@ -394,11 +395,10 @@ def _validar_conta(
             else f"aviso {c['aviso_dias']} dia(s) antes"
         )
         resumo = (
-            f"Anotar {rotulo} {_aspas(c['descricao'])} — "
-            f"{financas.reais(c['valor_centavos'])} — {quando} "
+            f"Anotar {rotulo} ({financas.reais(c['valor_centavos'])}, {quando} "
             f"{resumo_data(c['vencimento'], None, hoje)}"
-            f"{_REPETE_TXT[c['repete']]} · {aviso} · em "
-            f"{_nome_espaco(store, c['espaco'])}"
+            f"{_REPETE_TXT[c['repete']]}, {aviso}, em "
+            f"{_nome_espaco(store, c['espaco'])}): {_aspas(c['descricao'])}"
         )
         if c["categoria"]:
             resumo += f" · categoria {_aspas(c['categoria'])}"
@@ -413,15 +413,18 @@ def _validar_conta(
         raise ErroOrganizacao("conta não encontrada")
     if conta["espaco"] != espaco_ativo:
         raise ErroOrganizacao("essa conta não está no espaço ativo")
+    # A versão amarra o cartão à conta como ela estava (tipo, espaço,
+    # repetição, dia…): qualquer mudança depois invalida o cartão.
     params = {
         "id": conta["id"],
         "descricao": conta["descricao"],
         "valor_centavos": conta["valor_centavos"],
         "vencimento": conta["vencimento"],
+        "versao": conta["versao"],
     }
     detalhe = (
-        f"{_aspas(conta['descricao'])} — {financas.reais(conta['valor_centavos'])} "
-        f"— vencimento {resumo_data(conta['vencimento'], None, hoje)}"
+        f"{financas.reais(conta['valor_centavos'])}, vencimento "
+        f"{resumo_data(conta['vencimento'], None, hoje)}"
     )
     if tipo == "conta.pagar":
         if conta["paga"]:
@@ -429,14 +432,24 @@ def _validar_conta(
         verbo = (
             "Marcar como paga" if conta["tipo"] == "pagar" else "Marcar como recebido"
         )
-        resumo = f"{verbo}: {detalhe}"
         if conta["repete"] != "nao":
-            proxima = financas.proximo_vencimento(
-                conta["vencimento"], conta["repete"], conta["dia"]
-            )
-            resumo += f" · a próxima fica para {resumo_data(proxima, None, hoje)}"
-        return Proposta(tipo, params, resumo)
-    return Proposta(tipo, params, f"Apagar a conta {detalhe}")
+            ja = financas.proxima_existente(store, conta["id"])
+            if ja is not None:
+                detalhe += (
+                    "; a próxima já está anotada para "
+                    f"{resumo_data(ja['vencimento'], None, hoje)}"
+                )
+            else:
+                proxima = financas.proximo_vencimento(
+                    conta["vencimento"], conta["repete"], conta["dia"]
+                )
+                detalhe += f"; a próxima fica para {resumo_data(proxima, None, hoje)}"
+        return Proposta(
+            tipo, params, f"{verbo} ({detalhe}): {_aspas(conta['descricao'])}"
+        )
+    return Proposta(
+        tipo, params, f"Apagar a conta ({detalhe}): {_aspas(conta['descricao'])}"
+    )
 
 
 def _duracao(valor: Any) -> int:
@@ -718,8 +731,9 @@ def _alvo_igual(
         conta = financas.conta(store, params["id"], conn)
         if conta is None:
             raise ErroOrganizacao("conta não encontrada")
-        if any(
-            conta[k] != params[k] for k in ("descricao", "valor_centavos", "vencimento")
+        if "versao" not in params or any(
+            conta[k] != params[k]
+            for k in ("descricao", "valor_centavos", "vencimento", "versao")
         ):
             raise ErroOrganizacao("a conta mudou depois da sugestão; peça de novo")
 

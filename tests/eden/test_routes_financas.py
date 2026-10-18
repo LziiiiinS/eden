@@ -56,6 +56,7 @@ def test_create_pay_reopen_delete(cliente):
     assert [c["id"] for c in pagas["contas"]] == [conta["id"]]
     volta = cliente.post(f"/v1/eden/contas/{conta['id']}/reabrir", headers=AUTH)
     assert volta.json()["conta"]["paga"] is False
+    assert volta.json()["proxima_removida"] is True
     editada = cliente.patch(
         f"/v1/eden/contas/{conta['id']}", json={"valor": "120"}, headers=AUTH
     ).json()["conta"]
@@ -91,3 +92,23 @@ def test_summary(cliente):
     )
     r = cliente.get("/v1/eden/contas/resumo", headers=AUTH).json()
     assert r["atrasadas"] == 1 and r["atrasado_a_pagar"] == 1000
+
+
+def test_odd_input_is_400_not_500(cliente):
+    for valor in ("1\u00a0500,00", "150.50"):
+        r = cliente.post(
+            "/v1/eden/contas",
+            json={"descricao": "x", "valor": valor, "vencimento": "2030-01-10"},
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+    r = cliente.post(
+        "/v1/eden/contas",
+        content=b'{"descricao": "x", "vencimento": "2030-01-10", "valor": '
+        + b"9" * 400
+        + b"}",
+        headers={**AUTH, "Content-Type": "application/json"},
+    )
+    assert r.status_code == 400
+    r = cliente.post("/v1/eden/contas/" + "9" * 30 + "/pagar", headers=AUTH)
+    assert r.status_code == 404

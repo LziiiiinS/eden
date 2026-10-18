@@ -509,14 +509,27 @@ def registrar_lembretes(app) -> None:
                         chave = await asyncio.to_thread(carregar_chave)
                         estado["chave"] = chave
                     await enviar_lembretes_vencidos(store, chave, client)
-                    await enviar_avisos_de_contas(
-                        store, chave, client, get_settings().tz
-                    )
-                    await asyncio.to_thread(limpar_se_preciso, store)
                 except asyncio.CancelledError:
                     raise
                 except Exception:  # noqa: BLE001
                     logger.exception("Éden: falha ao conferir lembretes")
+                    continue
+                # Cada parte com a própria proteção: uma conta estranha não
+                # para a limpeza nem os lembretes (revisão de 18/10).
+                try:
+                    await enviar_avisos_de_contas(
+                        store, chave, client, get_settings().tz
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001
+                    logger.exception("Éden: falha ao conferir os avisos de contas")
+                try:
+                    await asyncio.to_thread(limpar_se_preciso, store)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001
+                    logger.exception("Éden: falha na limpeza automática")
 
     def _conferir_chave() -> None:
         from openjarvis.eden.organizacao import Organizacao

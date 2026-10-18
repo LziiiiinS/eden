@@ -18,7 +18,7 @@
 <body>
 <main>
   <h1>Éden — Política de privacidade</h1>
-  <p class="data">Atualizada em 17/10/2026</p>
+  <p class="data">Atualizada em 18/10/2026</p>
 
   <p>O Éden é um assistente pessoal privado. Ele roda num servidor do próprio dono, numa rede privada (Tailscale), e é usado só por ele. Não é vendido, não tem anúncios e não é oferecido ao público.</p>
 
@@ -26,22 +26,24 @@
   <ul>
     <li><strong>Google Agenda</strong> (permissão <code>calendar.events</code>): lê os eventos dos próximos dias e cria ou muda eventos <strong>só depois que o dono toca em Confirmar</strong> num cartão.</li>
     <li><strong>Google Drive</strong> (opcional, permissão <code>drive.file</code>): cria documentos numa pasta "Éden" quando o dono pede. O Éden só enxerga os arquivos que ele mesmo criou; não vê o resto do Drive.</li>
+    <li><strong>Gmail</strong> (opcional, permissão <code>gmail.readonly</code>, numa conta que o dono escolhe): <strong>só lê</strong> os e-mails, para mostrar a caixa de entrada e responder perguntas do dono. Não manda, não apaga, não arquiva e não marca e-mails como lidos.</li>
   </ul>
-  <p>O Éden não pede acesso a e-mail, contatos, fotos ou qualquer outro serviço do Google.</p>
+  <p>O Éden não pede acesso a contatos, fotos ou qualquer outro serviço do Google.</p>
 
   <h2>Onde ficam os dados</h2>
   <ul>
     <li>A autorização do Google fica <strong>cifrada</strong> no servidor do dono. A chave da cifra não vai para backups.</li>
     <li>Os eventos lidos ficam em memória no servidor, para mostrar a agenda e responder perguntas.</li>
+    <li>A lista de e-mails (remetente, assunto e trecho) fica em memória por poucos minutos. Um e-mail só é guardado quando o dono toca em "Usar na conversa"; aí o texto vira um documento no servidor dele.</li>
     <li>Nada é vendido, compartilhado com terceiros para publicidade ou usado para treinar modelos pelo Éden.</li>
   </ul>
 
   <h2>Inteligência artificial</h2>
-  <p>Para responder ao dono, o Éden envia o texto da conversa e, quando relevante, títulos e horários de eventos da agenda para os serviços de IA que o dono escolheu (OpenAI e Anthropic), pelas APIs dessas empresas.</p>
+  <p>Para responder ao dono, o Éden envia o texto da conversa e, quando a pergunta pede, dados do próprio dono para os serviços de IA que ele escolheu (OpenAI e Anthropic), pelas APIs dessas empresas. Esses dados podem ser títulos e horários de eventos da agenda, remetente, assunto e trecho dos e-mails recentes, e as contas que ele anotou (descrição, valor e vencimento).</p>
 
   <h2>Como retirar o acesso</h2>
   <ul>
-    <li>No Éden: <strong>Configurações → Google Agenda → Desconectar</strong> (apaga a autorização e avisa o Google).</li>
+    <li>No Éden: <strong>Configurações → Google Agenda → Desconectar</strong> ou <strong>Configurações → E-mail → Desconectar</strong> (apaga a autorização e avisa o Google).</li>
     <li>Na conta do Google: <a href="https://myaccount.google.com/permissions" rel="noopener noreferrer">myaccount.google.com/permissions</a>, remover "Éden".</li>
   </ul>
 

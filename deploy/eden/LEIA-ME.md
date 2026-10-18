@@ -159,13 +159,15 @@ No dia a dia:
 Menu **Contas e impostos**: anote o que tem para **pagar** (aluguel, internet,
 DAS do MEI…) e o que tem para **receber** (clientes), com valor, vencimento,
 repetição (uma vez, todo mês, todo ano) e aviso no celular alguns dias antes
-(às 9h).
+(às 9h, se os avisos estiverem ligados no celular). O aviso mostra o nome da
+conta e quando vence, sem o valor (ele aparece na tela de bloqueio).
 
 - O Éden **não paga nada, não liga no banco e não emite nota**: só anota,
   avisa e responde ("o que vence esta semana?", "quanto tenho a receber?").
 - Marcar uma conta que repete como paga cria a próxima sozinha (dia 31 vira o
   último dia dos meses curtos). Marcou sem querer: abra a conta → **Voltar
-  para em aberto**.
+  para em aberto** (a próxima criada sai junto, se você não mexeu nela).
+- Valor: `150,50` ou `1.500,00` (vírgula nos centavos); `150.50` também vale.
 - Modelos prontos: **DAS do MEI** (todo dia 20) e **Declaração anual do MEI**
   (até 31 de maio). Eles vêm sem valor: os valores mudam todo ano, confira no
   Portal do Empreendedor (gov.br/mei).

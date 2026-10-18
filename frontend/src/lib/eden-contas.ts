@@ -21,6 +21,9 @@ export interface Conta {
   notas: string;
   origem: string;
   criado_em: number;
+  atualizado_em?: number;
+  versao?: number;
+  gerada_de?: number | null;
 }
 
 export interface ResumoContas {

@@ -209,8 +209,11 @@ CREATE TABLE IF NOT EXISTS contas (
     origem           TEXT    NOT NULL,
     criado_em        INTEGER NOT NULL,
     atualizado_em    INTEGER NOT NULL,
-    apagado_em       INTEGER
+    apagado_em       INTEGER,
+    versao           INTEGER NOT NULL DEFAULT 0,
+    gerada_de        INTEGER
 );
+CREATE INDEX IF NOT EXISTS contas_geradas ON contas (gerada_de);
 CREATE INDEX IF NOT EXISTS contas_abertas ON contas (vencimento)
     WHERE pago_em IS NULL AND apagado_em IS NULL;
 """

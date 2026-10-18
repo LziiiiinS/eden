@@ -56,6 +56,15 @@ def _aluguel(store, **extra):
         ("0,99", 99),
         ("", 0),
         (None, 0),
+        # Ponto nos centavos (teclado do celular) não multiplica por 100.
+        ("150.50", 15050),
+        ("99.90", 9990),
+        ("0.5", 50),
+        ("1.5", 150),
+        ("1.500", 150000),
+        ("1.234.567,89", 123456789),
+        ("1\u00a0500,00", 150000),
+        (" r$ 10 ", 1000),
     ],
 )
 def test_values_become_cents(valor, esperado):
@@ -63,7 +72,22 @@ def test_values_become_cents(valor, esperado):
 
 
 @pytest.mark.parametrize(
-    "ruim", ["-10", "abc", "1,234.56", True, float("nan"), "9" * 20, [], -1]
+    "ruim",
+    [
+        "-10",
+        "abc",
+        "1,234.56",
+        "1.5.0",
+        "1,234",
+        "12.34.56",
+        True,
+        float("nan"),
+        "9" * 20,
+        [],
+        -1,
+        10**400,
+        1e300,
+    ],
 )
 def test_bad_values_are_refused(ruim):
     with pytest.raises(ErroOrganizacao):
@@ -135,7 +159,7 @@ def test_paying_a_monthly_bill_creates_the_next(store):
     with pytest.raises(ErroOrganizacao):
         financas.marcar_paga(store, c["id"])  # já paga
     reaberta = financas.desfazer_pagamento(store, c["id"])
-    assert reaberta["paga"] is False
+    assert reaberta["conta"]["paga"] is False
 
 
 def test_one_time_bill_has_no_next(store):
@@ -201,7 +225,8 @@ def test_reminder_comes_days_before_at_nine(store):
     assert financas.marcar_aviso(store, c["id"]) is False  # nunca duas vezes
     assert financas.avisos_devidos(store, TZ, _ms(date(2026, 10, 19), 9)) == []
     texto = financas.texto_aviso(devido, date(2026, 10, 18))
-    assert texto == "Aluguel (fictício) — R$ 1.500,00 — vence em 2 dias (20/10)"
+    # Sem o valor: o aviso aparece na tela de bloqueio.
+    assert texto == "Aluguel (fictício) — vence em 2 dias (20/10)"
 
 
 def test_no_reminder_for_old_or_silent_bills(store):
@@ -258,7 +283,7 @@ def test_push_loop_sends_each_bill_once(store):
         push.enviar = original
     [aviso] = enviados
     assert aviso["titulo"] == "Conta a pagar" and aviso["url"] == "/contas"
-    assert "R$ 1.500,00" in aviso["corpo"]
+    assert "R$" not in aviso["corpo"] and "Aluguel" in aviso["corpo"]
 
 
 # ── cartões da conversa ──────────────────────────────────────────────────
@@ -285,8 +310,8 @@ def test_card_to_create_shows_exactly_what_will_be_saved(store):
     assert recusadas == []
     [acao] = criadas
     assert acao["resumo"] == (
-        "Anotar conta a pagar “DAS do MEI” — R$ 80,90 — vence ter 20/10 · todo mês"
-        " · aviso 2 dia(s) antes · em Pessoal · categoria “Impostos”"
+        "Anotar conta a pagar (R$ 80,90, vence ter 20/10 · todo mês, aviso 2 dia(s)"
+        " antes, em Pessoal): “DAS do MEI” · categoria “Impostos”"
     )
     assert financas.listar(store) == []  # nada gravado antes de confirmar
     feita = acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA + 1000)
@@ -307,8 +332,8 @@ def test_card_to_pay_and_to_delete(store):
         AGORA,
     )
     assert acao["resumo"] == (
-        "Marcar como paga: “Aluguel (fictício)” — R$ 1.500,00 — vencimento ter 20/10"
-        " · a próxima fica para sex 20/11"
+        "Marcar como paga (R$ 1.500,00, vencimento ter 20/10; a próxima fica para"
+        " sex 20/11): “Aluguel (fictício)”"
     )
     acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA + 1000)
     abertas = financas.listar(store)
@@ -321,7 +346,9 @@ def test_card_to_pay_and_to_delete(store):
         None,
         AGORA,
     )
-    assert apagar["resumo"].startswith("Apagar a conta “Aluguel (fictício)”")
+    assert apagar["resumo"] == (
+        "Apagar a conta (R$ 1.500,00, vencimento sex 20/11): “Aluguel (fictício)”"
+    )
     acoes.confirmar(store, apagar["id"], apagar["assinatura"], TZ, AGORA + 2000)
     assert financas.listar(store) == []
 
@@ -353,7 +380,7 @@ def test_card_is_void_if_the_bill_changed(store):
                 "valor": "-5",
                 "vencimento": "2026-10-20",
             },
-            "valor inválido",
+            "negativo",
         ),
         (
             {
@@ -427,3 +454,146 @@ def test_context_only_on_bill_questions_and_quoted(store, monkeypatch):
     assert "R$ 1.500,00" in com and "todo mês" in com
     assert "Outro espaço" not in com
     assert com.index(financas.REGRAS_CONTAS) > com.index(REGRAS_ACOES)
+
+
+# ── revisão de segurança de 18/10 ────────────────────────────────────────
+
+
+def test_reopen_and_pay_again_does_not_duplicate_the_next(store):
+    c = _aluguel(store)
+    financas.marcar_paga(store, c["id"])
+    volta = financas.desfazer_pagamento(store, c["id"])
+    assert volta["proxima_removida"] is True and volta["conta"]["paga"] is False
+    assert [x["vencimento"] for x in financas.listar(store)] == ["2026-10-20"]
+    financas.marcar_paga(store, c["id"])
+    financas.desfazer_pagamento(store, c["id"])
+    financas.marcar_paga(store, c["id"])
+    assert [x["vencimento"] for x in financas.listar(store)] == ["2026-11-20"]
+    r = financas.resumo(store, date(2026, 11, 1), TZ, "pessoal")
+    assert r["a_pagar_no_mes"] == 150000  # não dobrou
+
+
+def test_edited_next_survives_reopen_and_is_reused(store):
+    c = _aluguel(store)
+    proxima = financas.marcar_paga(store, c["id"])["proxima"]
+    financas.editar(store, proxima["id"], {"valor": "1.600"})
+    assert financas.desfazer_pagamento(store, c["id"])["proxima_removida"] is False
+    de_novo = financas.marcar_paga(store, c["id"])["proxima"]
+    assert de_novo["id"] == proxima["id"] and de_novo["valor_centavos"] == 160000
+    assert len(financas.listar(store)) == 1
+
+
+def test_saving_without_changes_does_not_rearm_the_reminder(store):
+    c = _aluguel(store, vencimento="2026-01-31")
+    feb = financas.marcar_paga(store, c["id"])["proxima"]  # 28/02, dia 31
+    financas.marcar_aviso(store, feb["id"])
+    mesma = financas.editar(
+        store,
+        feb["id"],
+        {"vencimento": "2026-02-28", "aviso_dias": 2, "notas": "nota nova"},
+    )
+    assert mesma["dia"] == 31 and mesma["notas"] == "nota nova"
+    devidos = financas.avisos_devidos(store, TZ, _ms(date(2026, 2, 27), 10))
+    assert devidos == []  # não avisou de novo
+    marco = financas.marcar_paga(store, feb["id"])["proxima"]
+    assert marco["vencimento"] == "2026-03-31"
+
+
+def test_card_is_void_after_any_change(store):
+    c = _aluguel(store)
+    [acao], _ = acoes.propor(
+        _bloco({"tipo": "conta.pagar", "id": c["id"]}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    financas.editar(store, c["id"], {"tipo": "receber", "repete": "nao"})
+    with pytest.raises((ErroOrganizacao, acoes.ErroAcao)):
+        acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA + 1000)
+    assert financas.conta(store, c["id"])["paga"] is False
+
+
+def test_description_cannot_fake_the_value_on_the_card(store):
+    falsa = "Internet” — R$ 99,90 — vence dom 25/10 · x"
+    [acao], _ = acoes.propor(
+        _bloco(
+            {
+                "tipo": "conta.criar",
+                "descricao": falsa,
+                "valor": "4.999,00",
+                "vencimento": "2026-10-25",
+            }
+        ),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    resumo = acao["resumo"]
+    assert resumo.startswith("Anotar conta a pagar (R$ 4.999,00, vence dom 25/10")
+    assert resumo.index("R$ 4.999,00") < resumo.index("R$ 99,90")
+
+
+@pytest.mark.parametrize(
+    "pergunta",
+    ["me conta uma piada", "qual das tarefas é mais urgente?", "vou receber visita"],
+)
+def test_bills_stay_out_of_unrelated_questions(pergunta):
+    assert financas.pergunta_sobre_contas(pergunta) is False
+
+
+def test_due_reminder_is_not_hidden_by_the_limit(store):
+    for i in range(60):
+        financas.criar(
+            store,
+            {
+                "descricao": f"Longe {i}",
+                "valor": 1,
+                "vencimento": "2026-10-18",
+                "aviso_dias": 0,
+            },
+        )
+    perto = financas.criar(
+        store,
+        {"descricao": "Já", "valor": 1, "vencimento": "2026-10-25", "aviso_dias": 30},
+    )
+    # 17/10 10h: só a de 25/10 (aviso 30 dias antes) já devia avisar.
+    devidos = financas.avisos_devidos(store, TZ, AGORA)
+    assert [d["id"] for d in devidos] == [perto["id"]]
+
+
+def test_archived_space_does_not_send_reminders(store):
+    c = financas.criar(
+        store,
+        {
+            "descricao": "Do cliente",
+            "valor": 1,
+            "vencimento": "2026-10-18",
+            "espaco": "clientes",
+            "aviso_dias": 1,
+        },
+    )
+    store.atualizar_espaco("clientes", {"arquivado": True})
+    assert financas.avisos_devidos(store, TZ, AGORA) == []
+    # Salvar sem mudar o espaço arquivado não dá erro.
+    assert financas.editar(store, c["id"], {"espaco": "clientes", "notas": "x"})
+
+
+def test_summary_counts_beyond_the_list(store, monkeypatch):
+    monkeypatch.setattr(financas, "MAX_NO_CONTEXTO", 3)
+    for i in range(5):
+        financas.criar(
+            store, {"descricao": f"Velha {i}", "valor": 10, "vencimento": "2026-09-01"}
+        )
+    r = financas.resumo(store, HOJE, TZ, "pessoal")
+    assert len(r["atrasadas"]) == 3 and r["n_atrasadas"] == 5
+    assert r["atrasado_a_pagar"] == 5000
+
+
+def test_huge_id_is_not_found(store):
+    with pytest.raises(ErroOrganizacao) as exc:
+        financas.marcar_paga(store, 10**30)
+    assert exc.value.status == 404

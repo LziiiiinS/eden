@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import math
 import re
 import sqlite3
 import unicodedata
@@ -42,6 +43,7 @@ MAX_CENTAVOS = 100_000_000_00  # R$ 100 milhões
 HORA_AVISO = 9  # avisos de conta às 9h (horário do Éden)
 DIAS_NO_CONTEXTO = 31
 MAX_NO_CONTEXTO = 40
+_MAX_ID = 2**53
 CAMPOS_EDITAVEIS = (
     "tipo",
     "descricao",
@@ -54,12 +56,21 @@ CAMPOS_EDITAVEIS = (
     "espaco",
 )
 
-_VALOR = re.compile(r"^(?:R\$\s*)?([0-9][0-9.\s]*)(?:,([0-9]{1,2}))?$")
+# Valor em reais. "1.500" e "1.234,56" = milhar com ponto; "150,50" = vírgula
+# nos centavos; "150.50" (teclado do celular) = ponto nos centavos. Qualquer
+# outra coisa ("1,234.56", "1.5.0") é recusada (revisão de 18/10: "150.50"
+# virava R$ 15.050,00).
+_MILHAR = re.compile(r"(\d{1,3}(?:\.\d{3})+)(?:,(\d{1,2}))?")
+_VIRGULA = re.compile(r"(\d+)(?:,(\d{1,2}))?")
+_PONTO = re.compile(r"(\d+)\.(\d{1,2})")
+# Só perguntas que falam mesmo de contas (revisão de 18/10: "me conta uma
+# piada" e "qual das tarefas" traziam as contas para a IA).
 _ASSUNTO = re.compile(
-    r"\b(contas?|boletos?|pagar|paguei|pago|pagamentos?|vencimentos?|vence[mr]?|"
-    r"venceu|impostos?|das|mei|dasn|simples nacional|faturas?|receber|recebi|"
-    r"nota fiscal|notas fiscais|financeir\w*|financas|dinheiro|gastos?|"
-    r"aluguel|parcela\w*|cobranc\w*|mensalidades?)\b"
+    r"\b(contas|boletos?|pagar|paguei|pagamentos?|vencimentos?|vence[mr]?|"
+    r"venceu|impostos?|das do mei|das mei|dasn|simei|mei|simples nacional|"
+    r"faturas?|a receber|recebi|nota fiscal|notas fiscais|financeir\w*|"
+    r"financas|aluguel|parcelas?|cobrancas?|mensalidades?|"
+    r"conta de (?:luz|agua|gas|internet|telefone|celular|energia|condominio))\b"
 )
 
 
@@ -67,39 +78,60 @@ _ASSUNTO = re.compile(
 
 
 def centavos(valor: Any) -> int:
-    """150, 150.5, "150,50", "R$ 1.234,56" → centavos. Vazio = 0 (sem valor)."""
+    """150, 150.5, "150,50", "150.50", "R$ 1.234,56" → centavos.
+    Vazio = 0 (sem valor)."""
     if valor is None or valor == "":
         return 0
     if isinstance(valor, bool):
         raise ErroOrganizacao("valor inválido")
-    if isinstance(valor, (int, float)):
-        if valor != valor or valor in (float("inf"), float("-inf")):
-            raise ErroOrganizacao("valor inválido")
-        total = round(float(valor) * 100)
-    elif isinstance(valor, str):
-        achado = _VALOR.match(valor.strip())
-        if not achado:
-            raise ErroOrganizacao("valor inválido (ex.: 150,00)")
-        inteiros = achado.group(1).replace(".", "").replace(" ", "")
-        frac = (achado.group(2) or "0").ljust(2, "0")
-        if len(inteiros) > 12:
+    if isinstance(valor, int):
+        if valor < 0:
+            raise ErroOrganizacao("o valor não pode ser negativo")
+        if valor > MAX_CENTAVOS // 100:
             raise ErroOrganizacao("valor alto demais")
-        total = int(inteiros or "0") * 100 + int(frac)
-    else:
+        return valor * 100
+    if isinstance(valor, float):
+        if not math.isfinite(valor):
+            raise ErroOrganizacao("valor inválido")
+        if valor < 0:
+            raise ErroOrganizacao("o valor não pode ser negativo")
+        if valor > MAX_CENTAVOS / 100:
+            raise ErroOrganizacao("valor alto demais")
+        return round(valor * 100)
+    if not isinstance(valor, str):
         raise ErroOrganizacao("valor inválido")
-    if total < 0:
+    bruto = re.sub(r"\s+", "", valor)  # também o espaço que não quebra
+    bruto = re.sub(r"^R\$", "", bruto, flags=re.IGNORECASE)
+    if bruto.startswith("-"):
         raise ErroOrganizacao("o valor não pode ser negativo")
+    for padrao in (_MILHAR, _VIRGULA, _PONTO):
+        achado = padrao.fullmatch(bruto)
+        if achado:
+            break
+    else:
+        raise ErroOrganizacao("valor inválido: use vírgula nos centavos (ex.: 150,50)")
+    inteiros = achado.group(1).replace(".", "")
+    if len(inteiros) > 12:
+        raise ErroOrganizacao("valor alto demais")
+    total = int(inteiros) * 100 + int((achado.group(2) or "").ljust(2, "0"))
     if total > MAX_CENTAVOS:
         raise ErroOrganizacao("valor alto demais")
     return total
 
 
-def reais(c: int) -> str:
-    """123456 → "R$ 1.234,56"; 0 → "sem valor"."""
+def reais(c: int, zero: str = "sem valor") -> str:
+    """123456 → "R$ 1.234,56"; 0 → "sem valor" (ou ``zero``)."""
     if not c:
-        return "sem valor"
+        return zero
     inteiro_, frac = divmod(int(c), 100)
     return f"R$ {inteiro_:,}".replace(",", ".") + f",{frac:02d}"
+
+
+def _id(conta_id: Any) -> int:
+    cid = inteiro(conta_id)
+    if cid > _MAX_ID:
+        raise ErroOrganizacao("conta não encontrada", 404)
+    return cid
 
 
 def proximo_vencimento(atual: str, repete: str, dia: int) -> str:
@@ -141,6 +173,9 @@ def _conta(row: sqlite3.Row) -> Dict[str, Any]:
         "notas": row["notas"],
         "origem": row["origem"],
         "criado_em": row["criado_em"],
+        "atualizado_em": row["atualizado_em"],
+        "versao": row["versao"],
+        "gerada_de": row["gerada_de"],
     }
 
 
@@ -148,7 +183,7 @@ def conta(
     store: Organizacao, conta_id: Any, conn: Optional[sqlite3.Connection] = None
 ) -> Optional[Dict[str, Any]]:
     sql = "SELECT * FROM contas WHERE id = ? AND apagado_em IS NULL"
-    params = (inteiro(conta_id),)
+    params = (_id(conta_id),)
     if conn is not None:
         row = conn.execute(sql, params).fetchone()
         return _conta(row) if row else None
@@ -272,14 +307,18 @@ def criar_limpa(
 
 
 def _inserir(
-    c: sqlite3.Connection, novos: Dict[str, Any], quem: str, acao_id: Optional[str]
+    c: sqlite3.Connection,
+    novos: Dict[str, Any],
+    quem: str,
+    acao_id: Optional[str],
+    gerada_de: Optional[int] = None,
 ) -> int:
     agora = agora_ms()
     dia = int(novos.get("dia") or novos["vencimento"][8:10])
     cur = c.execute(
         "INSERT INTO contas (espaco, tipo, descricao, valor_centavos, vencimento, "
         "dia, repete, categoria, aviso_dias, notas, origem, criado_em, "
-        "atualizado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "atualizado_em, gerada_de) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             novos["espaco"],
             novos["tipo"],
@@ -294,6 +333,7 @@ def _inserir(
             quem,
             agora,
             agora,
+            gerada_de,
         ),
     )
     novo = int(cur.lastrowid)  # type: ignore[arg-type]
@@ -307,36 +347,65 @@ def editar(
     dados: Dict[str, Any],
     quem: str = "voce",
 ) -> Dict[str, Any]:
-    """Pela tela: muda só os campos enviados."""
-    cid = inteiro(conta_id)
+    """Pela tela: muda só o que for diferente do que está guardado. Mudar o
+    vencimento ou o aviso arma o aviso de novo; salvar sem mudar nada não
+    (revisão de 18/10: cada "Salvar" mandava o aviso outra vez)."""
+    cid = _id(conta_id)
     if not isinstance(dados, dict) or not dados:
         raise ErroOrganizacao("nada para mudar")
     extras = set(dados) - set(CAMPOS_EDITAVEIS)
     if extras:
         raise ErroOrganizacao(f"campos desconhecidos: {', '.join(sorted(extras))}")
-    mudancas = {n: _campo(dados, n, store) for n in dados}
-    if "valor" in mudancas:
-        mudancas["valor_centavos"] = mudancas.pop("valor")
-    if "vencimento" in mudancas:
-        mudancas["dia"] = int(mudancas["vencimento"][8:10])
-    if {"vencimento", "aviso_dias"} & set(mudancas):
-        mudancas["aviso_enviado_em"] = None  # aviso novo para a data nova
 
     def fazer(c: sqlite3.Connection) -> None:
         row = c.execute(
-            "SELECT pago_em FROM contas WHERE id = ? AND apagado_em IS NULL", (cid,)
+            "SELECT * FROM contas WHERE id = ? AND apagado_em IS NULL", (cid,)
         ).fetchone()
         if row is None:
             raise ErroOrganizacao("conta não encontrada", 404)
+        mudancas: Dict[str, Any] = {}
+        for nome in dados:
+            if nome == "espaco" and dados[nome] == row["espaco"]:
+                continue  # o mesmo espaço (mesmo arquivado) não muda nada
+            novo = _campo(dados, nome, store)
+            coluna = "valor_centavos" if nome == "valor" else nome
+            if novo != row[coluna]:
+                mudancas[coluna] = novo
+        if not mudancas:
+            return
+        if "vencimento" in mudancas:
+            mudancas["dia"] = int(mudancas["vencimento"][8:10])
+        if {"vencimento", "aviso_dias"} & set(mudancas):
+            mudancas["aviso_enviado_em"] = None  # aviso novo para a data nova
         sets = ", ".join(f"{k} = ?" for k in mudancas)
         c.execute(
-            f"UPDATE contas SET {sets}, atualizado_em = ? WHERE id = ?",  # noqa: S608
+            f"UPDATE contas SET {sets}, atualizado_em = ?, versao = versao + 1 "  # noqa: S608
+            "WHERE id = ?",
             (*mudancas.values(), agora_ms(), cid),
         )
         Organizacao._registrar(c, quem, "conta.editar", f"conta:{cid}")
 
     store.transacao(fazer)
     return conta(store, cid)  # type: ignore[return-value]
+
+
+def _proxima_existente(c: sqlite3.Connection, cid: int) -> Optional[sqlite3.Row]:
+    return c.execute(
+        "SELECT * FROM contas WHERE gerada_de = ? AND apagado_em IS NULL "
+        "ORDER BY id LIMIT 1",
+        (cid,),
+    ).fetchone()
+
+
+def proxima_existente(store: Organizacao, conta_id: Any) -> Optional[Dict[str, Any]]:
+    """A próxima ocorrência que já foi criada a partir desta conta (ou None)."""
+    cid = _id(conta_id)
+    rows = store._ler(
+        "SELECT * FROM contas WHERE gerada_de = ? AND apagado_em IS NULL "
+        "ORDER BY id LIMIT 1",
+        (cid,),
+    )
+    return _conta(rows[0]) if rows else None
 
 
 def marcar_paga(
@@ -346,8 +415,9 @@ def marcar_paga(
     acao_id: Optional[str] = None,
     conn: Optional[sqlite3.Connection] = None,
 ) -> Dict[str, Any]:
-    """Marca como paga (ou recebida). Se repete, cria a próxima."""
-    cid = inteiro(conta_id)
+    """Marca como paga (ou recebida). Se repete, cria a próxima — uma vez só
+    (pagar, voltar para em aberto e pagar de novo não cria outra)."""
+    cid = _id(conta_id)
 
     def fazer(c: sqlite3.Connection) -> Optional[int]:
         row = c.execute(
@@ -359,18 +429,22 @@ def marcar_paga(
             raise ErroOrganizacao("essa conta já está paga")
         agora = agora_ms()
         c.execute(
-            "UPDATE contas SET pago_em = ?, atualizado_em = ? WHERE id = ?",
+            "UPDATE contas SET pago_em = ?, atualizado_em = ?, versao = versao + 1 "
+            "WHERE id = ?",
             (agora, agora, cid),
         )
         Organizacao._registrar(c, quem, "conta.pagar", f"conta:{cid}", acao_id)
         if row["repete"] == "nao":
             return None
+        ja = _proxima_existente(c, cid)
+        if ja is not None:
+            return int(ja["id"])
         proxima = _conta(row)
         proxima["vencimento"] = proximo_vencimento(
             row["vencimento"], row["repete"], row["dia"]
         )
         proxima["dia"] = row["dia"]
-        return _inserir(c, proxima, quem, acao_id)
+        return _inserir(c, proxima, quem, acao_id, gerada_de=cid)
 
     proxima_id = store._executar(conn, fazer)
     return {
@@ -382,22 +456,34 @@ def marcar_paga(
 def desfazer_pagamento(
     store: Organizacao, conta_id: Any, quem: str = "voce"
 ) -> Dict[str, Any]:
-    """Pela tela: "marquei sem querer". Volta a ficar em aberto (a próxima
-    ocorrência, se foi criada, continua lá)."""
-    cid = inteiro(conta_id)
+    """Pela tela: "marquei sem querer". Volta a ficar em aberto; a próxima
+    ocorrência criada pelo pagamento sai, se ainda não foi mexida."""
+    cid = _id(conta_id)
 
-    def fazer(c: sqlite3.Connection) -> None:
+    def fazer(c: sqlite3.Connection) -> bool:
+        abertas = c.execute(
+            "SELECT COUNT(*) FROM contas WHERE apagado_em IS NULL AND pago_em IS NULL"
+        ).fetchone()[0]
+        if abertas >= MAX_ABERTAS:
+            raise ErroOrganizacao(f"limite de {MAX_ABERTAS} contas em aberto")
+        agora = agora_ms()
         cur = c.execute(
-            "UPDATE contas SET pago_em = NULL, atualizado_em = ? "
+            "UPDATE contas SET pago_em = NULL, atualizado_em = ?, versao = versao + 1 "
             "WHERE id = ? AND apagado_em IS NULL AND pago_em IS NOT NULL",
-            (agora_ms(), cid),
+            (agora, cid),
         )
         if cur.rowcount != 1:
             raise ErroOrganizacao("conta não encontrada ou em aberto", 404)
         Organizacao._registrar(c, quem, "conta.reabrir", f"conta:{cid}")
+        tirou = c.execute(
+            "UPDATE contas SET apagado_em = ? WHERE gerada_de = ? "
+            "AND apagado_em IS NULL AND pago_em IS NULL AND versao = 0",
+            (agora, cid),
+        ).rowcount
+        return tirou > 0
 
-    store.transacao(fazer)
-    return conta(store, cid)  # type: ignore[return-value]
+    tirou = store.transacao(fazer)
+    return {"conta": conta(store, cid), "proxima_removida": tirou}
 
 
 def apagar(
@@ -407,7 +493,7 @@ def apagar(
     acao_id: Optional[str] = None,
     conn: Optional[sqlite3.Connection] = None,
 ) -> None:
-    cid = inteiro(conta_id)
+    cid = _id(conta_id)
 
     def fazer(c: sqlite3.Connection) -> None:
         cur = c.execute(
@@ -427,35 +513,59 @@ def apagar(
 def resumo(
     store: Organizacao, hoje: date, tz: timezone, espaco: Optional[str] = None
 ) -> Dict[str, Any]:
-    abertas = listar(store, espaco, "abertas")
+    """Somas e contagens no banco (não numa lista cortada); as listas vêm
+    com no máximo MAX_NO_CONTEXTO itens."""
     hoje_iso = hoje.isoformat()
     limite = (hoje + timedelta(days=DIAS_NO_CONTEXTO)).isoformat()
+    semana = (hoje + timedelta(days=7)).isoformat()
+    filtro = " AND espaco = ?" if espaco is not None else ""
+    extra: tuple = (espaco,) if espaco is not None else ()
+    base = "FROM contas WHERE apagado_em IS NULL AND pago_em IS NULL" + filtro
+
+    def lista(cond: str, params: tuple) -> List[Dict[str, Any]]:
+        rows = store._ler(
+            f"SELECT * {base} AND {cond} ORDER BY vencimento, id "  # noqa: S608
+            f"LIMIT {MAX_NO_CONTEXTO}",
+            extra + params,
+        )
+        return [_conta(r) for r in rows]
+
+    def um(sql: str, params: tuple) -> int:
+        return int(store._ler(sql, params)[0][0] or 0)
+
     mes = hoje_iso[:7]
-    atrasadas = [c for c in abertas if c["vencimento"] < hoje_iso]
-    proximas = [c for c in abertas if hoje_iso <= c["vencimento"] <= limite]
-
-    def soma(lista: List[Dict[str, Any]], tipo: str) -> int:
-        return sum(c["valor_centavos"] for c in lista if c["tipo"] == tipo)
-
-    do_mes = [c for c in abertas if c["vencimento"][:7] == mes]
     inicio_ano = int(datetime(hoje.year, 1, 1, tzinfo=tz).timestamp() * 1000)
-    sql = (
-        "SELECT tipo, valor_centavos FROM contas WHERE apagado_em IS NULL "
-        "AND pago_em >= ?"
+    soma_aberta = (
+        "SELECT COALESCE(SUM(valor_centavos), 0) " + base + " AND tipo = ? AND {}"
     )
-    params: tuple = (inicio_ano,)
-    if espaco is not None:
-        sql += " AND espaco = ?"
-        params = (inicio_ano, espaco)
-    pagas_ano = [dict(r) for r in store._ler(sql, params)]
+    soma_paga = (
+        "SELECT COALESCE(SUM(valor_centavos), 0) FROM contas WHERE apagado_em IS "
+        "NULL AND pago_em >= ? AND tipo = ?" + filtro
+    )
     return {
-        "atrasadas": atrasadas,
-        "proximas": proximas,
-        "a_pagar_no_mes": soma(do_mes, "pagar"),
-        "a_receber_no_mes": soma(do_mes, "receber"),
-        "atrasado_a_pagar": soma(atrasadas, "pagar"),
-        "pago_no_ano": soma(pagas_ano, "pagar"),
-        "recebido_no_ano": soma(pagas_ano, "receber"),
+        "atrasadas": lista("vencimento < ?", (hoje_iso,)),
+        "proximas": lista("vencimento >= ? AND vencimento <= ?", (hoje_iso, limite)),
+        "n_atrasadas": um(
+            f"SELECT COUNT(*) {base} AND vencimento < ?",  # noqa: S608
+            extra + (hoje_iso,),
+        ),
+        "proximas_7_dias": um(
+            f"SELECT COUNT(*) {base} AND vencimento >= ? AND vencimento <= ?",  # noqa: S608
+            extra + (hoje_iso, semana),
+        ),
+        "a_pagar_no_mes": um(
+            soma_aberta.format("substr(vencimento, 1, 7) = ?"),
+            extra + ("pagar", mes),
+        ),
+        "a_receber_no_mes": um(
+            soma_aberta.format("substr(vencimento, 1, 7) = ?"),
+            extra + ("receber", mes),
+        ),
+        "atrasado_a_pagar": um(
+            soma_aberta.format("vencimento < ?"), extra + ("pagar", hoje_iso)
+        ),
+        "pago_no_ano": um(soma_paga, (inicio_ano, "pagar") + extra),
+        "recebido_no_ano": um(soma_paga, (inicio_ano, "receber") + extra),
     }
 
 
@@ -464,18 +574,26 @@ def avisos_devidos(
 ) -> List[Dict[str, Any]]:
     """Contas em aberto cujo aviso chegou (vencimento − aviso_dias, às 9h) e
     ainda não foi mandado. Conta muito atrasada (mais de 1 dia) não avisa:
-    quem anota uma conta antiga não quer um aviso na hora."""
+    quem anota uma conta antiga não quer um aviso na hora. Espaço arquivado
+    também não avisa. O filtro do dia é feito no banco (o LIMIT não esconde
+    uma conta que já devia avisar)."""
     agora = agora or agora_ms()
     momento = datetime.fromtimestamp(agora / 1000, tz)
+    hoje = momento.date()
     rows = store._ler(
         "SELECT * FROM contas WHERE apagado_em IS NULL AND pago_em IS NULL "
-        "AND aviso_dias >= 0 AND aviso_enviado_em IS NULL "
-        "AND vencimento >= ? ORDER BY vencimento LIMIT 50",
-        ((momento.date() - timedelta(days=1)).isoformat(),),
+        "AND aviso_dias >= 0 AND aviso_enviado_em IS NULL AND vencimento >= ? "
+        "AND date(vencimento, '-' || aviso_dias || ' days') <= ? "
+        "AND espaco IN (SELECT id FROM espacos WHERE arquivado = 0) "
+        "ORDER BY vencimento LIMIT 50",
+        ((hoje - timedelta(days=1)).isoformat(), hoje.isoformat()),
     )
     devidos = []
     for r in rows:
-        venc = date.fromisoformat(r["vencimento"])
+        try:
+            venc = date.fromisoformat(r["vencimento"])
+        except (TypeError, ValueError):
+            continue  # data estranha (ex.: backup mexido): pula só esta
         dia_aviso = venc - timedelta(days=r["aviso_dias"])
         quando = datetime(
             dia_aviso.year, dia_aviso.month, dia_aviso.day, HORA_AVISO, tzinfo=tz
@@ -514,11 +632,10 @@ def quando_vence(vencimento: str, hoje: date) -> str:
 
 
 def texto_aviso(c: Dict[str, Any], hoje: date) -> str:
+    """Texto do aviso no celular. Sem o valor: o aviso aparece na tela de
+    bloqueio (revisão de 18/10); o valor fica no app."""
     verbo = "vence" if c["tipo"] == "pagar" else "a receber"
-    return (
-        f"{c['descricao']} — {reais(c['valor_centavos'])} — {verbo} "
-        f"{quando_vence(c['vencimento'], hoje)}"
-    )
+    return f"{c['descricao']} — {verbo} {quando_vence(c['vencimento'], hoje)}"
 
 
 # ── contexto da IA ───────────────────────────────────────────────────────
@@ -572,10 +689,13 @@ def secao_contexto(
         partes += [linha(c) for c in r["proximas"][:MAX_NO_CONTEXTO]]
     if not r["atrasadas"] and not r["proximas"]:
         partes.append(f"Nada em aberto nos próximos {DIAS_NO_CONTEXTO} dias.")
+    if r["n_atrasadas"] > len(r["atrasadas"]):
+        partes.append(f"(mais {r['n_atrasadas'] - len(r['atrasadas'])} atrasadas)")
+    z = "R$ 0,00"
     partes.append(
-        f"Neste mês, em aberto: a pagar {reais(r['a_pagar_no_mes'])}, "
-        f"a receber {reais(r['a_receber_no_mes'])}. "
-        f"No ano: pago {reais(r['pago_no_ano'])}, "
-        f"recebido {reais(r['recebido_no_ano'])}."
+        f"Neste mês, em aberto: a pagar {reais(r['a_pagar_no_mes'], z)}, "
+        f"a receber {reais(r['a_receber_no_mes'], z)}. "
+        f"No ano: pago {reais(r['pago_no_ano'], z)}, "
+        f"recebido {reais(r['recebido_no_ano'], z)}."
     )
     return "\n".join(partes)

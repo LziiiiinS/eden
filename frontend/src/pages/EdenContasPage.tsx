@@ -188,8 +188,17 @@ function EditarConta({ conta, onFechar, onMudou }: { conta: Conta; onFechar: () 
 
   const salvar = async () => {
     setErro(null);
+    // Manda só o que mudou: salvar sem mexer na data não arma o aviso de novo.
+    const antes = camposDe(conta);
+    const mudou = Object.fromEntries(
+      (Object.keys(campos) as (keyof Campos)[]).filter((k) => campos[k] !== antes[k]).map((k) => [k, campos[k]]),
+    );
+    if (Object.keys(mudou).length === 0) {
+      onFechar();
+      return;
+    }
     try {
-      await edenJson(`/contas/${conta.id}`, { method: 'PATCH', body: campos });
+      await edenJson(`/contas/${conta.id}`, { method: 'PATCH', body: mudou });
       onMudou();
       onFechar();
     } catch (e) {
@@ -209,7 +218,8 @@ function EditarConta({ conta, onFechar, onMudou }: { conta: Conta; onFechar: () 
 
   const reabrir = async () => {
     try {
-      await edenJson(`/contas/${conta.id}/reabrir`, { method: 'POST' });
+      const r = await edenJson<{ proxima_removida: boolean }>(`/contas/${conta.id}/reabrir`, { method: 'POST' });
+      toast.success(r.proxima_removida ? 'Voltou para em aberto (a próxima, criada sem querer, saiu).' : 'Voltou para em aberto.');
       onMudou();
       onFechar();
     } catch (e) {

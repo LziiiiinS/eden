@@ -42,20 +42,14 @@ async def resumo(request: Request, espaco: Optional[str] = None):
     r = await _rodar(financas.resumo, store, hoje, tz, filtro)
     return {
         "hoje": hoje.isoformat(),
-        "atrasadas": len(r["atrasadas"]),
-        "proximas_7_dias": sum(1 for c in r["proximas"] if (_data(c) - hoje).days <= 7),
+        "atrasadas": r["n_atrasadas"],
+        "proximas_7_dias": r["proximas_7_dias"],
         "a_pagar_no_mes": r["a_pagar_no_mes"],
         "a_receber_no_mes": r["a_receber_no_mes"],
         "atrasado_a_pagar": r["atrasado_a_pagar"],
         "pago_no_ano": r["pago_no_ano"],
         "recebido_no_ano": r["recebido_no_ano"],
     }
-
-
-def _data(c):
-    from datetime import date
-
-    return date.fromisoformat(c["vencimento"])
 
 
 @router.post("")
@@ -82,7 +76,7 @@ async def pagar(conta_id: str, request: Request):
 @router.post("/{conta_id}/reabrir")
 async def reabrir(conta_id: str, request: Request):
     store = _store(request)
-    return {"conta": await _rodar(financas.desfazer_pagamento, store, conta_id)}
+    return await _rodar(financas.desfazer_pagamento, store, conta_id)
 
 
 @router.delete("/{conta_id}")
