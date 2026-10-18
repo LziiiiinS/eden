@@ -71,7 +71,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Falar ''
-Falar 'Isso troca as conversas, os gastos e o perfil ATUAIS pelos desse backup.'
+Falar 'Isso troca as conversas, as tarefas e o perfil ATUAIS pelos desse backup.'
+Falar 'Contas desligadas continuam desligadas, os celulares ligam os avisos de novo sozinhos e o gasto do mes nao diminui.'
 Falar 'O estado atual fica guardado num backup "antes-de-restaurar" (dá para voltar).'
 $ok = Read-Host 'Digite SIM para continuar'
 if ($ok.Trim() -ne 'SIM') {

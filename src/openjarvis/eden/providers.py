@@ -274,10 +274,15 @@ async def stream_eden(
     ledger = ledger or get_ledger()
     max_out = settings.max_output_tokens
 
-    input_chars = sum(len(m.content or "") for m in messages)
-    reserve = settings.token_cost(
-        provider, model, estimate_tokens(input_chars), max_out
-    )
+    # Reserva por cima: letras comuns a ~3 por token; qualquer outro caractere
+    # (acentos, chinês, emoji…) conta como 1 token inteiro. Contar só os
+    # caracteres deixava a reserva em ~1/3 do custo real com textos assim
+    # (rodada final de segurança, 18/10).
+    texto_entrada = "".join(m.content or "" for m in messages)
+    input_chars = len(texto_entrada)
+    ascii_chars = sum(1 for ch in texto_entrada if ord(ch) < 128)
+    tokens_entrada = estimate_tokens(ascii_chars) + (input_chars - ascii_chars)
+    reserve = settings.token_cost(provider, model, tokens_entrada, max_out)
     # Separa o valor máximo deste pedido (conferir + separar juntos, para
     # pedidos simultâneos de vários aparelhos não passarem do limite).
     reservation = ledger.reserve(provider, settings, reserve)

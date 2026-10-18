@@ -367,3 +367,35 @@ def test_devices_cannot_cancel_codes(tmp_path):
     meu = {"Authorization": f"Bearer {a['chave']}"}
     assert c.delete("/v1/eden/pareamento", headers=meu).status_code == 403
     assert c.delete("/v1/eden/pareamento", headers=principal).status_code == 200
+
+
+def test_only_the_notebook_changes_profile_and_spaces(tmp_path):
+    """Rodada final (18/10): perfil e espaços entram no contexto da IA como
+    instrução do dono; um celular (chave de aparelho) só lê."""
+    from openjarvis.eden.organizacao import Organizacao
+    from openjarvis.eden.routes_organizacao import router as org_router
+
+    c = _app_com_chave(tmp_path)
+    c.app.include_router(org_router)
+    c.app.state.eden_organizacao = Organizacao(tmp_path / "organizacao.db")
+    principal = {"Authorization": f"Bearer {CHAVE}"}
+    a = c.post("/v1/eden/aparelhos", json={"nome": "iPhone"}, headers=principal).json()
+    celular = {"Authorization": f"Bearer {a['chave']}"}
+    assert c.get("/v1/eden/perfil", headers=celular).status_code == 200
+    assert (
+        c.put("/v1/eden/perfil", json={"texto": "x"}, headers=celular).status_code
+        == 403
+    )
+    assert (
+        c.patch(
+            "/v1/eden/espacos/pessoal", json={"descricao": "x"}, headers=celular
+        ).status_code
+        == 403
+    )
+    assert (
+        c.post("/v1/eden/espacos", json={"nome": "Novo"}, headers=celular).status_code
+        == 403
+    )
+    r = c.put("/v1/eden/perfil", json={"texto": "Levi"}, headers=principal)
+    assert r.status_code == 200
+    c.app.state.eden_organizacao.close()

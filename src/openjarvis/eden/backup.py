@@ -454,6 +454,111 @@ def _conferir_banco(caminho: Path) -> None:
 
 # ── restauração ─────────────────────────────────────────────────────────
 
+# Decisões de segurança tomadas DEPOIS do backup continuam valendo depois de
+# restaurar (rodada final de segurança, 18/10):
+# - contas desligadas continuam desligadas (Google, e-mail, Notion, Drive):
+#   essas linhas de "ajustes" ficam como estão agora;
+# - celulares desligados não voltam a receber avisos: as inscrições de avisos
+#   são apagadas (os aparelhos ligados se inscrevem de novo sozinhos);
+# - o gasto do mês nunca diminui: em cada mês recente fica o maior total
+#   (o de agora ou o do backup).
+AJUSTES_DAS_CONTAS = (
+    "google_agenda",  # google.Cofre.CHAVE
+    "google_email",  # gmail.CofreEmail.CHAVE
+    "google_email_conta",  # gmail.AJUSTE_CONTA
+    "google_drive_pasta",  # google.AJUSTE_PASTA_DRIVE
+    "notion_pagina_pai",  # notion.AJUSTE_PAI
+)
+_DIAS_GASTOS = 45
+
+
+def _abrir(caminho: Path) -> Optional[sqlite3.Connection]:
+    if not caminho.is_file() or caminho.is_symlink():
+        return None
+    conn = sqlite3.connect(str(caminho))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _tem_tabela(conn: sqlite3.Connection, nome: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (nome,)
+        ).fetchone()
+        is not None
+    )
+
+
+def _manter_decisoes_atuais(antiga: Path, atual: Path, agora_ms: int) -> None:
+    nova = _abrir(atual / "organizacao.db")
+    if nova is not None:
+        velha = _abrir(antiga / "organizacao.db")
+        try:
+            with nova:
+                if _tem_tabela(nova, "push_inscricoes"):
+                    nova.execute("DELETE FROM push_inscricoes")
+                if _tem_tabela(nova, "ajustes"):
+                    for chave in AJUSTES_DAS_CONTAS:
+                        nova.execute("DELETE FROM ajustes WHERE chave = ?", (chave,))
+                        if velha is not None and _tem_tabela(velha, "ajustes"):
+                            row = velha.execute(
+                                "SELECT valor FROM ajustes WHERE chave = ?", (chave,)
+                            ).fetchone()
+                            if row is not None:
+                                nova.execute(
+                                    "INSERT INTO ajustes (chave, valor) VALUES (?, ?)",
+                                    (chave, row["valor"]),
+                                )
+        finally:
+            nova.close()
+            if velha is not None:
+                velha.close()
+
+    novo_g = _abrir(atual / "gastos.db")
+    velho_g = _abrir(antiga / "gastos.db")
+    if novo_g is None or velho_g is None:
+        return
+    try:
+        if not (_tem_tabela(novo_g, "spending") and _tem_tabela(velho_g, "spending")):
+            return
+        desde = agora_ms - _DIAS_GASTOS * 24 * 3600 * 1000
+        meses = {
+            r[0]
+            for c in (novo_g, velho_g)
+            for r in c.execute(
+                "SELECT DISTINCT month FROM spending WHERE at_ms >= ?", (desde,)
+            )
+        }
+        colunas = [
+            r[1] for r in velho_g.execute("PRAGMA table_info(spending)") if r[1] != "id"
+        ]
+        lista = ", ".join(colunas)
+        marcas = ", ".join("?" for _ in colunas)
+        with novo_g:
+            for mes in meses:
+                total_novo = novo_g.execute(
+                    "SELECT COALESCE(SUM(cost_usd), 0) FROM spending WHERE month = ?",
+                    (mes,),
+                ).fetchone()[0]
+                total_velho = velho_g.execute(
+                    "SELECT COALESCE(SUM(cost_usd), 0) FROM spending WHERE month = ?",
+                    (mes,),
+                ).fetchone()[0]
+                if total_velho <= total_novo:
+                    continue
+                novo_g.execute("DELETE FROM spending WHERE month = ?", (mes,))
+                linhas = velho_g.execute(
+                    f"SELECT {lista} FROM spending WHERE month = ?",  # noqa: S608
+                    (mes,),
+                ).fetchall()
+                novo_g.executemany(
+                    f"INSERT INTO spending ({lista}) VALUES ({marcas})",  # noqa: S608
+                    [tuple(r) for r in linhas],
+                )
+    finally:
+        novo_g.close()
+        velho_g.close()
+
 
 def _remover(caminho: Path) -> None:
     if caminho.is_symlink() or caminho.is_file():
@@ -522,6 +627,18 @@ def restaurar(
             os.replace(nova_eden, atual)
         else:
             atual.mkdir()
+        if antiga.is_dir():
+            agora_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            try:
+                _manter_decisoes_atuais(antiga, atual, agora_ms)
+            except sqlite3.Error as exc:
+                # Volta tudo como estava: melhor não restaurar do que desfazer
+                # um desligamento sem avisar.
+                _remover(atual)
+                os.replace(antiga, atual)
+                raise ErroBackup(
+                    f"não consegui manter as contas desligadas ({exc}); nada mudou"
+                ) from exc
         # Os segredos do servidor (que não vão no backup) continuam valendo.
         if antiga.is_dir():
             for segredo in antiga.iterdir():

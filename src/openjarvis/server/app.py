@@ -624,8 +624,11 @@ def create_app(
             from openjarvis.server.auth_middleware import AuthMiddleware
 
             app.add_middleware(AuthMiddleware, api_key=api_key)
-        except Exception as exc:
-            logger.debug("Auth middleware init skipped: %s", exc)
+        except Exception:
+            # Éden (rodada final de segurança, 18/10): com chave configurada,
+            # nunca ligar sem a proteção da chave.
+            logger.exception("Auth middleware init failed; refusing to start")
+            raise
 
     # Register CORS last so it is the outermost middleware. In addition to
     # handling preflights, this ensures browser clients can read 401 responses

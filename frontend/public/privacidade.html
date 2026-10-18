@@ -34,12 +34,13 @@
   <ul>
     <li>A autorização do Google fica <strong>cifrada</strong> no servidor do dono. A chave da cifra não vai para backups.</li>
     <li>Os eventos lidos ficam em memória no servidor, para mostrar a agenda e responder perguntas.</li>
-    <li>A lista de e-mails (remetente, assunto e trecho) fica em memória por poucos minutos. Um e-mail só é guardado quando o dono toca em "Usar na conversa"; aí o texto vira um documento no servidor dele.</li>
+    <li>A lista de e-mails (remetente, assunto e trecho) fica em memória por poucos minutos. O texto de um e-mail só é guardado quando o dono toca em "Usar na conversa": aí ele vira um documento no servidor dele, entra nos backups do servidor e pode ser usado nas respostas.</li>
+    <li>As conversas (inclusive respostas da IA que citem e-mails ou eventos) ficam no servidor do dono, nos aparelhos dele e nos backups.</li>
     <li>Nada é vendido, compartilhado com terceiros para publicidade ou usado para treinar modelos pelo Éden.</li>
   </ul>
 
   <h2>Inteligência artificial</h2>
-  <p>Para responder ao dono, o Éden envia o texto da conversa e, quando a pergunta pede, dados do próprio dono para os serviços de IA que ele escolheu (OpenAI e Anthropic), pelas APIs dessas empresas. Esses dados podem ser títulos e horários de eventos da agenda, remetente, assunto e trecho dos e-mails recentes, e as contas que ele anotou (descrição, valor e vencimento).</p>
+  <p>Para responder ao dono, o Éden envia o texto da conversa e, quando a pergunta pede, dados do próprio dono para os serviços de IA que ele escolheu (OpenAI e Anthropic), pelas APIs dessas empresas. Esses dados podem ser títulos e horários de eventos da agenda, remetente, assunto e trecho dos e-mails recentes, o texto inteiro de um e-mail que o dono pôs na conversa, e as contas que ele anotou (descrição, valor e vencimento).</p>
 
   <h2>Como retirar o acesso</h2>
   <ul>

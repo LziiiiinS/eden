@@ -95,7 +95,9 @@ fi
 
 if [ "$sim" != 1 ]; then
   echo
-  echo "Isso troca as conversas, os gastos e o perfil ATUAIS pelos desse backup."
+  echo "Isso troca as conversas, as tarefas e o perfil ATUAIS pelos desse backup."
+  echo "Contas desligadas (Google, e-mail, Notion) continuam desligadas, os celulares"
+  echo "ligam os avisos de novo sozinhos e o gasto do mês não diminui."
   echo "O estado atual fica guardado num backup \"antes-de-restaurar\" (dá para voltar)."
   read -r -p "Digite SIM para continuar: " ok
   if [ "$ok" != "SIM" ] && [ "$ok" != "sim" ]; then

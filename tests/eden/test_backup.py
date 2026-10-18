@@ -401,3 +401,119 @@ def test_real_eden_databases_pass_the_schema_check(tmp_path, dados, backups):
     Organizacao(eden / "organizacao.db").close()
     arquivo = backup.criar(backups, dados)
     backup.restaurar(arquivo, dados)
+
+
+# ── rodada final de segurança (18/10): restaurar não desfaz decisões ─────
+
+
+def _org(caminho: Path, ajustes: dict, inscricoes: list) -> None:
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(caminho))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS ajustes (chave TEXT PRIMARY KEY, valor TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS push_inscricoes "
+        "(id INTEGER PRIMARY KEY, endpoint TEXT)"
+    )
+    conn.execute("DELETE FROM ajustes")
+    conn.execute("DELETE FROM push_inscricoes")
+    conn.executemany("INSERT INTO ajustes VALUES (?, ?)", list(ajustes.items()))
+    conn.executemany(
+        "INSERT INTO push_inscricoes (endpoint) VALUES (?)", [(e,) for e in inscricoes]
+    )
+    conn.commit()
+    conn.close()
+
+
+def _gastos(caminho: Path, linhas: list) -> None:
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(caminho))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS spending (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "at_ms INTEGER NOT NULL, month TEXT NOT NULL, provider TEXT NOT NULL, "
+        "model TEXT NOT NULL, kind TEXT NOT NULL, input_tokens INTEGER NOT NULL "
+        "DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, audio_seconds REAL NOT "
+        "NULL DEFAULT 0, cost_usd REAL NOT NULL, estimated INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.execute("DELETE FROM spending")
+    conn.executemany(
+        "INSERT INTO spending (at_ms, month, provider, model, kind, cost_usd) "
+        "VALUES (?, ?, 'openai', 'm', 'chat', ?)",
+        linhas,
+    )
+    conn.commit()
+    conn.close()
+
+
+def _soma(caminho: Path, mes: str) -> float:
+    conn = sqlite3.connect(str(caminho))
+    try:
+        return conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM spending WHERE month = ?", (mes,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_restore_keeps_disconnections_and_never_lowers_spending(dados, backups):
+    import time
+
+    agora = int(time.time() * 1000)
+    mes = time.strftime("%Y-%m")
+    org = dados / "eden" / "organizacao.db"
+    gastos = dados / "eden" / "gastos.db"
+    # No backup: Google e e-mail ligados, um celular inscrito, pouco gasto.
+    _org(
+        org,
+        {
+            "google_agenda": "cifrado-velho",
+            "google_email": "x",
+            "notion_pagina_pai": "p",
+        },
+        ["https://push.exemplo/celular-perdido"],
+    )
+    _gastos(gastos, [(agora, mes, 0.50)])
+    arquivo = backup.criar(backups, dados, hora="20261015-030000")
+
+    # Depois: tudo desligado, celular desligado, gasto maior.
+    _org(org, {"google_email_conta": "nova@exemplo.com"}, [])
+    _gastos(gastos, [(agora, mes, 9.40), (agora, mes, 0.50)])
+
+    backup.restaurar(arquivo, dados)
+
+    conn = sqlite3.connect(str(org))
+    try:
+        ajustes = dict(conn.execute("SELECT chave, valor FROM ajustes"))
+        inscricoes = conn.execute("SELECT COUNT(*) FROM push_inscricoes").fetchone()[0]
+    finally:
+        conn.close()
+    assert ajustes == {"google_email_conta": "nova@exemplo.com"}
+    assert inscricoes == 0
+    assert round(_soma(gastos, mes), 2) == 9.90
+
+
+def test_restore_keeps_a_bigger_spending_from_the_backup(dados, backups):
+    import time
+
+    agora = int(time.time() * 1000)
+    mes = time.strftime("%Y-%m")
+    gastos = dados / "eden" / "gastos.db"
+    _gastos(gastos, [(agora, mes, 7.00)])
+    arquivo = backup.criar(backups, dados, hora="20261015-030000")
+    _gastos(gastos, [(agora, mes, 1.00)])
+    backup.restaurar(arquivo, dados)
+    assert round(_soma(gastos, mes), 2) == 7.00
+
+
+def test_account_settings_list_matches_the_modules():
+    pytest.importorskip("cryptography")
+    from openjarvis.eden import gmail, google, notion
+
+    assert set(backup.AJUSTES_DAS_CONTAS) == {
+        google.Cofre.CHAVE,
+        gmail.CofreEmail.CHAVE,
+        gmail.AJUSTE_CONTA,
+        google.AJUSTE_PASTA_DRIVE,
+        notion.AJUSTE_PAI,
+    }

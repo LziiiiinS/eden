@@ -100,8 +100,18 @@ async def listar_espacos(request: Request, arquivados: bool = False):
     return {"espacos": await _rodar(store.listar_espacos, arquivados)}
 
 
+def _so_notebook(request: Request) -> None:
+    """Perfil e espaços entram no contexto da IA como instrução do dono: só a
+    chave principal (notebook) muda. Um celular roubado não deixa instruções
+    que continuam depois de desligado (rodada final de segurança, 18/10)."""
+    from openjarvis.eden.routes_aparelhos import exigir_chave_principal
+
+    exigir_chave_principal(request)
+
+
 @router.post("/espacos")
 async def criar_espaco(request: Request):
+    _so_notebook(request)
     store = _store(request)
     dados = await _corpo(request)
     espaco = await _rodar(
@@ -112,6 +122,7 @@ async def criar_espaco(request: Request):
 
 @router.patch("/espacos/{espaco_id}")
 async def editar_espaco(espaco_id: str, request: Request):
+    _so_notebook(request)
     store = _store(request)
     dados = await _corpo(request)
     return {"espaco": await _rodar(store.atualizar_espaco, espaco_id, dados)}
@@ -127,6 +138,7 @@ async def ver_perfil(request: Request):
 
 @router.put("/perfil")
 async def salvar_perfil(request: Request):
+    _so_notebook(request)
     store = _store(request)
     dados = await _corpo(request)
     return {"perfil": await _rodar(store.salvar_perfil, dados.get("texto", ""))}

@@ -151,3 +151,15 @@ class TestEdenEmbeddedAssets:
         assert "img-src 'self' data: blob:" in csp
         assert "http" not in csp
         assert "*" not in csp
+
+
+class TestEdenScriptsOnlyFromTheApp:
+    """Rodada final de segurança (18/10): sem script inline nem eval."""
+
+    def test_csp_blocks_inline_scripts_and_eval(self):
+        csp = SECURITY_HEADERS["Content-Security-Policy"]
+        assert "script-src 'self';" in csp
+        assert "unsafe-eval" not in csp
+        assert "object-src 'none'" in csp
+        assert "frame-ancestors 'none'" in csp
+        assert "base-uri 'none'" in csp

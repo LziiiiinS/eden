@@ -217,7 +217,7 @@ def montar(
         f"({hoje.day:02d}/{hoje.month:02d}/{hoje.year}), "
         f"{momento.hour:02d}:{momento.minute:02d} (horário de Brasília).\n"
         f"Espaço ativo: {ativo['nome']} ({ativo['id']})."
-        + (f" {ativo['descricao']}" if ativo["descricao"] else "")
+        + (f" Descrição: {_q(ativo['descricao'])}." if ativo["descricao"] else "")
         + (f"\nOutros espaços: {outros}." if outros else "")
         + "\nUse só as informações do espaço ativo, a não ser que a pessoa peça outro."
     )

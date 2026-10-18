@@ -71,8 +71,9 @@ uso.
 ## Ligar a Google Agenda
 
 O Éden lê os seus eventos e sugere eventos novos ou mudanças, sempre com o
-cartão de confirmação. Ele pede **só a permissão da agenda**. É grátis e não
-precisa de cartão. Faça no notebook.
+cartão de confirmação. Ele pede **só a permissão da agenda** (e, se você
+ligar a opção, a do Drive só para os arquivos que o próprio Éden cria). É
+grátis e não precisa de cartão. Faça no notebook.
 
 1. No Éden: **Configurações → Google Agenda**. Copie o **endereço de retorno**
    que aparece lá (termina em `/v1/eden/google/retorno`).
@@ -348,6 +349,10 @@ apaga nada. Só apaga se o volume for removido no Docker Desktop.
   num backup `antes-de-restaurar` (para dar para desfazer), troca os dados e
   liga de novo. Um arquivo danificado ou que não seja do Éden é recusado sem
   mexer em nada.
+- **O que não volta atrás ao restaurar** (para um backup antigo não desfazer
+  uma decisão de segurança): contas desligadas (Google, e-mail, Notion)
+  continuam desligadas, os avisos dos celulares recomeçam (os aparelhos
+  ligados se inscrevem de novo sozinhos) e o gasto do mês não diminui.
 - **Backup de outro computador** (ex.: levar para o servidor): copie o arquivo
   para a pasta `backups` do outro lado e use o `restaurar-eden` de lá.
 - Depois de voltar um backup, celulares e navegadores que ainda tiverem

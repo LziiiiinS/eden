@@ -11,7 +11,6 @@ import { EdenEmailSettings } from '../components/Eden/EdenEmailSettings';
 import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
 import { EdenAparelhosSettings } from '../components/Eden/EdenAparelhosSettings';
 import { criarAparelho } from '../lib/eden-aparelhos';
-import { ErroEden } from '../lib/eden-org';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
 import { EdenSpending } from '../components/Sidebar/EdenSpending';
@@ -130,7 +129,7 @@ function PairingCodeBlock() {
 }
 
 // Éden: QR code para conectar um celular sem digitar a chave de acesso.
-function ConnectPhone({ apiKey }: { apiKey: string }) {
+function ConnectPhone() {
   const [phoneUrl, setPhoneUrl] = useState(initialPhoneUrl);
   const [showQr, setShowQr] = useState(false);
   // Parte 5: o QR leva uma chave só para o celular novo (não a principal).
@@ -226,14 +225,12 @@ function ConnectPhone({ apiKey }: { apiKey: string }) {
             }
             setQrErro(null);
             try {
+              // Sempre uma chave só do aparelho: o QR code nunca leva a chave
+              // principal (rodada final de segurança, 18/10).
               setQrKey((await criarAparelho('Celular (QR code)', true)).chave);
             } catch (e) {
-              if (e instanceof ErroEden && e.status === 404) {
-                setQrKey(apiKey); // servidor antigo, sem chave por aparelho
-              } else {
-                setQrErro((e as Error).message);
-                return;
-              }
+              setQrErro((e as Error).message);
+              return;
             }
             setShowQr(true);
           }}
@@ -478,7 +475,7 @@ export function EdenSettingsPage() {
 
         {settings.apiKey && (
           <Section title="Conectar um celular">
-            <ConnectPhone apiKey={settings.apiKey} />
+            <ConnectPhone />
           </Section>
         )}
 
