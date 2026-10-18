@@ -154,6 +154,25 @@ No dia a dia:
 - Para tirar o acesso: **Configurações → E-mail → Desconectar** (ou em
   myaccount.google.com → Segurança → Apps de terceiros).
 
+## Contas e impostos
+
+Menu **Contas e impostos**: anote o que tem para **pagar** (aluguel, internet,
+DAS do MEI…) e o que tem para **receber** (clientes), com valor, vencimento,
+repetição (uma vez, todo mês, todo ano) e aviso no celular alguns dias antes
+(às 9h).
+
+- O Éden **não paga nada, não liga no banco e não emite nota**: só anota,
+  avisa e responde ("o que vence esta semana?", "quanto tenho a receber?").
+- Marcar uma conta que repete como paga cria a próxima sozinha (dia 31 vira o
+  último dia dos meses curtos). Marcou sem querer: abra a conta → **Voltar
+  para em aberto**.
+- Modelos prontos: **DAS do MEI** (todo dia 20) e **Declaração anual do MEI**
+  (até 31 de maio). Eles vêm sem valor: os valores mudam todo ano, confira no
+  Portal do Empreendedor (gov.br/mei).
+- Pela conversa ("anota o aluguel de 1.500 todo dia 5"), o Éden sugere e você
+  confirma no cartão, como nas tarefas.
+- Valor zero = "sem valor" (bom para prazos, como a declaração).
+
 ## Documentos na conversa
 
 No campo de mensagem, toque em **Documentos** → **Enviar arquivo** e escolha um

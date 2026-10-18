@@ -421,6 +421,39 @@ async def enviar_lembretes_vencidos(
     return tratados
 
 
+async def enviar_avisos_de_contas(
+    store, chave, client, tz, agora_ms: Optional[int] = None
+) -> int:
+    """Parte 5: avisa as contas que vencem (aviso_dias antes, às 9h)."""
+    from datetime import datetime
+
+    from openjarvis.eden import financas
+
+    agora_ms = agora_ms or int(time.time() * 1000)
+    hoje = datetime.fromtimestamp(agora_ms / 1000, tz).date()
+    tratados = 0
+    for conta in financas.avisos_devidos(store, tz, agora_ms):
+        # Marca antes de mandar: nunca avisa duas vezes a mesma conta.
+        if not financas.marcar_aviso(store, conta["id"]):
+            continue
+        tratados += 1
+        if not store.inscricoes_push():
+            continue
+        titulo = "Conta a pagar" if conta["tipo"] == "pagar" else "Valor a receber"
+        await enviar(
+            store,
+            chave,
+            {
+                "titulo": titulo,
+                "corpo": financas.texto_aviso(conta, hoje),
+                "tag": f"conta-{conta['id']}",
+                "url": "/contas",
+            },
+            client,
+        )
+    return tratados
+
+
 # Limpeza automática: uma vez por dia, apaga sugestões e registro de ações com
 # mais de 90 dias (decisão do Levi em 16/10).
 DIAS_GUARDADOS = 90
@@ -476,6 +509,9 @@ def registrar_lembretes(app) -> None:
                         chave = await asyncio.to_thread(carregar_chave)
                         estado["chave"] = chave
                     await enviar_lembretes_vencidos(store, chave, client)
+                    await enviar_avisos_de_contas(
+                        store, chave, client, get_settings().tz
+                    )
                     await asyncio.to_thread(limpar_se_preciso, store)
                 except asyncio.CancelledError:
                     raise

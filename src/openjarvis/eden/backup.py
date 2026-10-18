@@ -405,6 +405,7 @@ ESQUEMA_PERMITIDO = {
         "conversa_documentos",
         "lugares",
         "trajetos",
+        "contas",
     },
 }
 

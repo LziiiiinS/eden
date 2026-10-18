@@ -145,8 +145,19 @@ com_chave "$BASE/v1/eden/email/status" | grep -q '"configurado":false' \
   || { echo "error: e-mail diz que está configurado sem o Google"; exit 1; }
 echo "ok: e-mail desligado sem o Google configurado"
 
+# Contas e impostos: protegidas pela chave; anotar e ler de volta (fictício).
+codigo=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v1/eden/contas")
+[ "$codigo" = "401" ] || { echo "error: contas sem a chave de acesso devolveu $codigo"; exit 1; }
+curl -sS -X POST -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"descricao":"Conta do teste","valor":"10,00","vencimento":"2030-01-05"}' \
+  "$BASE/v1/eden/contas" | grep -q '"valor_centavos":1000' \
+  || { echo "error: conta de teste não foi anotada"; exit 1; }
+echo "ok: contas protegidas e anotando"
+
 docker restart eden-teste >/dev/null
 esperar
+com_chave "$BASE/v1/eden/contas" | grep -q '"Conta do teste"' || { echo "error: conta sumiu depois de reiniciar"; exit 1; }
+echo "ok: conta continua depois de reiniciar"
 com_chave "$BASE/v1/eden/conversations/c1" | grep -q '"m1"' || { echo "error: conversa sumiu depois de reiniciar"; exit 1; }
 echo "ok: conversa continua depois de reiniciar"
 

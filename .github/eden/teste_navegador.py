@@ -278,6 +278,30 @@ def main() -> int:
         assert status == 200
         passo("Clima: desligado no começo, liga pela página")
 
+        # Contas (Parte 5): anotar pela página, marcar como paga e a próxima
+        # (todo mês) aparece sozinha. Dados fictícios.
+        pg.goto(BASE + "/contas")
+        pg.get_by_label("Descrição").first.fill("Internet do teste (fictícia)")
+        pg.get_by_label("Valor em reais").first.fill("99,90")
+        pg.get_by_label("Vencimento").first.fill("2030-01-10")
+        pg.get_by_label("Repete").first.select_option("mensal")
+        pg.get_by_role("button", name="Anotar").click()
+        expect(pg.get_by_text("Internet do teste (fictícia)").first).to_be_visible(
+            timeout=30_000
+        )
+        expect(pg.get_by_text("R$ 99,90").first).to_be_visible()
+        pg.get_by_role("button", name="Marcar como paga").first.click()
+        status, abertas = api("GET", "/v1/eden/contas?estado=abertas")
+        for _ in range(20):
+            if status == 200 and any(
+                c["vencimento"] == "2030-02-10" for c in abertas["contas"]
+            ):
+                break
+            time.sleep(0.5)
+            status, abertas = api("GET", "/v1/eden/contas?estado=abertas")
+        assert any(c["vencimento"] == "2030-02-10" for c in abertas["contas"]), abertas
+        passo("Contas: anota, marca como paga e cria a do mês seguinte")
+
         # E-mail (Parte 5): sem o Google configurado, a página só explica.
         pg.goto(BASE + "/email")
         expect(pg.get_by_text("E-mail ainda não conectado")).to_be_visible(

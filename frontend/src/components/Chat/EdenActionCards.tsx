@@ -2,7 +2,7 @@
 // Nada acontece sem a pessoa tocar em "Confirmar". O app manda só o id e a
 // assinatura do cartão; o servidor executa o que ele mesmo guardou.
 import { useEffect, useState } from 'react';
-import { Check, X, ListTodo, Brain, StickyNote, Clock, AlertTriangle, Loader2 } from 'lucide-react';
+import { Check, X, ListTodo, Brain, StickyNote, Clock, AlertTriangle, Loader2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '../../lib/store';
 import { edenJson, ErroEden, type Acao } from '../../lib/eden-org';
@@ -16,6 +16,7 @@ export function avisarMudanca(): void {
 function Icone({ tipo }: { tipo: string }) {
   if (tipo.startsWith('tarefa')) return <ListTodo size={16} />;
   if (tipo.startsWith('memoria')) return <Brain size={16} />;
+  if (tipo.startsWith('conta')) return <Wallet size={16} />;
   return <StickyNote size={16} />;
 }
 
