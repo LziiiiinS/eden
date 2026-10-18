@@ -12,6 +12,7 @@ import { EdenTodayPage } from './pages/EdenTodayPage';
 import { EdenClimaPage } from './pages/EdenClimaPage';
 import { EdenRotasPage } from './pages/EdenRotasPage';
 import { EdenEmailPage } from './pages/EdenEmailPage';
+import { EdenContasPage } from './pages/EdenContasPage';
 import { EdenAccessGate } from './components/EdenAccessGate';
 import { GetStartedPage } from './pages/GetStartedPage';
 import { AgentsPage } from './pages/AgentsPage';
@@ -221,6 +222,7 @@ export default function App() {
           <Route path="rotas" element={<EdenRotasPage />} />
           {/* Éden (Parte 5): e-mail (Gmail) só para ler. */}
           <Route path="email" element={<EdenEmailPage />} />
+          <Route path="contas" element={<EdenContasPage />} />
           <Route path="settings/avancado" element={<SettingsPage />} />
           <Route path="get-started" element={<GetStartedPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />

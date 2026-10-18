@@ -191,6 +191,31 @@ CREATE TABLE IF NOT EXISTS push_inscricoes (
     usado_em   INTEGER,
     falhas     INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS contas (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    espaco           TEXT    NOT NULL,
+    tipo             TEXT    NOT NULL CHECK (tipo IN ('pagar', 'receber')),
+    descricao        TEXT    NOT NULL,
+    valor_centavos   INTEGER NOT NULL CHECK (valor_centavos >= 0),
+    vencimento       TEXT    NOT NULL,
+    dia              INTEGER NOT NULL,
+    repete           TEXT    NOT NULL DEFAULT 'nao'
+                     CHECK (repete IN ('nao', 'mensal', 'anual')),
+    categoria        TEXT    NOT NULL DEFAULT '',
+    aviso_dias       INTEGER NOT NULL DEFAULT 2,
+    aviso_enviado_em INTEGER,
+    pago_em          INTEGER,
+    notas            TEXT    NOT NULL DEFAULT '',
+    origem           TEXT    NOT NULL,
+    criado_em        INTEGER NOT NULL,
+    atualizado_em    INTEGER NOT NULL,
+    apagado_em       INTEGER,
+    versao           INTEGER NOT NULL DEFAULT 0,
+    gerada_de        INTEGER
+);
+CREATE INDEX IF NOT EXISTS contas_geradas ON contas (gerada_de);
+CREATE INDEX IF NOT EXISTS contas_abertas ON contas (vencimento)
+    WHERE pago_em IS NULL AND apagado_em IS NULL;
 """
 
 
