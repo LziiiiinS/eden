@@ -49,11 +49,6 @@ def create_security_middleware() -> Any:
             response.headers.setdefault(
                 "Referrer-Policy", "strict-origin-when-cross-origin"
             )
-            # Éden (rodada final de segurança, 18/10): respostas da API
-            # (conversas, e-mails, contas…) não ficam guardadas no disco do
-            # navegador; uma rota pode pedir outra coisa.
-            if request.url.path.startswith("/v1/"):
-                response.headers.setdefault("Cache-Control", "no-store")
             # microphone=(self): the chat UI records voice input from this same
             # origin. An empty allowlist blocked its own feature.
             # Éden: geolocation=(self) para "melhor caminho saindo daqui" (só
