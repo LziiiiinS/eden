@@ -182,26 +182,70 @@ class SpendingLedger:
     ) -> None:
         now = at_ms if at_ms is not None else int(time.time() * 1000)
         with self._lock:
-            if reservation:
-                self._reservations.pop(reservation, None)
-            self._conn.execute(
-                "INSERT INTO spending (at_ms, month, provider, model, kind, "
-                "input_tokens, output_tokens, audio_seconds, cost_usd, estimated) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
+            try:
+                self._gravar_locked(
                     now,
-                    month_key(settings, now),
                     provider,
                     model,
                     kind,
-                    int(input_tokens),
-                    int(output_tokens),
-                    float(audio_seconds),
-                    float(max(0.0, cost_usd)),
-                    1 if estimated else 0,
-                ),
-            )
-            self._conn.commit()
+                    cost_usd,
+                    settings,
+                    input_tokens,
+                    output_tokens,
+                    audio_seconds,
+                    estimated,
+                )
+            except Exception:
+                # Não conseguiu anotar (disco cheio, banco só leitura): o valor
+                # continua contando no limite, como dívida, até o servidor
+                # reiniciar. Nunca libera a reserva sem anotar o custo
+                # (revisão do Codex, 18/10).
+                reservado = (
+                    self._reservations.pop(reservation, None) if reservation else None
+                )
+                valor = max(
+                    float(max(0.0, cost_usd)), reservado[2] if reservado else 0.0
+                )
+                self._reservations[f"divida-{uuid.uuid4().hex}"] = (
+                    provider,
+                    month_key(settings, now),
+                    valor,
+                )
+                raise
+            if reservation:
+                self._reservations.pop(reservation, None)
+
+    def _gravar_locked(
+        self,
+        now: int,
+        provider: str,
+        model: str,
+        kind: str,
+        cost_usd: float,
+        settings: EdenSettings,
+        input_tokens: int,
+        output_tokens: int,
+        audio_seconds: float,
+        estimated: bool,
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO spending (at_ms, month, provider, model, kind, "
+            "input_tokens, output_tokens, audio_seconds, cost_usd, estimated) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                now,
+                month_key(settings, now),
+                provider,
+                model,
+                kind,
+                int(input_tokens),
+                int(output_tokens),
+                float(audio_seconds),
+                float(max(0.0, cost_usd)),
+                1 if estimated else 0,
+            ),
+        )
+        self._conn.commit()
 
     def summary(
         self, settings: EdenSettings, *, at_ms: Optional[int] = None

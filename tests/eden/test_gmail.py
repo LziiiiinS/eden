@@ -358,3 +358,26 @@ def test_only_one_listing_at_a_time(cliente, monkeypatch):
     finally:
         gmail._LISTANDO.release()
     assert len(gmail.listar(cliente)) == 2
+
+
+def test_refresh_that_races_a_disconnect_does_not_keep_access(store, tmp_path):
+    """Revisão do Codex (18/10): uma renovação que começou antes de desligar
+    não guarda o token depois."""
+
+    class Corrida(GmailFalso):
+        cliente = None
+
+        def post(self, url, data=None, **kw):
+            if data and data.get("grant_type") == "refresh_token" and self.cliente:
+                self.cliente.desconectar(revogar=False)  # desliga no meio
+            return super().post(url, data=data, **kw)
+
+    falso = Corrida()
+    cofre = gmail.CofreEmail(store, tmp_path / "eden" / "google.key")
+    c = google.ClienteGoogle(cofre, CFG, http=falso, nome="E-mail (Gmail)")
+    c.trocar_codigo("codigo", "verificador", gmail.ESCOPO_GMAIL)
+    c._acesso = None  # força renovar
+    falso.cliente = c
+    with pytest.raises(google.ErroGoogle):
+        c._token_de_acesso()
+    assert c._acesso is None

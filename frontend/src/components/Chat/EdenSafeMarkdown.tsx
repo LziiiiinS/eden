@@ -33,23 +33,34 @@ export function SafeLink({ href, children }: { href?: string; children?: React.R
     return <a href={destino}>{children}</a>;
   }
   const site = externo.host;
+  const abrir = () => {
+    // O endereço inteiro aparece (sem cortar): um link pode levar dados
+    // escondidos depois do "?" (ex.: texto de um documento que enganou a IA).
+    // Mostra o endereço já interpretado pelo navegador (o que vai abrir de
+    // verdade), não o texto que a IA escreveu.
+    const real = externo.href;
+    const ok = window.confirm(
+      `Abrir um site fora do Éden?\n\n${site}\n\nEndereço completo:\n${real}\n\nEste link foi escrito pela IA. Só abra se você confia nele e se o endereço não leva informações suas.`,
+    );
+    if (ok) window.open(real, '_blank', 'noopener,noreferrer');
+  };
+  // Sem href: botão do meio, "abrir em nova aba" e o toque longo do celular
+  // não conseguem pular a pergunta (revisão do Codex, 18/10).
   return (
     <a
-      href={destino}
-      rel="noopener noreferrer nofollow"
+      role="link"
+      tabIndex={0}
       title={site}
+      style={{ cursor: 'pointer', textDecoration: 'underline' }}
       onClick={(e) => {
         e.preventDefault();
-        // O endereço inteiro aparece: um link pode levar dados escondidos
-        // depois do "?" (ex.: texto de um documento que enganou a IA).
-        // Mostra o endereço já interpretado pelo navegador (o que vai abrir
-        // de verdade), não o texto que a IA escreveu.
-        const real = externo.href;
-        const inteiro = real.length > 300 ? `${real.slice(0, 300)}…` : real;
-        const ok = window.confirm(
-          `Abrir um site fora do Éden?\n\n${site}\n\nEndereço completo:\n${inteiro}\n\nEste link foi escrito pela IA. Só abra se você confia nele e se o endereço não leva informações suas.`,
-        );
-        if (ok) window.open(real, '_blank', 'noopener,noreferrer');
+        abrir();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          abrir();
+        }
       }}
     >
       {children}

@@ -1045,10 +1045,13 @@ async def transcribe_speech(request: Request):
     from openjarvis.eden.redact import redact_secrets
 
     client_ms = speech_budget.parse_client_ms(form.get("duration_ms"))
+    arquivo_s = speech_budget.duracao_do_arquivo(audio_bytes)
     reservation = None
     if speech_budget.tracked(backend):
         try:
-            reservation = speech_budget.check(backend, len(audio_bytes), client_ms)
+            reservation = speech_budget.check(
+                backend, len(audio_bytes), client_ms, arquivo_s
+            )
         except BudgetExceeded as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
 
@@ -1074,6 +1077,7 @@ async def transcribe_speech(request: Request):
             len(audio_bytes),
             client_ms,
             reservation=reservation,
+            arquivo_s=arquivo_s,
         )
 
     return {

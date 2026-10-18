@@ -362,6 +362,11 @@ def _normalizar_evento(bruto: Any, tz: timezone) -> Optional[Dict[str, Any]]:
         "dia_inteiro": dia_inteiro,
         "convite": convite,
         "convidados": len(convidados),
+        # Versão do evento no Google: muda a cada alteração (convidados,
+        # local…). O cartão de mudar só vale para a versão que mostrou.
+        "etag": "".join(
+            c for c in str(bruto.get("etag") or "")[:200] if 32 < ord(c) < 127
+        ),
     }
 
 
@@ -454,6 +459,9 @@ class ClienteGoogle:
         self._relogio = relogio
         self._lock = threading.Lock()
         self._acesso: Optional[Tuple[str, float]] = None
+        # Muda a cada desconexão: uma renovação que começou antes não guarda o
+        # token depois (revisão do Codex, 18/10).
+        self._geracao = 0
 
     @property
     def cfg(self) -> Dict[str, str]:
@@ -493,13 +501,20 @@ class ClienteGoogle:
             raise ErroGoogle("Resposta estranha do Google.") from exc
         return dados if isinstance(dados, dict) else {}
 
-    def _guardar_acesso(self, dados: Dict[str, Any]) -> str:
+    def _guardar_acesso(
+        self, dados: Dict[str, Any], geracao: Optional[int] = None
+    ) -> str:
         token = str(dados.get("access_token", ""))
         try:
             validade = int(dados.get("expires_in", 0))
         except (TypeError, ValueError):
             validade = 0
         with self._lock:
+            if geracao is not None and geracao != self._geracao:
+                raise ErroGoogle(
+                    f"A conta ({self.nome}) não está conectada.",
+                    "eden_google_desconectado",
+                )
             self._acesso = (token, self._relogio() + max(0, validade) - 60)
         return token
 
@@ -565,6 +580,7 @@ class ClienteGoogle:
         self.cofre.apagar()
         with self._lock:
             self._acesso = None
+            self._geracao += 1
         if not guardado:
             return True
         if not revogar:
@@ -588,6 +604,7 @@ class ClienteGoogle:
                 and self._acesso[1] > self._relogio()
             ):
                 return self._acesso[0]
+            geracao = self._geracao
         guardado = self.cofre.ler()
         if not guardado:
             raise ErroGoogle(
@@ -620,7 +637,15 @@ class ClienteGoogle:
                 )
         if resposta.status_code != 200:
             raise ErroGoogle("O Google não respondeu agora. Tente de novo.")
-        return self._guardar_acesso(self._json(resposta))
+        token = self._guardar_acesso(self._json(resposta), geracao)
+        if not self.cofre.conectado():
+            with self._lock:
+                self._acesso = None
+            raise ErroGoogle(
+                f"A conta ({self.nome}) não está conectada.",
+                "eden_google_desconectado",
+            )
+        return token
 
     def _pedir(
         self,
@@ -643,6 +668,11 @@ class ClienteGoogle:
                 raise ErroGoogle("Evento não encontrado na agenda.", "eden_google_404")
             if resposta.status_code == 409:
                 raise ErroGoogle("Esse evento já existe.", "eden_google_409")
+            if resposta.status_code == 412:
+                raise ErroGoogle(
+                    "O evento mudou no Google depois da sugestão. Peça de novo.",
+                    "eden_google_412",
+                )
             if resposta.status_code >= 400:
                 raise ErroGoogle(f"O Google recusou o pedido ({resposta.status_code}).")
             return self._json(resposta)
@@ -694,13 +724,19 @@ class ClienteGoogle:
         return {"evento": evento["id"] if evento else evento_id}
 
     def editar(
-        self, evento_id: str, mudancas: Dict[str, Any], tz: timezone
+        self,
+        evento_id: str,
+        mudancas: Dict[str, Any],
+        tz: timezone,
+        etag: str = "",
     ) -> Dict[str, Any]:
         if not _EVENTO_ID.fullmatch(evento_id or ""):
             raise ErroGoogle("Evento não encontrado na agenda.", "eden_google_404")
+        # If-Match: o Google recusa (412) se o evento mudou desde o cartão.
         self._pedir(
             "PATCH",
             f"{URL_AGENDA}/{quote(evento_id, safe='')}",
+            cabecalhos={"If-Match": etag} if etag else None,
             json=mudancas,
         )
         return {"evento": evento_id}
