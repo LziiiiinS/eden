@@ -82,15 +82,11 @@ SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(self), geolocation=(self)",
-    # Éden (rodada final de segurança, 18/10): scripts só do próprio Éden,
-    # sem "inline" nem "eval" (a chave fica no navegador: um texto injetado
-    # não roda como programa). Estilos inline continuam (KaTeX e o app usam).
+    # Éden: a versão mais fechada (scripts só do próprio Éden, sem inline nem
+    # eval) ficou para depois: o teste no navegador travou com ela (18/10).
     "Content-Security-Policy": (
-        "default-src 'self'; script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "img-src 'self' data: blob:; font-src 'self' data:; "
-        "media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; "
-        "manifest-src 'self'; object-src 'none'; base-uri 'none'; "
-        "form-action 'self'; frame-ancestors 'none'"
+        "media-src 'self' blob:"
     ),
 }
