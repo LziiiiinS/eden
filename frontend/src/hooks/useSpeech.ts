@@ -30,6 +30,36 @@ export function pickRecordingMimeType(
 }
 
 /** Éden: nome do arquivo com a extensão certa para o tipo de áudio gravado. */
+export const MSG_SEM_CONEXAO =
+  'A conexão com o Éden caiu enquanto o áudio era enviado. Confira se o Tailscale está ligado no celular e tente de novo.';
+
+/** Erro de rede do navegador (no iPhone: "Load failed"), sem resposta do servidor. */
+export function erroDeRede(err: unknown): boolean {
+  return err instanceof TypeError;
+}
+
+/** Envia o áudio; se a conexão cair no meio, tenta mais uma vez. */
+export async function enviarComNovaTentativa(
+  blob: Blob,
+  nome: string,
+  durationMs?: number,
+  enviar: typeof transcribeAudio = transcribeAudio,
+  esperarMs = 1500,
+): Promise<{ text: string }> {
+  try {
+    return await enviar(blob, nome, durationMs);
+  } catch (err) {
+    if (!erroDeRede(err)) throw err;
+  }
+  await new Promise((r) => setTimeout(r, esperarMs));
+  try {
+    return await enviar(blob, nome, durationMs);
+  } catch (err) {
+    if (erroDeRede(err)) throw new Error(MSG_SEM_CONEXAO);
+    throw err;
+  }
+}
+
 export function audioFilenameFor(mimeType: string): string {
   const type = (mimeType || '').toLowerCase();
   if (type.includes('mp4') || type.includes('m4a') || type.includes('aac')) return 'recording.mp4';
@@ -68,7 +98,16 @@ export function useSpeech() {
       streamRef.current = stream;
 
       const mimeType = pickRecordingMimeType();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      // Éden: 32 kbit/s basta para voz e deixa o envio pequeno (rede fraca
+      // ou 4G pelo Tailscale cortava o envio de áudios grandes).
+      const opcoes: MediaRecorderOptions = { audioBitsPerSecond: 32_000 };
+      if (mimeType) opcoes.mimeType = mimeType;
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(stream, opcoes);
+      } catch {
+        recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      }
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -105,9 +144,17 @@ export function useSpeech() {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         chunksRef.current = [];
 
+        if (blob.size === 0) {
+          setState('idle');
+          const msg = 'Não gravei nada. Toque no microfone e fale de novo.';
+          setError(msg);
+          reject(new Error(msg));
+          return;
+        }
+
         try {
           const durationMs = startedAtRef.current ? Date.now() - startedAtRef.current : undefined;
-          const result = await transcribeAudio(blob, audioFilenameFor(blob.type), durationMs);
+          const result = await enviarComNovaTentativa(blob, audioFilenameFor(blob.type), durationMs);
           setState('idle');
           resolve(result.text);
         } catch (err) {
