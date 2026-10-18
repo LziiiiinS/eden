@@ -426,10 +426,19 @@ def _conferir_esquema(caminho: Path) -> None:
         raise ErroBackup(f"banco danificado no backup: {caminho.name} ({exc})") from exc
     for tipo, nome, tabela, sql in itens:
         interna = nome.startswith("sqlite_")
+        # "ON CONFLICT IGNORE/REPLACE" no esquema faria o banco descartar
+        # gravações sem erro (ex.: gastos que somem). O Éden nunca cria assim
+        # (revisão do Codex, 18/10).
+        limpo = re.sub(r"/\*.*?\*/|--[^\n]*", " ", sql, flags=re.S).upper()
+        conflito = re.search(r"\bON\s+CONFLICT\b", limpo) is not None
         if tipo == "table":
-            ok = (interna or nome in permitidas) and "VIRTUAL" not in sql.upper()
+            ok = (
+                (interna or nome in permitidas)
+                and "VIRTUAL" not in limpo
+                and not conflito
+            )
         elif tipo == "index":
-            ok = tabela in permitidas or tabela.startswith("sqlite_")
+            ok = (tabela in permitidas or tabela.startswith("sqlite_")) and not conflito
         else:  # trigger, view
             ok = False
         if not ok:
@@ -514,19 +523,32 @@ def _manter_decisoes_atuais(antiga: Path, atual: Path, agora_ms: int) -> None:
             if velha is not None:
                 velha.close()
 
-    novo_g = _abrir(atual / "gastos.db")
     velho_g = _abrir(antiga / "gastos.db")
-    if novo_g is None or velho_g is None:
+    if velho_g is None:
+        return
+    if not (atual / "gastos.db").exists():
+        # Backup de antes do controle de gastos: o gasto de agora continua.
+        destino = sqlite3.connect(str(atual / "gastos.db"))
+        try:
+            velho_g.backup(destino)
+        finally:
+            destino.close()
+            velho_g.close()
+        return
+    novo_g = _abrir(atual / "gastos.db")
+    if novo_g is None:
+        velho_g.close()
         return
     try:
         if not (_tem_tabela(novo_g, "spending") and _tem_tabela(velho_g, "spending")):
             return
         desde = agora_ms - _DIAS_GASTOS * 24 * 3600 * 1000
         meses = {
-            r[0]
+            (r[0], r[1])
             for c in (novo_g, velho_g)
             for r in c.execute(
-                "SELECT DISTINCT month FROM spending WHERE at_ms >= ?", (desde,)
+                "SELECT DISTINCT month, provider FROM spending WHERE at_ms >= ?",
+                (desde,),
             )
         }
         colunas = [
@@ -535,21 +557,23 @@ def _manter_decisoes_atuais(antiga: Path, atual: Path, agora_ms: int) -> None:
         lista = ", ".join(colunas)
         marcas = ", ".join("?" for _ in colunas)
         with novo_g:
-            for mes in meses:
-                total_novo = novo_g.execute(
-                    "SELECT COALESCE(SUM(cost_usd), 0) FROM spending WHERE month = ?",
-                    (mes,),
-                ).fetchone()[0]
-                total_velho = velho_g.execute(
-                    "SELECT COALESCE(SUM(cost_usd), 0) FROM spending WHERE month = ?",
-                    (mes,),
-                ).fetchone()[0]
+            soma = (
+                "SELECT COALESCE(SUM(cost_usd), 0) FROM spending "
+                "WHERE month = ? AND provider = ?"
+            )
+            for mes, provedor in meses:
+                chave = (mes, provedor)
+                total_novo = novo_g.execute(soma, chave).fetchone()[0]
+                total_velho = velho_g.execute(soma, chave).fetchone()[0]
                 if total_velho <= total_novo:
                     continue
-                novo_g.execute("DELETE FROM spending WHERE month = ?", (mes,))
+                novo_g.execute(
+                    "DELETE FROM spending WHERE month = ? AND provider = ?", chave
+                )
                 linhas = velho_g.execute(
-                    f"SELECT {lista} FROM spending WHERE month = ?",  # noqa: S608
-                    (mes,),
+                    f"SELECT {lista} FROM spending "  # noqa: S608
+                    "WHERE month = ? AND provider = ?",
+                    chave,
                 ).fetchall()
                 novo_g.executemany(
                     f"INSERT INTO spending ({lista}) VALUES ({marcas})",  # noqa: S608

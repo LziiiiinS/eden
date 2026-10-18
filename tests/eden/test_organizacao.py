@@ -855,3 +855,45 @@ def test_edit_card_shows_the_space_move_before_long_notes(store):
     assert acao["resumo"].startswith("Mudar a tarefa “Relatório”: mover para Clientes")
     assert "\n\n\n" not in acao["resumo"]
     assert acao["parametros"]["mudancas"]["notas"] == "oi\n\nfim"
+
+
+def test_card_is_void_if_the_task_changed_in_any_field(store):
+    """Revisão do Codex (18/10): mudar a hora em outro aparelho invalida o
+    cartão (antes só o título era conferido)."""
+    tarefa = store.criar_tarefa(
+        {
+            "titulo": "Dentista",
+            "espaco": "pessoal",
+            "data": "2026-10-20",
+            "hora": "10:00",
+        },
+        TZ,
+    )
+    [acao], _ = acoes.propor(
+        _bloco({"tipo": "tarefa.editar", "id": tarefa["id"], "notas": "levar exame"}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    store.atualizar_tarefa(tarefa["id"], {"hora": "23:00"}, TZ)
+    with pytest.raises((ErroOrganizacao, acoes.ErroAcao)):
+        acoes.confirmar(store, acao["id"], acao["assinatura"], TZ, AGORA + 1000)
+    assert store.tarefa(tarefa["id"])["notas"] == ""
+
+
+def test_stretched_expiry_in_the_database_does_not_pass(store):
+    [acao], _ = acoes.propor(
+        _bloco({"tipo": "nota.criar", "texto": "x"}), store, "pessoal", TZ, None, AGORA
+    )
+    store.transacao(
+        lambda c: c.execute(
+            "UPDATE acoes SET expira_em = ? WHERE id = ?",
+            (AGORA + 10 * acoes.VALIDADE_MS, acao["id"]),
+        )
+    )
+    with pytest.raises(acoes.ErroAcao):
+        acoes.confirmar(
+            store, acao["id"], acao["assinatura"], TZ, AGORA + 2 * acoes.VALIDADE_MS
+        )

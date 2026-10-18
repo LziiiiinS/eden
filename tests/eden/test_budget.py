@@ -1,5 +1,6 @@
 """Éden: testes do limite de gastos."""
 
+import sqlite3
 from datetime import datetime, timezone
 
 import pytest
@@ -203,5 +204,82 @@ def test_speech_record_does_not_trust_a_tiny_client_duration(tmp_path):
 
     # Áudio de 1,6 MB dizendo ter 1 ms: anota pelo menos 100 s (128 kbit/s).
     assert speech_budget.estimate_seconds(1_600_000, 1) >= 100
-    # Para reservar, supõe áudio mais longo ainda (8 kbit/s).
-    assert speech_budget.reserve_seconds(1_600_000, 1) == 1600
+    # Para reservar, supõe áudio mais longo ainda (1 kbit/s).
+    assert speech_budget.reserve_seconds(1_600_000, 1) == 12800
+
+
+def test_audio_duration_is_read_from_the_file():
+    """Revisão do Codex (18/10): a duração escrita no arquivo conta."""
+    import struct
+
+    from openjarvis.eden import speech_budget
+
+    # WAV de 3 s (8 kHz, 16 bits, mono).
+    dados = b"\x00" * (8000 * 2 * 3)
+    wav = (
+        b"RIFF"
+        + struct.pack("<I", 36 + len(dados))
+        + b"WAVE"
+        + b"fmt "
+        + struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16)
+        + b"data"
+        + struct.pack("<I", len(dados))
+        + dados
+    )
+    assert speech_budget.duracao_do_arquivo(wav) == 3.0
+    # MP4 com mvhd dizendo 600 s (timescale 1000), arquivo pequeno.
+    mvhd = (
+        b"mvhd" + bytes([0, 0, 0, 0]) + b"\x00" * 8 + struct.pack(">II", 1000, 600_000)
+    )
+    mp4 = (
+        b"\x00\x00\x00\x20ftypM4A "
+        + b"\x00" * 16
+        + struct.pack(">I", 8 + len(mvhd))
+        + mvhd
+    )
+    assert speech_budget.duracao_do_arquivo(mp4) == 600.0
+    assert speech_budget.reserve_seconds(len(mp4), 1, 600.0) >= 600
+    assert speech_budget.estimate_seconds(len(mp4), 1, 600.0) >= 600
+    assert speech_budget.duracao_do_arquivo(b"lixo") is None
+
+
+def test_failed_record_keeps_the_cost_counted(tmp_path):
+    """Revisão do Codex (18/10): se não der para anotar (disco cheio), o valor
+    continua contando no limite; não libera a reserva sem anotar."""
+    from openjarvis.eden import budget as b
+    from openjarvis.eden.settings import EdenSettings
+
+    settings = EdenSettings(enabled=True, monthly_limits_usd={"openai": 1.0})
+    ledger = b.SpendingLedger(tmp_path / "gastos.db")
+    r = ledger.reserve("openai", settings, 0.6)
+    real = ledger._conn
+
+    class DiscoCheio:
+        def execute(self, sql, *args):
+            if sql.lstrip().upper().startswith("INSERT"):
+                raise sqlite3.OperationalError("database or disk is full")
+            return real.execute(sql, *args)
+
+        def commit(self):
+            return real.commit()
+
+    ledger._conn = DiscoCheio()
+    try:
+        ledger.record(
+            provider="openai",
+            model="m",
+            kind="chat",
+            cost_usd=0.8,
+            settings=settings,
+            reservation=r,
+        )
+    except Exception:
+        pass
+    else:
+        raise AssertionError("devia avisar que não anotou")
+    try:
+        ledger.reserve("openai", settings, 0.3)
+    except b.BudgetExceeded:
+        pass
+    else:
+        raise AssertionError("a dívida não anotada devia contar no limite")

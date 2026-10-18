@@ -517,3 +517,64 @@ def test_account_settings_list_matches_the_modules():
         google.AJUSTE_PASTA_DRIVE,
         notion.AJUSTE_PAI,
     }
+
+
+# ── revisão do Codex (18/10) ─────────────────────────────────────────────
+
+
+def test_schema_with_on_conflict_is_refused(dados, backups):
+    caminho = dados / "eden" / "gastos.db"
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(caminho))
+    conn.execute(
+        "CREATE TABLE spending (id INTEGER PRIMARY KEY, month TEXT "
+        "UNIQUE /* x */ ON  CONFLICT IGNORE, cost_usd REAL)"
+    )
+    conn.commit()
+    conn.close()
+    arquivo = backup.criar(backups, dados, hora="20261015-030000")
+    with pytest.raises(ErroBackup):
+        backup.restaurar(arquivo, dados)
+
+
+def test_backup_without_spending_keeps_the_current_spending(dados, backups):
+    import time
+
+    agora = int(time.time() * 1000)
+    mes = time.strftime("%Y-%m")
+    _banco(dados / "eden" / "conversations.db", ["c1"]).close()
+    arquivo = backup.criar(backups, dados, hora="20261015-030000")  # sem gastos.db
+    gastos = dados / "eden" / "gastos.db"
+    _gastos(gastos, [(agora, mes, 10.0)])
+    backup.restaurar(arquivo, dados)
+    assert round(_soma(gastos, mes), 2) == 10.0
+
+
+def test_spending_is_kept_per_provider(dados, backups):
+    import time
+
+    agora = int(time.time() * 1000)
+    mes = time.strftime("%Y-%m")
+    gastos = dados / "eden" / "gastos.db"
+    _gastos(gastos, [(agora, mes, 4.0)])  # openai no backup
+    arquivo = backup.criar(backups, dados, hora="20261015-030000")
+    _gastos(gastos, [(agora, mes, 1.0)])
+    conn = sqlite3.connect(str(gastos))
+    conn.execute(
+        "INSERT INTO spending (at_ms, month, provider, model, kind, cost_usd) "
+        "VALUES (?, ?, 'anthropic', 'm', 'chat', 5.0)",
+        (agora, mes),
+    )
+    conn.commit()
+    conn.close()
+    backup.restaurar(arquivo, dados)
+    conn = sqlite3.connect(str(gastos))
+    try:
+        por = dict(
+            conn.execute(
+                "SELECT provider, SUM(cost_usd) FROM spending GROUP BY provider"
+            )
+        )
+    finally:
+        conn.close()
+    assert round(por["openai"], 2) == 4.0 and round(por["anthropic"], 2) == 5.0

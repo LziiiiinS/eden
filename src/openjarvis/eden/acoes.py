@@ -149,17 +149,29 @@ def chave_assinatura(store: Organizacao) -> bytes:
 
 
 def assinatura(
-    tipo: str, parametros: Dict[str, Any], resumo: str = "", chave: bytes = b""
+    tipo: str,
+    parametros: Dict[str, Any],
+    resumo: str = "",
+    chave: bytes = b"",
+    identidade: str = "",
 ) -> str:
-    """HMAC-sha256 (com a chave do servidor) do tipo, dos parâmetros e do
-    resumo que o cartão mostra."""
+    """HMAC-sha256 (com a chave do servidor) do tipo, dos parâmetros, do
+    resumo que o cartão mostra e da identidade do cartão (id, conversa,
+    criação e validade): copiar para outro id ou esticar a validade num banco
+    mexido não passa (revisão do Codex, 18/10)."""
     canonico = json.dumps(
         parametros, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
-    texto = f"{tipo}\n{canonico}\n{resumo}".encode("utf-8")
+    texto = f"{tipo}\n{canonico}\n{resumo}\n{identidade}".encode("utf-8")
     if not chave:
         return hashlib.sha256(texto).hexdigest()
     return hmac.new(chave, texto, hashlib.sha256).hexdigest()
+
+
+def _identidade(
+    acao_id: str, conversa_id: Optional[str], criado: int, expira: int
+) -> str:
+    return f"{acao_id}\n{conversa_id or ''}\n{int(criado)}\n{int(expira)}"
 
 
 def _nome_espaco(store: Organizacao, espaco_id: Optional[str]) -> str:
@@ -299,7 +311,7 @@ def validar(
             raise ErroOrganizacao("essa tarefa não está no espaço ativo")
         if tipo == "tarefa.concluir" and tarefa["feita"]:
             raise ErroOrganizacao("essa tarefa já está feita")
-        params = {"id": tid, "titulo": tarefa["titulo"]}
+        params = {"id": tid, "titulo": tarefa["titulo"], "antes": _retrato(tarefa)}
         verbo = "Marcar como feita" if tipo == "tarefa.concluir" else "Apagar"
         resumo = (
             f"{verbo} a tarefa {_aspas(tarefa['titulo'])} "
@@ -341,7 +353,12 @@ def validar(
             mudancas["lembrete"] = _lembrete_param(bruto["lembrete"], data, hora)
         if not mudancas:
             raise ErroOrganizacao("nada para mudar na tarefa")
-        params = {"id": tid, "titulo_atual": tarefa["titulo"], "mudancas": mudancas}
+        params = {
+            "id": tid,
+            "titulo_atual": tarefa["titulo"],
+            "mudancas": mudancas,
+            "antes": _retrato(tarefa),
+        }
         partes = []
         # O que muda de lugar vem primeiro; o texto livre (notas), por último.
         if "espaco" in mudancas:
@@ -390,6 +407,14 @@ def validar(
     cabeca = f" {_aspas(titulo)}" if titulo else ""
     resumo = f"Guardar {rotulo}{cabeca} em {_nome_espaco(store, esp)}: {_aspas(txt)}"
     return Proposta(tipo, params, resumo)
+
+
+_CAMPOS_RETRATO = ("titulo", "data", "hora", "lembrete_em", "notas", "espaco", "feita")
+
+
+def _retrato(tarefa: Dict[str, Any]) -> Dict[str, Any]:
+    """Como a tarefa estava quando o cartão foi feito."""
+    return {k: tarefa.get(k) for k in _CAMPOS_RETRATO}
 
 
 _REPETE_TXT = {"nao": "", "mensal": " · todo mês", "anual": " · todo ano"}
@@ -648,6 +673,7 @@ def _validar_agenda(
             "inicio": evento["inicio"],
             "fim": evento.get("fim"),
             "dia_inteiro": bool(evento.get("dia_inteiro")),
+            "etag": evento.get("etag") or "",
         },
         "corpo": corpo,
     }
@@ -735,7 +761,11 @@ def _gravar(
     acao_id = secrets.token_urlsafe(18)
     params_json = json.dumps(proposta.parametros, sort_keys=True, ensure_ascii=False)
     sig = assinatura(
-        proposta.tipo, proposta.parametros, proposta.resumo, chave_assinatura(store)
+        proposta.tipo,
+        proposta.parametros,
+        proposta.resumo,
+        chave_assinatura(store),
+        _identidade(acao_id, conversa_id, agora, agora + VALIDADE_MS),
     )
 
     def fazer(conn: sqlite3.Connection) -> None:
@@ -776,7 +806,9 @@ def _alvo_igual(
         tarefa = store.tarefa(params["id"], conn)
         if tarefa is None:
             raise ErroOrganizacao("tarefa não encontrada")
-        if tarefa["titulo"] != params.get("titulo", params.get("titulo_atual")):
+        # A tarefa inteira (hora, data, lembrete, notas, espaço…) continua
+        # como o cartão mostrou? (revisão do Codex, 18/10)
+        if "antes" not in params or _retrato(tarefa) != params["antes"]:
             raise ErroOrganizacao("a tarefa mudou depois da sugestão; peça de novo")
     elif tipo in ("conta.pagar", "conta.apagar"):
         from openjarvis.eden import financas
@@ -916,7 +948,13 @@ def _decidir(
         params = json.loads(row["parametros"])
         # Confere de novo a assinatura do que está gravado.
         esperada = assinatura(
-            row["tipo"], params, row["resumo"], chave_assinatura(store)
+            row["tipo"],
+            params,
+            row["resumo"],
+            chave_assinatura(store),
+            _identidade(
+                row["id"], row["conversa_id"], row["criado_em"], row["expira_em"]
+            ),
         )
         if not hmac.compare_digest(esperada, row["assinatura"]):
             raise ErroAcao("ação guardada inconsistente", 409, "eden_acao_assinatura")
@@ -1056,9 +1094,12 @@ def confirmar(
             or atual["inicio"] != antes["inicio"]
             or atual.get("fim") != antes["fim"]
             or bool(atual.get("dia_inteiro")) != antes["dia_inteiro"]
+            or (antes.get("etag") and atual.get("etag") != antes["etag"])
         ):
             raise ErroOrganizacao("o evento mudou depois da sugestão; peça de novo")
-        return google.editar(params["id"], params["corpo"], tz)
+        return google.editar(
+            params["id"], params["corpo"], tz, etag=antes.get("etag") or ""
+        )
 
     return _decidir(
         store,
