@@ -38,10 +38,11 @@ do OpenJarvis nem de Stanford.
   Éden (sem preenchimento automático do navegador, com botão de mostrar, e
   aceitando a linha inteira do `.env`).
 - `frontend/src/pages/EdenSettingsPage.tsx`: configurações do Éden em português,
-  com "Conectar um celular": um QR code com o endereço do Éden e a chave de
-  acesso depois do `#` (essa parte não vai ao servidor). O celular abre, a
-  chave é guardada e tirada do endereço na hora (`lib/eden-key-from-url.ts`).
-  O QR code some sozinho em 2 minutos.
+  com "Conectar um celular": um QR code com o endereço do Éden e uma chave
+  só para aquele celular depois do `#` (essa parte não vai ao servidor; a
+  chave principal nunca vai no QR code). O celular abre, a chave é guardada e
+  tirada do endereço na hora (`lib/eden-key-from-url.ts`). O QR code some
+  sozinho em 5 minutos.
 - `frontend/src/lib/vendor/qrcodegen.ts`: biblioteca de QR code do Project
   Nayuki (licença MIT, aviso mantido no arquivo).
 - `deploy/eden/`: rodar o Éden com Docker (notebook Windows agora; servidor
@@ -80,9 +81,10 @@ do OpenJarvis nem de Stanford.
   no começo da mensagem força o modo.
 - Embaixo de cada resposta aparece qual IA respondeu (e o motivo, ao tocar).
 - Limite por mês e por empresa em `[eden.limites]` (US$). Antes de cada pedido
-  o servidor separa (reserva) o custo máximo do pedido junto com a conferência,
-  com trava: pedidos simultâneos de vários aparelhos não passam do limite
-  somados. Se passar, recusa antes de chamar a IA.
+  o servidor separa (reserva) uma estimativa por cima do custo do pedido junto
+  com a conferência, com trava, para pedidos simultâneos de vários aparelhos
+  não passarem do limite somados. Se passar, recusa antes de chamar a IA. É
+  uma estimativa: ponha também um teto no site de cada empresa.
 - No servidor do Éden a conversa só aceita os modos do Éden, com streaming,
   sem ferramentas e com modelo que tenha preço em `[eden.precos]`; o tamanho
   da resposta nunca passa de `max_saida_tokens`. O gasto vem dos números de tokens que a empresa informa; sem

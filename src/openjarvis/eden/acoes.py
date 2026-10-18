@@ -27,13 +27,17 @@ parâmetros à vista no cartão.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
+import os
 import re
 import secrets
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from openjarvis.eden.organizacao import (
@@ -115,12 +119,47 @@ def remover_blocos(resposta: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", sem).rstrip()
 
 
-def assinatura(tipo: str, parametros: Dict[str, Any], resumo: str = "") -> str:
-    """sha256 do tipo, dos parâmetros e do resumo que o cartão mostra."""
+_CHAVES: Dict[str, bytes] = {}
+_CHAVES_LOCK = threading.Lock()
+
+
+def chave_assinatura(store: Organizacao) -> bytes:
+    """Chave secreta do servidor para assinar os cartões. Fica ao lado do
+    banco (acoes.key, só o dono lê) e não vai para o backup: uma linha mexida
+    no banco ou num backup não consegue mostrar um cartão e executar outro
+    (rodada final de segurança, 18/10)."""
+    caminho = Path(getattr(store, "_path", "organizacao.db")).parent / "acoes.key"
+    with _CHAVES_LOCK:
+        guardada = _CHAVES.get(str(caminho))
+        if guardada is not None:
+            return guardada
+        try:
+            dados = caminho.read_bytes()
+        except FileNotFoundError:
+            dados = b""
+        if len(dados) < 32:
+            dados = secrets.token_bytes(32)
+            tmp = caminho.with_name(caminho.name + ".novo")
+            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(dados)
+            os.replace(tmp, caminho)
+        _CHAVES[str(caminho)] = dados[:32]
+        return dados[:32]
+
+
+def assinatura(
+    tipo: str, parametros: Dict[str, Any], resumo: str = "", chave: bytes = b""
+) -> str:
+    """HMAC-sha256 (com a chave do servidor) do tipo, dos parâmetros e do
+    resumo que o cartão mostra."""
     canonico = json.dumps(
         parametros, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
-    return hashlib.sha256(f"{tipo}\n{canonico}\n{resumo}".encode("utf-8")).hexdigest()
+    texto = f"{tipo}\n{canonico}\n{resumo}".encode("utf-8")
+    if not chave:
+        return hashlib.sha256(texto).hexdigest()
+    return hmac.new(chave, texto, hashlib.sha256).hexdigest()
 
 
 def _nome_espaco(store: Organizacao, espaco_id: Optional[str]) -> str:
@@ -133,6 +172,17 @@ def _nome_espaco(store: Organizacao, espaco_id: Optional[str]) -> str:
 def _aspas(valor: str) -> str:
     # Texto inteiro, sem cortar: o cartão mostra exatamente o que será gravado.
     return f"“{valor}”"
+
+
+_LINHAS_VAZIAS = re.compile(r"\n(?:[ \t]*\n){2,}")
+
+
+def _sem_vazias(valor: str) -> str:
+    """Textos que o Éden propõe: no máximo uma linha em branco seguida. Assim
+    nada do cartão fica escondido lá embaixo por uma pilha de linhas vazias
+    (rodada final de segurança, 18/10). O que vai para o cartão é o que é
+    gravado."""
+    return _LINHAS_VAZIAS.sub("\n\n", valor)
 
 
 def _so_campos(dados: Dict[str, Any], permitidos: Tuple[str, ...]) -> None:
@@ -218,8 +268,8 @@ def validar(
         hora = hora_hhmm(bruto.get("hora"))
         if hora and not data:
             raise ErroOrganizacao("para ter horário, a tarefa precisa de uma data")
-        notas = texto(
-            bruto.get("notas"), "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False
+        notas = _sem_vazias(
+            texto(bruto.get("notas"), "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False)
         )
         esp = espaco_de()
         lembrete = _lembrete_param(bruto.get("lembrete"), data, hora)
@@ -278,8 +328,8 @@ def validar(
         if "hora" in bruto:
             mudancas["hora"] = hora_hhmm(bruto["hora"])
         if "notas" in bruto:
-            mudancas["notas"] = texto(
-                bruto["notas"], "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False
+            mudancas["notas"] = _sem_vazias(
+                texto(bruto["notas"], "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False)
             )
         if "espaco" in bruto:
             mudancas["espaco"] = store.espaco_valido(bruto["espaco"])
@@ -293,6 +343,9 @@ def validar(
             raise ErroOrganizacao("nada para mudar na tarefa")
         params = {"id": tid, "titulo_atual": tarefa["titulo"], "mudancas": mudancas}
         partes = []
+        # O que muda de lugar vem primeiro; o texto livre (notas), por último.
+        if "espaco" in mudancas:
+            partes.append(f"mover para {_nome_espaco(store, mudancas['espaco'])}")
         if "titulo" in mudancas:
             partes.append(f"título {_aspas(mudancas['titulo'])}")
         if "data" in mudancas or "hora" in mudancas:
@@ -313,8 +366,6 @@ def validar(
                 if mudancas["notas"]
                 else "sem notas"
             )
-        if "espaco" in mudancas:
-            partes.append(f"mover para {_nome_espaco(store, mudancas['espaco'])}")
         resumo = f"Mudar a tarefa {_aspas(tarefa['titulo'])}: " + "; ".join(partes)
         return Proposta(tipo, params, resumo)
 
@@ -326,7 +377,7 @@ def validar(
 
     # nota.criar
     _so_campos(bruto, ("texto", "titulo", "tipo_nota", "espaco"))
-    txt = texto(bruto.get("texto"), "texto", MAX_IA_TEXTO_NOTA)
+    txt = _sem_vazias(texto(bruto.get("texto"), "texto", MAX_IA_TEXTO_NOTA))
     titulo = texto(
         bruto.get("titulo"), "titulo", MAX_TITULO, obrigatorio=False, uma_linha=True
     )
@@ -370,8 +421,8 @@ def _validar_conta(
         dados = {k: v for k, v in bruto.items() if k not in ("tipo", "tipo_conta")}
         dados["tipo"] = bruto.get("tipo_conta") or "pagar"
         if "notas" in dados:
-            dados["notas"] = texto(
-                dados["notas"], "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False
+            dados["notas"] = _sem_vazias(
+                texto(dados["notas"], "notas", MAX_IA_NOTAS_TAREFA, obrigatorio=False)
             )
         c = financas.campos(dados, store, espaco_ativo)
         params = {
@@ -683,7 +734,9 @@ def _gravar(
 ) -> Dict[str, Any]:
     acao_id = secrets.token_urlsafe(18)
     params_json = json.dumps(proposta.parametros, sort_keys=True, ensure_ascii=False)
-    sig = assinatura(proposta.tipo, proposta.parametros, proposta.resumo)
+    sig = assinatura(
+        proposta.tipo, proposta.parametros, proposta.resumo, chave_assinatura(store)
+    )
 
     def fazer(conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -862,7 +915,10 @@ def _decidir(
             )
         params = json.loads(row["parametros"])
         # Confere de novo a assinatura do que está gravado.
-        if assinatura(row["tipo"], params, row["resumo"]) != row["assinatura"]:
+        esperada = assinatura(
+            row["tipo"], params, row["resumo"], chave_assinatura(store)
+        )
+        if not hmac.compare_digest(esperada, row["assinatura"]):
             raise ErroAcao("ação guardada inconsistente", 409, "eden_acao_assinatura")
         if row["tipo"] in TIPOS_EXTERNOS:
             # Fora do Éden (Google): marca "executando" (uso único) e faz a

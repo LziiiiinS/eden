@@ -77,6 +77,8 @@ SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(self), geolocation=(self)",
+    # Éden: a versão mais fechada (scripts só do próprio Éden, sem inline nem
+    # eval) ficou para depois: o teste no navegador travou com ela (18/10).
     "Content-Security-Policy": (
         "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "img-src 'self' data: blob:; font-src 'self' data:; "

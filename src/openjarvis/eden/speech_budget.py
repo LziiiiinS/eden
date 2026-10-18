@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 # empresa, nunca usa menos que o tamanho a 128 kbit/s (16 KB por segundo),
 # mesmo que o aparelho informe uma duração menor.
 _BYTES_PER_SECOND = 4000
+# Para RESERVAR, supõe 8 kbit/s (1 KB por segundo), o menor comum em voz
+# (Opus): áudio de qualidade baixa não passa do limite com vários aparelhos
+# ao mesmo tempo (rodada final de segurança, 18/10).
+_BYTES_PER_SECOND_RESERVA = 1000
 _BYTES_PER_SECOND_MAX_BITRATE = 16000
 _MAX_CLIENT_MS = 60 * 60 * 1000
 
@@ -40,7 +44,7 @@ def _client_seconds(client_ms: Optional[float]) -> float:
 
 def reserve_seconds(audio_bytes: int, client_ms: Optional[float]) -> float:
     """Duração para reservar: a maior entre a informada e a pelo tamanho."""
-    by_size = audio_bytes / _BYTES_PER_SECOND
+    by_size = audio_bytes / _BYTES_PER_SECOND_RESERVA
     return max(1.0, by_size, _client_seconds(client_ms))
 
 

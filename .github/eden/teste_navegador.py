@@ -65,7 +65,11 @@ def api(metodo: str, caminho: str, corpo=None, chave: bool = True):
         return erro.code, None
 
 
+ULTIMO_PASSO = ["(nenhum)"]
+
+
 def passo(texto: str) -> None:
+    ULTIMO_PASSO[0] = texto
     print(f"ok: {texto}", flush=True)
 
 
@@ -380,4 +384,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        # Aparece nas anotações do GitHub (o registro completo não abre daqui).
+        print(f"error: último passo que deu certo: {ULTIMO_PASSO[0]}", flush=True)
+        for linha in str(exc).splitlines()[:12]:
+            print(f"error: {linha}", flush=True)
+        raise

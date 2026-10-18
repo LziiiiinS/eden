@@ -203,5 +203,5 @@ def test_speech_record_does_not_trust_a_tiny_client_duration(tmp_path):
 
     # Áudio de 1,6 MB dizendo ter 1 ms: anota pelo menos 100 s (128 kbit/s).
     assert speech_budget.estimate_seconds(1_600_000, 1) >= 100
-    # Para reservar, supõe áudio mais longo ainda (32 kbit/s).
-    assert speech_budget.reserve_seconds(1_600_000, 1) == 400
+    # Para reservar, supõe áudio mais longo ainda (8 kbit/s).
+    assert speech_budget.reserve_seconds(1_600_000, 1) == 1600

@@ -805,3 +805,53 @@ def test_cards_stuck_while_talking_to_google_become_failed(store):
 def test_cleanup_rejects_zero_days(store):
     with pytest.raises(ValueError):
         store.limpar_antigos(AGORA, 0)
+
+
+def test_tampered_card_in_the_database_does_not_run(store, tmp_path):
+    """Rodada final (18/10): a assinatura usa a chave do servidor (acoes.key,
+    fora do backup); uma linha mexida no banco não vira outra ação."""
+    tarefa = store.criar_tarefa({"titulo": "Não apagar", "espaco": "pessoal"}, TZ)
+    criadas, _ = acoes.propor(
+        _bloco({"tipo": "nota.criar", "texto": "lista de compras"}),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    [acao] = criadas
+    assert (tmp_path / "acoes.key").stat().st_mode & 0o077 == 0
+    params = {"id": tarefa["id"], "titulo": "Não apagar"}
+    falsa = acoes.assinatura("tarefa.apagar", params, acao["resumo"])
+    store.transacao(
+        lambda c: c.execute(
+            "UPDATE acoes SET tipo = 'tarefa.apagar', parametros = ?, assinatura = ? "
+            "WHERE id = ?",
+            (json.dumps(params, sort_keys=True), falsa, acao["id"]),
+        )
+    )
+    with pytest.raises(acoes.ErroAcao):
+        acoes.confirmar(store, acao["id"], falsa, TZ, AGORA + 1000)
+    assert store.tarefa(tarefa["id"]) is not None
+
+
+def test_edit_card_shows_the_space_move_before_long_notes(store):
+    tarefa = store.criar_tarefa({"titulo": "Relatório", "espaco": "pessoal"}, TZ)
+    [acao], _ = acoes.propor(
+        _bloco(
+            {
+                "tipo": "tarefa.editar",
+                "id": tarefa["id"],
+                "notas": "oi" + "\n" * 60 + "fim",
+                "espaco": "clientes",
+            }
+        ),
+        store,
+        "pessoal",
+        TZ,
+        None,
+        AGORA,
+    )
+    assert acao["resumo"].startswith("Mudar a tarefa “Relatório”: mover para Clientes")
+    assert "\n\n\n" not in acao["resumo"]
+    assert acao["parametros"]["mudancas"]["notas"] == "oi\n\nfim"
