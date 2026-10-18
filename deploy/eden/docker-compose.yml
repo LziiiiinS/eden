@@ -7,6 +7,8 @@
 #
 # Chaves: ficam no arquivo .env desta pasta (nunca no GitHub).
 # Dados (conversas, gastos, perfil): ficam no volume "eden-dados" do Docker.
+# O Éden de outra pessoa no servidor (nova-pessoa.sh) tem uma cópia deste
+# arquivo com outro nome ("name: eden-NOME"): contêiner e dados separados.
 name: eden
 
 services:
@@ -22,6 +24,8 @@ services:
     ports:
       # Só este computador abre o Éden (http://localhost:8000). Para o
       # celular, o acesso entra depois pela rede privada (Tailscale), com HTTPS.
+      # O Éden de outra pessoa no servidor (nova-pessoa.sh) ganha uma cópia
+      # deste arquivo com outra porta (8001, 8002…) e outro nome.
       - "127.0.0.1:8000:8000"
     volumes:
       - eden-dados:/dados

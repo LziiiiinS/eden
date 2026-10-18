@@ -111,10 +111,18 @@ def test_phone_address_comes_only_from_a_tailscale_https_address(client, monkeyp
         "https://evil.example",
         "https://eden.ts.net.evil.example",
         "https://eden.tail1234.ts.net:4443",
+        "https://eden.tail1234.ts.net:8448",
+        "https://eden.tail1234.ts.net:8443/x",
+        "https://eden.tail1234.ts.net:",
         "",
     ):
         monkeypatch.setenv("EDEN_ENDERECO_CELULAR", ruim)
         assert client.get("/v1/eden/info").json() == {"endereco_celular": None}
+    # O Éden de outra pessoa no mesmo servidor (nova-pessoa.sh).
+    monkeypatch.setenv("EDEN_ENDERECO_CELULAR", "https://srv.tail1234.ts.net:8443")
+    assert client.get("/v1/eden/info").json() == {
+        "endereco_celular": "https://srv.tail1234.ts.net:8443"
+    }
 
 
 # ── código curto para ligar um aparelho ─────────────────────────────────
