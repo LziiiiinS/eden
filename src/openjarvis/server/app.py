@@ -576,6 +576,13 @@ def create_app(
         app.include_router(eden_aparelhos_router)
     except Exception as exc:
         logger.warning("Éden: aparelhos não ligados: %s", exc)
+    # Éden (Parte 5): e-mail (Gmail) só para ler.
+    try:
+        from openjarvis.eden.routes_email import router as eden_email_router
+
+        app.include_router(eden_email_router)
+    except Exception as exc:
+        logger.warning("Éden: e-mail não ligado: %s", exc)
     # Éden (Parte 4): Notion (precisa da NOTION_API_KEY no .env).
     try:
         from openjarvis.eden.routes_notion import router as eden_notion_router

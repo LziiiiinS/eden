@@ -64,7 +64,13 @@ export function EdenGoogleSettings() {
     try {
       const r = await desconectarAgenda();
       setVolta(
-        r.revogado === false
+        r.motivo === 'email_ligado'
+          ? {
+              ok: false,
+              texto:
+                'Desligada aqui. Como o e-mail também está ligado, o Éden não retirou a permissão no Google (se fosse a mesma conta, o e-mail cairia junto). Para retirar de vez: conta do Google → Segurança → Apps e serviços de terceiros.',
+            }
+          : r.revogado === false
           ? {
               ok: false,
               texto:

@@ -278,6 +278,13 @@ def main() -> int:
         assert status == 200
         passo("Clima: desligado no começo, liga pela página")
 
+        # E-mail (Parte 5): sem o Google configurado, a página só explica.
+        pg.goto(BASE + "/email")
+        expect(pg.get_by_text("E-mail ainda não conectado")).to_be_visible(
+            timeout=30_000
+        )
+        passo("E-mail: sem conexão, explica como ligar")
+
         # Rotas (Parte 4): sem a chave do TomTom, a página só explica.
         pg.goto(BASE + "/rotas")
         expect(pg.get_by_text("Ainda não configurado")).to_be_visible(timeout=30_000)
