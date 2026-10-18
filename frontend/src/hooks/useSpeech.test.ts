@@ -6,7 +6,7 @@ vi.mock('../lib/api', () => ({
   fetchSpeechHealth: vi.fn(),
 }));
 
-import { audioFilenameFor, pickRecordingMimeType } from './useSpeech';
+import { audioFilenameFor, enviarComNovaTentativa, MSG_SEM_CONEXAO, pickRecordingMimeType } from './useSpeech';
 
 describe('audioFilenameFor', () => {
   it('names iPhone (Safari) recordings as mp4', () => {
@@ -49,5 +49,31 @@ describe('pickRecordingMimeType', () => {
         return t === 'audio/mp4';
       }),
     ).toBe('audio/mp4');
+  });
+});
+
+
+describe('enviarComNovaTentativa (Load failed no iPhone)', () => {
+  const blob = new Blob(['x'], { type: 'audio/mp4' });
+
+  it('tenta de novo uma vez quando a conexão cai', async () => {
+    const enviar = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Load failed'))
+      .mockResolvedValueOnce({ text: 'oi' });
+    await expect(enviarComNovaTentativa(blob, 'a.m4a', 1000, enviar as never, 0)).resolves.toEqual({ text: 'oi' });
+    expect(enviar).toHaveBeenCalledTimes(2);
+  });
+
+  it('depois da segunda queda, explica o que fazer', async () => {
+    const enviar = vi.fn().mockRejectedValue(new TypeError('Load failed'));
+    await expect(enviarComNovaTentativa(blob, 'a.m4a', 1000, enviar as never, 0)).rejects.toThrow(MSG_SEM_CONEXAO);
+    expect(enviar).toHaveBeenCalledTimes(2);
+  });
+
+  it('erro do servidor (com resposta) não repete', async () => {
+    const enviar = vi.fn().mockRejectedValue(new Error('Limite do mês atingido'));
+    await expect(enviarComNovaTentativa(blob, 'a.m4a', 1000, enviar as never, 0)).rejects.toThrow('Limite do mês');
+    expect(enviar).toHaveBeenCalledTimes(1);
   });
 });

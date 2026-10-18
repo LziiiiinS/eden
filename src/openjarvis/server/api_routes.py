@@ -1004,7 +1004,18 @@ async def transcribe_speech(request: Request):
     if declared.isdigit() and int(declared) > MAX_AUDIO_BYTES + 1024 * 1024:
         raise HTTPException(status_code=413, detail="Áudio grande demais (máx. 25 MB)")
 
-    form = await request.form()
+    # Éden: se o celular perde a conexão no meio do envio, responde em vez de
+    # derrubar a conexão com um erro sem tratamento (no iPhone: "Load failed").
+    from starlette.requests import ClientDisconnect
+
+    try:
+        form = await request.form()
+    except ClientDisconnect:
+        logger.info("Transcrição: o aparelho desconectou no meio do envio do áudio")
+        raise HTTPException(
+            status_code=400,
+            detail="A conexão caiu no meio do envio do áudio. Tente de novo.",
+        ) from None
     audio_file = form.get("file")
     if audio_file is None:
         raise HTTPException(status_code=400, detail="Missing 'file' field")
