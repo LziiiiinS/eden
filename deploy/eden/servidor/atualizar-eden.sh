@@ -11,6 +11,7 @@ set -euo pipefail
 
 # Pasta do seu Éden: a do próprio script, a não ser que EDEN_DIR diga outra.
 EDEN_DIR="${EDEN_DIR:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")}"
+export EDEN_DIR
 TESTE="${EDEN_MODO_TESTE:-0}"
 cd "$EDEN_DIR"
 grep -qx 'name: eden' docker-compose.yml || { echo "ERRO: $EDEN_DIR não é o Éden principal" >&2; exit 1; }
@@ -76,7 +77,7 @@ atualizar_outros() {
 }
 
 echo "Backup antes de atualizar…"
-EDEN_DIR="$EDEN_DIR" "$EDEN_DIR/backup-eden.sh" --tipo auto --manter 5
+"$EDEN_DIR/backup-eden.sh" --tipo auto --manter 5
 
 tem_anterior=0
 if docker image inspect eden:local >/dev/null 2>&1; then
