@@ -25,9 +25,9 @@ import pathlib
 import re
 import sys
 import time
-from collections import Counter, deque
 import urllib.error
 import urllib.request
+from collections import Counter, deque
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -73,16 +73,24 @@ EM_ANDAMENTO: dict = {}
 RECENTES: deque = deque(maxlen=400)
 
 
-def esperar_rede(pg) -> None:
-    try:
-        pg.wait_for_load_state("networkidle", timeout=25_000)
-    except Exception:
-        agora = time.time()
-        abertos = [u for _, u in list(EM_ANDAMENTO.values())][:8]
-        ultimos = Counter(u for t, u in RECENTES if agora - t < 6).most_common(8)
-        print(f"error: pedidos em andamento: {abertos}", flush=True)
-        print(f"error: pedidos nos últimos 6 s: {ultimos}", flush=True)
-        raise
+DOCUMENTO = [0]  # muda a cada página nova (navegação do quadro principal)
+
+
+def esperar_pedidos(pg, nome: str) -> None:
+    """Os pedidos que esta página fez terminam (nenhum fica pendurado). Mais
+    preciso que o "networkidle" do Playwright, que conta também pedidos da
+    página anterior cortados pela navegação."""
+    doc = DOCUMENTO[0]
+    pendentes: list = []
+    for _ in range(80):  # até ~20 s
+        pendentes = [u for d, u in list(EM_ANDAMENTO.values()) if d == doc]
+        if not pendentes:
+            return
+        pg.wait_for_timeout(250)  # (deixa o Playwright receber os eventos)
+    feitos = Counter(u for d, u in RECENTES if d == doc).most_common(8)
+    print(f"error: [{nome}] pedidos que não terminaram: {pendentes[:8]}", flush=True)
+    print(f"error: [{nome}] pedidos feitos: {feitos}", flush=True)
+    raise AssertionError(f"{nome}: pedidos ao servidor ficaram sem resposta")
 
 
 def passo(texto: str) -> None:
@@ -133,8 +141,12 @@ def main() -> int:
 
         def pedido(req) -> None:
             caminho = req.url.split("?")[0].replace(BASE, "")
-            EM_ANDAMENTO[id(req)] = (time.time(), caminho)
-            RECENTES.append((time.time(), caminho))
+            EM_ANDAMENTO[id(req)] = (DOCUMENTO[0], caminho)
+            RECENTES.append((DOCUMENTO[0], caminho))
+
+        def navegou(quadro) -> None:
+            if quadro == pagina.main_frame:
+                DOCUMENTO[0] += 1
 
         def terminou(req) -> None:
             EM_ANDAMENTO.pop(id(req), None)
@@ -144,6 +156,7 @@ def main() -> int:
         pagina.on("request", pedido)
         pagina.on("requestfinished", terminou)
         pagina.on("requestfailed", terminou)
+        pagina.on("framenavigated", navegou)
 
     with sync_playwright() as pw:
         navegador = pw.chromium.launch()
@@ -286,15 +299,16 @@ def main() -> int:
             ("/tarefas", "Tarefa do teste do navegador"),
             ("/notas", "Nota do teste do navegador"),
             ("/hoje", None),
-            ("/memoria", None),
+            ("/memoria", "Perfil e memória"),
         ):
             pg.goto(BASE + caminho)
             expect(pg.get_by_label("Chave de acesso", exact=True)).to_have_count(0)
             if texto:
                 expect(pg.get_by_text(texto).first).to_be_visible(timeout=30_000)
             else:
-                esperar_rede(pg)
-            passo(f"página {caminho} abriu")
+                expect(pg.get_by_role("heading", level=1)).to_be_visible(timeout=30_000)
+            esperar_pedidos(pg, caminho)
+            passo(f"página {caminho} abriu (e os pedidos ao servidor terminaram)")
 
         # Clima (Parte 4): começa desligado; ligar não chama o Open-Meteo
         # (só busca e previsão chamam, e aqui nenhum lugar é cadastrado).
