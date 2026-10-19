@@ -16,6 +16,8 @@ from openjarvis.eden.organizacao import ErroOrganizacao, Organizacao
 
 TZ = timezone(timedelta(hours=-3))
 AGORA = int(datetime(2026, 10, 19, 18, 0, tzinfo=TZ).timestamp() * 1000)
+TOKEN = "eyJ0eXAiOiJKV1QifQ.eyJpc3MiOiJ0ZXN0ZSJ9.assinatura-de-teste"
+TOKEN_ERRADO = "eyJ0eXAiOiJKV1QifQ.eyJpc3MiOiJvdXRybyJ9.assinatura-errada"
 VARIAVEIS = (
     "EDEN_CASA_URL",
     "EDEN_CASA_TOKEN",
@@ -74,7 +76,7 @@ def test_off_by_default_and_nothing_in_the_context(store):
 
 def test_device_list_is_closed_and_cleaned(monkeypatch):
     monkeypatch.setenv("EDEN_CASA_URL", "http://homeassistant.local:8123/")
-    monkeypatch.setenv("EDEN_CASA_TOKEN", "token-de-teste")
+    monkeypatch.setenv("EDEN_CASA_TOKEN", TOKEN)
     monkeypatch.setenv(
         "EDEN_CASA_APARELHOS",
         "light.Quarto=Luz do quarto, lock.porta=Porta, switch.pc=  Computador ,"
@@ -93,15 +95,61 @@ def test_device_list_is_closed_and_cleaned(monkeypatch):
 
 
 def test_bad_url_turns_the_house_off(monkeypatch):
-    monkeypatch.setenv("EDEN_CASA_TOKEN", "t")
+    monkeypatch.setenv("EDEN_CASA_TOKEN", TOKEN)
     monkeypatch.setenv("EDEN_CASA_APARELHOS", "light.a=A")
     for ruim in (
         "ftp://ha.local",
         "http://user:senha@ha.local",
         "http://ha.local/?x=1",
+        "http://ha.local:porta",
+        # http pela internet: o token passaria aberto.
+        "http://minha-casa.exemplo.com.br",
+        "http://8.8.8.8:8123",
     ):
         monkeypatch.setenv("EDEN_CASA_URL", ruim)
-        assert not casa.configuracao().ligada
+        assert not casa.configuracao().ligada, ruim
+    for bom in (
+        "https://minha-casa.exemplo.com.br",
+        "http://homeassistant.local:8123",
+        "http://192.168.0.20:8123",
+        "http://100.101.102.103:8123",
+        "http://casa.tail1234.ts.net:8123",
+        "http://localhost:8123",
+    ):
+        monkeypatch.setenv("EDEN_CASA_URL", bom)
+        assert casa.configuracao().ligada, bom
+
+
+def test_odd_token_turns_the_house_off_without_logging_it(monkeypatch, capsys):
+    import logging
+
+    monkeypatch.setenv("EDEN_CASA_URL", "http://homeassistant.local:8123")
+    monkeypatch.setenv("EDEN_CASA_APARELHOS", "light.a=A")
+    registros = []
+
+    class Guardar(logging.Handler):
+        def emit(self, record):
+            registros.append(record.getMessage())
+
+    h = Guardar()
+    casa.logger.addHandler(h)
+    try:
+        for ruim in (
+            TOKEN[:30] + "\nsegredo" + TOKEN[30:],
+            "curto",
+            "abc def ghi jkl mno pqr",
+        ):
+            monkeypatch.setenv("EDEN_CASA_TOKEN", ruim)
+            assert not casa.configuracao().ligada
+    finally:
+        casa.logger.removeHandler(h)
+    assert registros and not any("segredo" in r or "eyJ" in r for r in registros)
+
+
+def test_jwt_tokens_are_redacted():
+    from openjarvis.eden.redact import redact_secrets
+
+    assert TOKEN not in redact_secrets(f"erro com {TOKEN} no meio")
 
 
 # ── passos ───────────────────────────────────────────────────────────────
@@ -339,7 +387,7 @@ class _HA(BaseHTTPRequestHandler):
         _HA.pedidos.append(
             ("POST", self.path, self.headers.get("Authorization"), corpo)
         )
-        if self.headers.get("Authorization") != "Bearer token-certo":
+        if self.headers.get("Authorization") != f"Bearer {TOKEN}":
             return self._responder(401, {"message": "Unauthorized"})
         if "redireciona" in self.path:
             return self._responder(302, {}, {"Location": "http://example.invalid/"})
@@ -357,7 +405,7 @@ def ha(monkeypatch):
     t.start()
     _HA.pedidos = []
     monkeypatch.setenv("EDEN_CASA_URL", f"http://127.0.0.1:{servidor.server_port}")
-    monkeypatch.setenv("EDEN_CASA_TOKEN", "token-certo")
+    monkeypatch.setenv("EDEN_CASA_TOKEN", TOKEN)
     monkeypatch.setenv(
         "EDEN_CASA_APARELHOS", "light.quarto=Luz do quarto,climate.sala=Ar da sala"
     )
@@ -374,7 +422,7 @@ def test_talks_to_home_assistant_with_the_token(store, ha):
     assert _HA.pedidos[-1] == (
         "POST",
         "/api/services/climate/set_temperature",
-        "Bearer token-certo",
+        f"Bearer {TOKEN}",
         {"entity_id": "climate.sala", "temperature": 20},
     )
     estados = casa.estados()
@@ -382,10 +430,10 @@ def test_talks_to_home_assistant_with_the_token(store, ha):
 
 
 def test_wrong_token_and_redirects(store, ha, monkeypatch):
-    monkeypatch.setenv("EDEN_CASA_TOKEN", "token-errado")
+    monkeypatch.setenv("EDEN_CASA_TOKEN", TOKEN_ERRADO)
     with pytest.raises(ErroOrganizacao, match="recusou o token"):
         casa.comando_pela_tela(store, {"entidade": "light.quarto", "acao": "ligar"})
-    monkeypatch.setenv("EDEN_CASA_TOKEN", "token-certo")
+    monkeypatch.setenv("EDEN_CASA_TOKEN", TOKEN)
     # O token nunca segue um redirecionamento para outro endereço.
     cfg = casa.configuracao()
     with pytest.raises(ErroOrganizacao, match="erro 302"):
@@ -395,7 +443,7 @@ def test_wrong_token_and_redirects(store, ha, monkeypatch):
 
 def test_home_assistant_off_is_reported_once(store, monkeypatch):
     monkeypatch.setenv("EDEN_CASA_URL", "http://127.0.0.1:9")  # porta fechada
-    monkeypatch.setenv("EDEN_CASA_TOKEN", "t")
+    monkeypatch.setenv("EDEN_CASA_TOKEN", TOKEN)
     monkeypatch.setenv("EDEN_CASA_APARELHOS", "light.a=A,light.b=B")
     estados = casa.estados()
     assert all("não respondeu" in e["erro"] for e in estados)

@@ -23,6 +23,7 @@ acontece na hora da confirmação. Nomes de aparelhos e rotinas são dados.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
@@ -146,19 +147,48 @@ def _lista_de_aparelhos(bruto: str) -> Tuple[Aparelho, ...]:
     return tuple(vistos.values())
 
 
-def _url_ok(url: str) -> bool:
+_TOKEN = re.compile(r"^[A-Za-z0-9._\-]{20,4096}$")
+
+
+def _host_local(host: str) -> bool:
+    """Casa, rede doméstica ou Tailscale (onde ``http`` ainda é aceitável)."""
+    host = host.lower().rstrip(".")
+    if host == "localhost" or host.endswith(
+        (".local", ".lan", ".home.arpa", ".ts.net")
+    ):
+        return True
     try:
-        partes = urlsplit(url)
+        ip = ipaddress.ip_address(host)
     except ValueError:
         return False
     return (
-        partes.scheme in ("http", "https")
-        and bool(partes.hostname)
-        and not partes.username
-        and not partes.password
-        and not partes.query
-        and not partes.fragment
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip in ipaddress.ip_network("100.64.0.0/10")  # Tailscale
     )
+
+
+def _url_ok(url: str) -> bool:
+    """``https`` sempre; ``http`` só dentro de casa ou pelo Tailscale (o
+    token não pode passar aberto pela internet)."""
+    try:
+        partes = urlsplit(url)
+        host = partes.hostname or ""
+        partes.port  # noqa: B018 - porta inválida levanta ValueError
+    except ValueError:
+        return False
+    if (
+        not host
+        or partes.username
+        or partes.password
+        or partes.query
+        or partes.fragment
+    ):
+        return False
+    if partes.scheme == "https":
+        return True
+    return partes.scheme == "http" and _host_local(host)
 
 
 def configuracao() -> Configuracao:
@@ -166,11 +196,23 @@ def configuracao() -> Configuracao:
     demo = os.environ.get("EDEN_CASA_DEMO", "").strip() == "1"
     url = os.environ.get("EDEN_CASA_URL", "").strip().rstrip("/")
     token = os.environ.get("EDEN_CASA_TOKEN", "").strip()
-    if url and token and _url_ok(url):
+    if token and not _TOKEN.match(token):
+        # Nunca mostra o token (nem um pedaço) no registro.
+        logger.warning(
+            "Éden (casa): EDEN_CASA_TOKEN com formato estranho; casa desligada"
+        )
+        token = ""
+        url_ok = False
+    else:
+        url_ok = bool(url) and _url_ok(url)
+    if url and token and url_ok:
         aparelhos = _lista_de_aparelhos(os.environ.get("EDEN_CASA_APARELHOS", ""))
         return Configuracao(bool(aparelhos), False, url, token, aparelhos)
-    if url and not _url_ok(url):
-        logger.warning("Éden (casa): EDEN_CASA_URL inválido; casa desligada")
+    if url and token and not url_ok:
+        logger.warning(
+            "Éden (casa): EDEN_CASA_URL inválido (use https, ou http só na rede "
+            "de casa ou no Tailscale); casa desligada"
+        )
     if demo:
         return Configuracao(True, True, "", "", tuple(Aparelho(e, n) for e, n in DEMO))
     return Configuracao(False, False, "", "", ())
@@ -305,6 +347,9 @@ def _pedido(
         raise ErroCasa(f"o Home Assistant respondeu com erro {exc.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise ErroCasa("o Home Assistant não respondeu (está ligado?)") from None
+    except Exception:  # noqa: BLE001 - a mensagem original pode trazer o token
+        logger.error("Éden (casa): erro inesperado ao falar com o Home Assistant")
+        raise ErroCasa("não deu para falar com o Home Assistant") from None
     try:
         return json.loads(bruto or b"null")
     except ValueError:

@@ -210,9 +210,13 @@ reinicie. Aparecem três aparelhos de mentira (luz, computador e ar) em
 1. Instale o Home Assistant (num computador sempre ligado em casa) e adicione
    os aparelhos nele (lâmpada e tomada Wi-Fi Tuya/Smart Life, o ar pelo app
    da marca ou um controle infravermelho Wi-Fi).
-2. No Home Assistant: seu perfil → **Segurança** → **Tokens de acesso de
-   longa duração** → criar. Copie o token direto para o `.env` do servidor
-   (nunca na conversa, no app ou no GitHub).
+2. No Home Assistant, crie um **usuário só para o Éden, sem ser
+   administrador** (Configurações → Pessoas → Adicionar pessoa; deixe
+   "Administrador" desligado). Entre com esse usuário: perfil →
+   **Segurança** → **Tokens de acesso de longa duração** → criar. Copie o
+   token direto para o `.env` do servidor (nunca na conversa, no app ou no
+   GitHub). Assim, se o servidor do Éden for invadido, ninguém ganha o
+   Home Assistant inteiro.
 3. No `.env` do servidor:
    ```
    EDEN_CASA_URL=http://ENDERECO-DO-HOME-ASSISTANT:8123
@@ -221,6 +225,11 @@ reinicie. Aparecem três aparelhos de mentira (luz, computador e ar) em
    ```
    A lista é **fechada**: o Éden só mexe no que estiver nela (luz, tomada,
    ar, cena e botão). Fechaduras, alarmes e câmeras não entram.
+   **Atenção:** a lista confere o *tipo* do aparelho, não o que ele faz.
+   Não ponha nela uma tomada, botão ou cena que abra portão, destrave porta
+   ou desligue alarme.
+   O endereço precisa ser `https://`; `http://` só vale dentro de casa
+   (`.local`, 192.168…, 10…) ou pelo Tailscale (`.ts.net`, 100.x).
 4. Reinicie o Éden (`docker compose restart`).
 
 Como funciona: pela tela, o toque no botão já vale. Na conversa ("estou
