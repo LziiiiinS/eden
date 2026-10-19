@@ -14,6 +14,7 @@ import { EdenRotasPage } from './pages/EdenRotasPage';
 import { EdenEmailPage } from './pages/EdenEmailPage';
 import { EdenContasPage } from './pages/EdenContasPage';
 import { EdenReuniaoPage } from './pages/EdenReuniaoPage';
+import { EdenCasaPage } from './pages/EdenCasaPage';
 import { EdenAccessGate } from './components/EdenAccessGate';
 import { GetStartedPage } from './pages/GetStartedPage';
 import { AgentsPage } from './pages/AgentsPage';
@@ -225,6 +226,7 @@ export default function App() {
           <Route path="email" element={<EdenEmailPage />} />
           <Route path="contas" element={<EdenContasPage />} />
           <Route path="reuniao" element={<EdenReuniaoPage />} />
+          <Route path="casa" element={<EdenCasaPage />} />
           <Route path="settings/avancado" element={<SettingsPage />} />
           <Route path="get-started" element={<GetStartedPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />

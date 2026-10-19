@@ -597,6 +597,13 @@ def create_app(
         app.include_router(eden_reuniao_router)
     except Exception as exc:
         logger.warning("Éden: modo reunião não ligado: %s", exc)
+    # Éden: casa (Home Assistant; desligada até configurar no .env).
+    try:
+        from openjarvis.eden.routes_casa import router as eden_casa_router
+
+        app.include_router(eden_casa_router)
+    except Exception as exc:
+        logger.warning("Éden: casa não ligada: %s", exc)
     # Éden (Parte 4): Notion (precisa da NOTION_API_KEY no .env).
     try:
         from openjarvis.eden.routes_notion import router as eden_notion_router

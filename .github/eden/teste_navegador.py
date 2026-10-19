@@ -367,6 +367,32 @@ def main() -> int:
         assert status == 200
         passo("Modo reunião: só grava depois de avisar as pessoas; cria e apaga")
 
+        # Casa (modo demonstração, EDEN_CASA_DEMO=1 no teste): aparelhos de
+        # mentira; uma rotina criada pela API roda pela tela.
+        status, nova = api(
+            "POST",
+            "/v1/eden/casa/rotinas",
+            {
+                "nome": "Chegando em casa (teste)",
+                "passos": [
+                    {"entidade": "climate.ar_demo", "acao": "temperatura", "valor": 20}
+                ],
+            },
+        )
+        assert status == 200, nova
+        pg.goto(BASE + "/casa")
+        expect(pg.get_by_text("Luz da sala (demonstração)")).to_be_visible(
+            timeout=30_000
+        )
+        pg.get_by_role("button", name="Ligar").first.click()
+        expect(pg.get_by_text("ligado", exact=True).first).to_be_visible()
+        pg.get_by_role("button", name="Rodar agora").click()
+        expect(pg.get_by_text("ligado · 20 °C")).to_be_visible()
+        esperar_pedidos(pg, "/casa")
+        status, _ = api("DELETE", f"/v1/eden/casa/rotinas/{nova['rotina']['id']}")
+        assert status == 200
+        passo("Casa (demonstração): liga a luz e roda a rotina pela tela")
+
         # E-mail (Parte 5): sem o Google configurado, a página só explica.
         pg.goto(BASE + "/email")
         expect(pg.get_by_text("E-mail ainda não conectado")).to_be_visible(
