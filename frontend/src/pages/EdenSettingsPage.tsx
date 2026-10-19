@@ -10,6 +10,7 @@ import { EdenNotionSettings } from '../components/Eden/EdenNotionSettings';
 import { EdenEmailSettings } from '../components/Eden/EdenEmailSettings';
 import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
 import { useNucleoStore } from '../lib/eden-nucleo';
+import { EdenNucleoMini } from '../components/Eden/EdenNucleo';
 import { EdenAparelhosSettings } from '../components/Eden/EdenAparelhosSettings';
 import { EdenAtividade } from '../components/Eden/EdenAtividade';
 import { criarAparelho } from '../lib/eden-aparelhos';
@@ -265,10 +266,7 @@ function ConnectPhone() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section
-      className="rounded-xl p-5"
-      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-    >
+    <section className="eden-vidro rounded-2xl p-5">
       <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
         {title}
       </h2>
@@ -372,10 +370,13 @@ export function EdenSettingsPage() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-4 py-6 flex flex-col gap-4">
-        <h1 className="text-lg font-semibold pl-10 md:pl-0" style={{ color: 'var(--color-text)' }}>
-          Configurações
-        </h1>
+      <div className="eden-surgir max-w-2xl mx-auto px-4 py-6 flex flex-col gap-4">
+        <div className="flex items-center gap-2 pl-10 md:pl-0">
+          <EdenNucleoMini />
+          <h1 className="eden-titulo" style={{ color: 'var(--color-text)' }}>
+            Configurações
+          </h1>
+        </div>
 
         <Section title="Aparência">
           <Row label="Tema">
@@ -417,10 +418,10 @@ export function EdenSettingsPage() {
             </select>
           </Row>
           <Row
-            label="Núcleo 3D animado"
-            description="A esfera do Éden que mostra quando ele está ouvindo, pensando ou falando. Desligue se o celular esquentar ou gastar bateria."
+            label="Visual 3D animado"
+            description="A esfera do Éden e o campo de luz no fundo, que mostram quando ele está ouvindo, pensando ou falando. Desligue se o celular esquentar ou gastar bateria."
           >
-            <Toggle on={nucleoAtivo} onChange={() => setNucleoAtivo(!nucleoAtivo)} label="Núcleo 3D animado" />
+            <Toggle on={nucleoAtivo} onChange={() => setNucleoAtivo(!nucleoAtivo)} label="Visual 3D animado" />
           </Row>
         </Section>
 

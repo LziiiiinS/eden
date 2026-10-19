@@ -32,6 +32,7 @@ import { EdenSyncStatus } from './EdenSyncStatus';
 import { EdenSpending } from './EdenSpending';
 import { friendlyModelName, isEdenModel } from '../../lib/eden-ai';
 import { useAppStore } from '../../lib/store';
+import { useNucleoStore } from '../../lib/eden-nucleo';
 
 // Éden: páginas que aparecem no menu durante o piloto.
 const EDEN_PILOT_PAGES = ['/', '/hoje', '/tarefas', '/notas', '/reuniao', '/contas', '/email', '/clima', '/rotas', '/memoria', '/settings'];
@@ -49,6 +50,7 @@ export function Sidebar() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const visual3d = useNucleoStore((s) => s.ativo);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const createConversation = useAppStore((s) => s.createConversation);
   const selectedModel = useAppStore((s) => s.selectedModel);
@@ -123,9 +125,11 @@ export function Sidebar() {
           ${sidebarOpen ? 'w-[260px]' : 'w-0'}
         `}
         style={{
-          background: 'var(--color-sidebar)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          // Éden: com o fundo 3D, a barra fica quase opaca e sem desfoque
+          // (desfocar o fundo animado gastaria bateria a cada quadro).
+          background: visual3d ? 'var(--eden-barra)' : 'var(--color-sidebar)',
+          backdropFilter: visual3d ? 'none' : 'blur(20px)',
+          WebkitBackdropFilter: visual3d ? 'none' : 'blur(20px)',
           borderRight: sidebarOpen ? '1px solid var(--color-border)' : 'none',
         }}
       >
