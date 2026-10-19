@@ -381,3 +381,17 @@ def test_refresh_that_races_a_disconnect_does_not_keep_access(store, tmp_path):
     with pytest.raises(google.ErroGoogle):
         c._token_de_acesso()
     assert c._acesso is None
+
+
+def test_gmail_api_off_says_so(cliente, falso, monkeypatch):
+    """403 do Gmail (19/10, Levi): quase sempre a Gmail API desligada no
+    projeto. A página e a conversa dizem isso, não "não respondeu"."""
+    monkeypatch.setattr(
+        falso,
+        "request",
+        lambda *a, **kw: Resposta(403, {"error": {"status": "PERMISSION_DENIED"}}),
+    )
+    with pytest.raises(google.ErroGoogle) as exc:
+        gmail.listar(cliente, forcar=True)
+    assert exc.value.codigo == "eden_google_403"
+    assert "Gmail API" in str(exc.value)
