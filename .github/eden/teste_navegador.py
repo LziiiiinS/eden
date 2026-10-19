@@ -141,7 +141,8 @@ def main() -> int:
 
         def pedido(req) -> None:
             caminho = req.url.split("?")[0].replace(BASE, "")
-            EM_ANDAMENTO[id(req)] = (DOCUMENTO[0], caminho)
+            # (a chave é o próprio pedido: um id() pode ser reaproveitado)
+            EM_ANDAMENTO[req] = (DOCUMENTO[0], caminho)
             RECENTES.append((DOCUMENTO[0], caminho))
 
         def navegou(quadro) -> None:
@@ -149,7 +150,7 @@ def main() -> int:
                 DOCUMENTO[0] += 1
 
         def terminou(req) -> None:
-            EM_ANDAMENTO.pop(id(req), None)
+            EM_ANDAMENTO.pop(req, None)
 
         pagina.on("console", no_console)
         pagina.on("pageerror", lambda e: problemas.append(f"[{nome}] erro: {e}"))

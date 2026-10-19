@@ -192,8 +192,14 @@ class TestEdenApiNotStored:
         def pagina() -> dict:
             return {"ok": True}
 
+        @app.get("/v1/eden/gastos")
+        def gastos() -> dict:
+            return {"ok": True}
+
         client = TestClient(app)
         assert client.get("/v1/eden/hoje").headers["Cache-Control"] == "no-store"
         # Uma rota pode pedir algo mais restrito (ou diferente) que o padrão.
         assert client.get("/v1/eden/outra").headers["Cache-Control"] == "private"
+        # Só números do mês: fica fora (o app pede duas vezes ao mesmo tempo).
+        assert "Cache-Control" not in client.get("/v1/eden/gastos").headers
         assert "Cache-Control" not in client.get("/hoje").headers

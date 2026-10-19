@@ -74,8 +74,15 @@ def create_security_middleware() -> Any:
     return SecurityHeadersMiddleware
 
 
+# Fora do no-store: só o total de gastos do mês (números, sem conteúdo
+# pessoal). O app pede esse endereço duas vezes ao mesmo tempo ao abrir; com
+# no-store, o Chromium do teste segurou um dos dois por mais de 20 s (vimos
+# isso duas vezes: 18/10 e 19/10).
+_PODE_GUARDAR = frozenset({"/v1/eden/gastos"})
+
+
 def _api_privada(path: str) -> bool:
-    return path.startswith("/v1/")
+    return path.startswith("/v1/") and path not in _PODE_GUARDAR
 
 
 # Also export the header values as constants for testing
