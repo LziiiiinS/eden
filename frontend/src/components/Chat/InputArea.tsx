@@ -797,12 +797,8 @@ export function InputArea() {
         )}
       </div>
       <div
-        className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
-        style={{
-          background: 'var(--color-input-bg)',
-          border: '1px solid var(--color-input-border)',
-          boxShadow: 'var(--shadow-sm)',
-        }}
+        className="eden-doca flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
+        style={{ border: '1px solid var(--color-input-border)' }}
       >
         {/* Éden: texto da caixa de mensagem com o nome do Éden, em português. */}
         <textarea

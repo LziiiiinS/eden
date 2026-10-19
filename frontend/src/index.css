@@ -10,11 +10,15 @@
 
 @layer base {
   :root {
-    --color-bg: #f9f9f9;
-    --color-bg-secondary: #f4f4f5;
-    --color-bg-tertiary: #e4e4e7;
+    /* Éden: névoa clara com um toque de verde-água (combina com o fundo 3D). */
+    --color-bg: #edf2f2;
+    --color-bg-secondary: #e7eded;
+    --color-bg-tertiary: #dbe3e3;
     --color-surface: #ffffff;
-    --color-sidebar: rgba(250, 250, 250, 0.85);
+    --color-sidebar: rgba(243, 247, 247, 0.74);
+    --eden-vidro-luz: rgba(255, 255, 255, 0.85);
+    --eden-vidro-sombra: rgba(16, 48, 56, 0.26);
+    --eden-barra: rgba(243, 247, 247, 0.93);
     --color-border: rgba(0, 0, 0, 0.08);
     --color-border-subtle: rgba(0, 0, 0, 0.04);
 
@@ -69,11 +73,14 @@
   }
 
   .dark {
-    --color-bg: #0a0a0b;
-    --color-bg-secondary: #121214;
-    --color-bg-tertiary: #18181b;
-    --color-surface: #121214;
-    --color-sidebar: rgba(12, 12, 14, 0.72);
+    --color-bg: #050a0d;
+    --color-bg-secondary: #0b1317;
+    --color-bg-tertiary: #121c21;
+    --color-surface: #0a1216;
+    --color-sidebar: rgba(6, 12, 16, 0.62);
+    --eden-vidro-luz: rgba(255, 255, 255, 0.06);
+    --eden-vidro-sombra: rgba(0, 0, 0, 0.7);
+    --eden-barra: rgba(6, 12, 16, 0.9);
     --color-border: rgba(255, 255, 255, 0.09);
     --color-border-subtle: rgba(255, 255, 255, 0.05);
 
@@ -117,11 +124,14 @@
 
   @media (prefers-color-scheme: dark) {
     :root:not(.light) {
-      --color-bg: #0a0a0b;
-      --color-bg-secondary: #121214;
-      --color-bg-tertiary: #18181b;
-      --color-surface: #121214;
-      --color-sidebar: rgba(12, 12, 14, 0.72);
+      --color-bg: #050a0d;
+      --color-bg-secondary: #0b1317;
+      --color-bg-tertiary: #121c21;
+      --color-surface: #0a1216;
+      --color-sidebar: rgba(6, 12, 16, 0.62);
+      --eden-vidro-luz: rgba(255, 255, 255, 0.06);
+      --eden-vidro-sombra: rgba(0, 0, 0, 0.7);
+      --eden-barra: rgba(6, 12, 16, 0.9);
       --color-border: rgba(255, 255, 255, 0.09);
       --color-border-subtle: rgba(255, 255, 255, 0.05);
 
@@ -764,4 +774,86 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .eden-nucleo-css { animation: none; }
+}
+
+/* ── Éden: visual 3D ─────────────────────────────────────────────────────
+   O fundo (campo de luz) fica atrás de tudo; as caixas são vidro por cima;
+   cada página entra vindo do fundo, uma vez. */
+.eden-espaco {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.eden-espaco-brilho {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 52% at 50% 54%, color-mix(in srgb, currentColor 12%, transparent), transparent 70%),
+    linear-gradient(to bottom, transparent 45%, color-mix(in srgb, currentColor 5%, transparent));
+  transition: color 900ms ease;
+}
+.eden-espaco-tela {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.eden-vidro {
+  background: var(--color-surface);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-surface) 88%, transparent),
+    color-mix(in srgb, var(--color-surface) 76%, transparent)
+  );
+  border: 1px solid var(--color-border);
+  box-shadow: inset 0 1px 0 0 var(--eden-vidro-luz), 0 26px 50px -34px var(--eden-vidro-sombra);
+}
+/* Sem desfoque: desfocar o fundo animado custaria bateria a cada quadro. */
+.eden-doca {
+  background: var(--color-input-bg);
+  background: color-mix(in srgb, var(--color-input-bg) 90%, transparent);
+  box-shadow: inset 0 1px 0 0 var(--eden-vidro-luz), 0 20px 44px -24px var(--eden-vidro-sombra);
+}
+.eden-titulo {
+  font-family: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.3rem, 1.1rem + 0.8vw, 1.7rem);
+  line-height: 1.15;
+  letter-spacing: -0.028em;
+}
+.eden-saudacao {
+  font-family: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-weight: 500;
+  font-size: clamp(2rem, 1.5rem + 2.4vw, 3rem);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+.eden-reflexo {
+  height: 22px;
+  margin-top: -22px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, currentColor 38%, transparent), transparent);
+  filter: blur(5px);
+  transition: color 900ms ease;
+}
+@keyframes eden-surgir {
+  from {
+    opacity: 0;
+    transform: perspective(1100px) translate3d(0, 16px, -80px) rotateX(7deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.eden-surgir {
+  animation: eden-surgir 540ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  transform-origin: 50% 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eden-surgir { animation: none; }
+  .eden-espaco-brilho, .eden-reflexo { transition: none; }
 }

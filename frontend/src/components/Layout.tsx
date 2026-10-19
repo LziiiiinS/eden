@@ -6,9 +6,13 @@ import { SystemPulse } from './SystemPulse';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
 import { EdenReminders } from './Eden/EdenReminders';
+import { EdenEspaco } from './Eden/EdenEspaco';
+import { useNucleoStore } from '../lib/eden-nucleo';
 
 export function Layout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  // Éden: fundo 3D (campo de luz) ou o fundo simples, conforme Aparência.
+  const visual3d = useNucleoStore((s) => s.ativo);
   const [apiReachable, setApiReachable] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -27,7 +31,7 @@ export function Layout() {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden relative" style={{ paddingTop: '3px' }}>
-      <div className="hud-backdrop" aria-hidden="true" />
+      {visual3d ? <EdenEspaco /> : <div className="hud-backdrop" aria-hidden="true" />}
       <SystemPulse apiReachable={apiReachable} />
       <ApprovalBell />
       {/* Éden: avisos de lembrete com o app aberto. */}
