@@ -12,6 +12,7 @@ import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
 import { useNucleoStore } from '../lib/eden-nucleo';
 import { EdenNucleoMini } from '../components/Eden/EdenNucleo';
 import { EdenAparelhosSettings } from '../components/Eden/EdenAparelhosSettings';
+import { EdenAtividade } from '../components/Eden/EdenAtividade';
 import { criarAparelho } from '../lib/eden-aparelhos';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
@@ -469,7 +470,7 @@ export function EdenSettingsPage() {
           </Row>
           <Row
             label="Endereço do servidor"
-            description="Deixe em branco quando o Éden abre pelo próprio endereço do servidor (o normal)."
+            description="Deixe em branco (o normal). Por segurança, o app só fala com o servidor do próprio endereço: outro endereço aqui faz tudo parar de funcionar."
           >
             <input
               type="url"
@@ -492,6 +493,12 @@ export function EdenSettingsPage() {
         {settings.apiKey && (
           <Section title="Aparelhos ligados">
             <EdenAparelhosSettings />
+          </Section>
+        )}
+
+        {settings.apiKey && (
+          <Section title="Atividade recente">
+            <EdenAtividade />
           </Section>
         )}
 

@@ -96,6 +96,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         status_code=401,
                     )
                 request.state.eden_aparelho = aparelho
+            # Éden: o registro de ações anota de qual aparelho veio o pedido.
+            from openjarvis.eden import quem
+
+            marca = quem.definir(request.state.eden_aparelho)
+            try:
+                return await call_next(request)
+            finally:
+                quem.soltar(marca)
         return await call_next(request)
 
     @staticmethod

@@ -398,10 +398,13 @@ class Organizacao:
         alvo: str,
         acao_id: Optional[str] = None,
     ) -> None:
+        # Éden: com o aparelho do pedido (ex.: "pessoa (iPhone #2)").
+        from openjarvis.eden.quem import com_aparelho
+
         conn.execute(
             "INSERT INTO registro (quando, quem, o_que, alvo, acao_id) "
             "VALUES (?, ?, ?, ?, ?)",
-            (agora_ms(), quem, o_que, alvo, acao_id),
+            (agora_ms(), com_aparelho(quem)[:120], o_que, alvo, acao_id),
         )
 
     # ── espaços ──────────────────────────────────────────────────────────
@@ -1222,16 +1225,38 @@ class Organizacao:
         return int(self._ler(sql, params)[0][0])
 
     def listar_acoes(
-        self, estado: Optional[str] = None, limite: int = 50
+        self,
+        estado: Optional[str] = None,
+        limite: int = 50,
+        conversa: Optional[str] = None,
+        espaco: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """Sugestões mais recentes. ``conversa`` e ``espaco`` filtram no banco
+        (antes do limite): a lista de um espaço não mostra as dos outros."""
         agora = agora_ms()
+        limite = max(1, min(limite, 500))
+        condicoes: List[str] = []
+        params: List[Any] = []
+        if conversa is not None:
+            condicoes.append("conversa_id = ?")
+            params.append(str(conversa)[:200])
+        if espaco is not None:
+            condicoes.append("json_extract(parametros, '$.espaco') = ?")
+            params.append(str(espaco))
+        onde = f"WHERE {' AND '.join(condicoes)} " if condicoes else ""
+        if estado:
+            # "expirada" e "pendente" dependem da hora: o filtro fica depois,
+            # sobre uma janela maior.
+            limite_sql = 500
+        else:
+            limite_sql = limite
         rows = self._ler(
-            "SELECT * FROM acoes ORDER BY criado_em DESC LIMIT ?",
-            (max(1, min(limite, 500)),),
+            f"SELECT * FROM acoes {onde}ORDER BY criado_em DESC LIMIT ?",
+            (*params, limite_sql),
         )
         itens = [self.acao_publica(r, agora) for r in rows]
         if estado:
-            itens = [a for a in itens if a["estado"] == estado]
+            itens = [a for a in itens if a["estado"] == estado][:limite]
         return itens
 
     def inscricoes_push(self) -> List[Dict[str, Any]]:

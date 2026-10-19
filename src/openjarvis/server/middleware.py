@@ -49,6 +49,11 @@ def create_security_middleware() -> Any:
             response.headers.setdefault(
                 "Referrer-Policy", "strict-origin-when-cross-origin"
             )
+            # Éden: respostas da API (conversas, e-mails, contas…) não ficam
+            # guardadas no disco do navegador. Só a API: a página e os arquivos
+            # do app continuam podendo ficar no cache.
+            if _api_privada(request.url.path):
+                response.headers.setdefault("Cache-Control", "no-store")
             # microphone=(self): the chat UI records voice input from this same
             # origin. An empty allowlist blocked its own feature.
             # Éden: geolocation=(self) para "melhor caminho saindo daqui" (só
@@ -69,6 +74,17 @@ def create_security_middleware() -> Any:
     return SecurityHeadersMiddleware
 
 
+# Fora do no-store: só o total de gastos do mês (números, sem conteúdo
+# pessoal). O app pede esse endereço duas vezes ao mesmo tempo ao abrir; com
+# no-store, o Chromium do teste segurou um dos dois por mais de 20 s (vimos
+# isso duas vezes: 18/10 e 19/10).
+_PODE_GUARDAR = frozenset({"/v1/eden/gastos"})
+
+
+def _api_privada(path: str) -> bool:
+    return path.startswith("/v1/") and path not in _PODE_GUARDAR
+
+
 # Also export the header values as constants for testing
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -77,11 +93,17 @@ SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(self), geolocation=(self)",
-    # Éden: a versão mais fechada (scripts só do próprio Éden, sem inline nem
-    # eval) ficou para depois: o teste no navegador travou com ela (18/10).
+    # Éden: scripts só do próprio Éden, sem "inline" nem "eval" (a chave fica
+    # no navegador: um texto injetado não roda como programa). Estilos inline
+    # continuam (o app e o KaTeX usam). Nada de fora: sem http nem curingas.
+    # (Na rodada final, 18/10, esta versão foi tirada junto com o no-store por
+    # engano: quem travava o teste no navegador era só o no-store.)
     "Content-Security-Policy": (
-        "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob:; font-src 'self' data:; "
-        "media-src 'self' blob:"
+        "media-src 'self' blob:; connect-src 'self'; worker-src 'self'; "
+        "manifest-src 'self'; object-src 'none'; base-uri 'none'; "
+        "form-action 'self'; frame-ancestors 'none'"
     ),
 }

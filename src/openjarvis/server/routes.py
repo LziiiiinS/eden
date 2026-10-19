@@ -171,8 +171,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     Éden: antes de responder, escolhe a IA (eden-auto/eden-dia/eden-missao) e
     confere o limite de gastos do mês; depois informa qual IA respondeu.
     """
-    from openjarvis.eden.chat_hooks import antes_da_conversa, finish_chat, prepare_chat
+    from openjarvis.eden.chat_hooks import (
+        antes_da_conversa,
+        finish_chat,
+        prepare_chat,
+        teto_da_conversa,
+    )
 
+    recusa = teto_da_conversa(request)
+    if recusa is not None:
+        return recusa
     await antes_da_conversa(request_body, request)
     decision, refusal = prepare_chat(request_body, request)
     if refusal is not None:

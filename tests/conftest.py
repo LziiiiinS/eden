@@ -143,6 +143,14 @@ def _clean_registries() -> None:
     reset_event_bus()
 
 
+@pytest.fixture(autouse=True)
+def _eden_tetos_zerados() -> None:
+    """Éden: cada teste começa com os tetos por hora zerados."""
+    from openjarvis.eden import tetos
+
+    tetos.zerar()
+
+
 # ---------------------------------------------------------------------------
 # Hardware fixtures
 # ---------------------------------------------------------------------------

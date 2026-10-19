@@ -151,3 +151,55 @@ class TestEdenEmbeddedAssets:
         assert "img-src 'self' data: blob:" in csp
         assert "http" not in csp
         assert "*" not in csp
+
+
+class TestEdenScriptsOnlyFromTheApp:
+    """Sem script inline nem eval; nada de fora (19/10)."""
+
+    def test_csp_blocks_inline_scripts_and_eval(self):
+        csp = SECURITY_HEADERS["Content-Security-Policy"]
+        assert "script-src 'self';" in csp
+        assert "unsafe-eval" not in csp
+        assert csp.count("unsafe-inline") == 1
+        assert "style-src 'self' 'unsafe-inline'" in csp
+        assert "object-src 'none'" in csp
+        assert "frame-ancestors 'none'" in csp
+        assert "base-uri 'none'" in csp
+
+
+class TestEdenApiNotStored:
+    """Respostas da API não ficam no disco do navegador; a página fica."""
+
+    def test_no_store_only_on_the_api(self):
+        import pytest
+
+        fastapi = pytest.importorskip("fastapi")
+        from fastapi.responses import JSONResponse
+        from fastapi.testclient import TestClient
+
+        app = fastapi.FastAPI()
+        app.add_middleware(create_security_middleware())
+
+        @app.get("/v1/eden/hoje")
+        def hoje() -> dict:
+            return {"ok": True}
+
+        @app.get("/v1/eden/outra")
+        def outra():
+            return JSONResponse({"ok": True}, headers={"Cache-Control": "private"})
+
+        @app.get("/hoje")
+        def pagina() -> dict:
+            return {"ok": True}
+
+        @app.get("/v1/eden/gastos")
+        def gastos() -> dict:
+            return {"ok": True}
+
+        client = TestClient(app)
+        assert client.get("/v1/eden/hoje").headers["Cache-Control"] == "no-store"
+        # Uma rota pode pedir algo mais restrito (ou diferente) que o padrão.
+        assert client.get("/v1/eden/outra").headers["Cache-Control"] == "private"
+        # Só números do mês: fica fora (o app pede duas vezes ao mesmo tempo).
+        assert "Cache-Control" not in client.get("/v1/eden/gastos").headers
+        assert "Cache-Control" not in client.get("/hoje").headers

@@ -172,6 +172,14 @@ class Aparelhos:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def nome(self, aparelho_id: int) -> Optional[str]:
+        """Nome do aparelho (mesmo desligado), para o registro de ações."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT nome FROM aparelhos WHERE id = ?", (int(aparelho_id),)
+            ).fetchone()
+        return str(row["nome"]) if row else None
+
     def desligar_todos(self) -> int:
         with self._lock:
             mudou = self._conn.execute(
@@ -300,4 +308,13 @@ def conferir(chave: Any) -> Optional[int]:
         return registro().conferir(chave)
     except Exception:  # noqa: BLE001
         logger.exception("Éden: falha ao conferir a chave do aparelho")
+        return None
+
+
+def nome_do_aparelho(aparelho_id: int) -> Optional[str]:
+    """Nunca derruba quem chamou (é só para o registro)."""
+    try:
+        return registro().nome(aparelho_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Éden: falha ao ler o nome do aparelho")
         return None
