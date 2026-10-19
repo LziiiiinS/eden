@@ -22,6 +22,7 @@ import { localDoAparelho, pareceRota, usarLocalNaConversa } from '../../lib/eden
 import { desbloquearAudio, useEdenVozStore } from '../../lib/eden-voz';
 import { useEdenOrg } from '../../lib/eden-org';
 import { useSpeech } from '../../hooks/useSpeech';
+import { useNucleoStore } from '../../lib/eden-nucleo';
 import {
   isEdenModel,
   providerName,
@@ -157,6 +158,12 @@ export function InputArea() {
     startRecording,
     stopRecording,
   } = useSpeech();
+  // Éden: o núcleo 3D mostra "ouvindo" enquanto grava.
+  const setOuvindo = useNucleoStore((s) => s.setOuvindo);
+  useEffect(() => {
+    setOuvindo(speechState === 'recording');
+    return () => setOuvindo(false);
+  }, [speechState, setOuvindo]);
 
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.
