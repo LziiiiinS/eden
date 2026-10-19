@@ -49,7 +49,8 @@ describe('modo reunião', () => {
     g.adicionarPedaco(new Blob(['b'], { type: 'audio/webm' }), 60_000);
     await g.terminar();
     expect(enviados).toEqual([0, 1]);
-    expect(esperas[0]).toBe(2000);
+    // (3000 = a espera do último pedaço ao terminar; 2000 = a nova tentativa)
+    expect(esperas).toContain(2000);
     expect(situacoes[situacoes.length - 1]).toMatchObject({ enviados: 2, naFila: 0, erro: null });
   });
 
