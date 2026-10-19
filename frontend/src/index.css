@@ -18,6 +18,7 @@
     --color-sidebar: rgba(243, 247, 247, 0.74);
     --eden-vidro-luz: rgba(255, 255, 255, 0.85);
     --eden-vidro-sombra: rgba(16, 48, 56, 0.26);
+    --eden-barra: rgba(243, 247, 247, 0.93);
     --color-border: rgba(0, 0, 0, 0.08);
     --color-border-subtle: rgba(0, 0, 0, 0.04);
 
@@ -79,6 +80,7 @@
     --color-sidebar: rgba(6, 12, 16, 0.62);
     --eden-vidro-luz: rgba(255, 255, 255, 0.06);
     --eden-vidro-sombra: rgba(0, 0, 0, 0.7);
+    --eden-barra: rgba(6, 12, 16, 0.9);
     --color-border: rgba(255, 255, 255, 0.09);
     --color-border-subtle: rgba(255, 255, 255, 0.05);
 
@@ -129,6 +131,7 @@
       --color-sidebar: rgba(6, 12, 16, 0.62);
       --eden-vidro-luz: rgba(255, 255, 255, 0.06);
       --eden-vidro-sombra: rgba(0, 0, 0, 0.7);
+      --eden-barra: rgba(6, 12, 16, 0.9);
       --color-border: rgba(255, 255, 255, 0.09);
       --color-border-subtle: rgba(255, 255, 255, 0.05);
 
@@ -799,6 +802,7 @@
   display: block;
 }
 .eden-vidro {
+  background: var(--color-surface);
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--color-surface) 88%, transparent),
@@ -807,10 +811,10 @@
   border: 1px solid var(--color-border);
   box-shadow: inset 0 1px 0 0 var(--eden-vidro-luz), 0 26px 50px -34px var(--eden-vidro-sombra);
 }
+/* Sem desfoque: desfocar o fundo animado custaria bateria a cada quadro. */
 .eden-doca {
-  background: color-mix(in srgb, var(--color-input-bg) 74%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  backdrop-filter: blur(18px) saturate(150%);
+  background: var(--color-input-bg);
+  background: color-mix(in srgb, var(--color-input-bg) 90%, transparent);
   box-shadow: inset 0 1px 0 0 var(--eden-vidro-luz), 0 20px 44px -24px var(--eden-vidro-sombra);
 }
 .eden-titulo {

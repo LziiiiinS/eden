@@ -8,10 +8,10 @@
 // - para quando sai da tela ou o app vai para segundo plano;
 // - "reduzir movimento" do aparelho → um quadro parado;
 // - sem WebGL (ou se o navegador perder o contexto) → esfera simples em CSS.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNucleoStore, VISUAL, type EstadoNucleo } from '../../lib/eden-nucleo';
 import { useEstadoEden } from '../../lib/eden-estado';
-import { criarPrograma, reduzirMovimento } from '../../lib/eden-webgl';
+import { criarPrograma, lacoDeDesenho, liberarCanvas, reduzirMovimento, useContextoWebgl } from '../../lib/eden-webgl';
 import { NUCLEO_FRAGMENTO, NUCLEO_VERTICE } from './eden-shaders';
 
 function EsferaSimples({ tamanho, estado }: { tamanho: number; estado: EstadoNucleo }) {
@@ -33,7 +33,7 @@ function EsferaSimples({ tamanho, estado }: { tamanho: number; estado: EstadoNuc
 export function EdenNucleo({ tamanho, estado }: { tamanho: number; estado: EstadoNucleo }) {
   const caixaRef = useRef<HTMLDivElement | null>(null);
   const estadoRef = useRef(estado);
-  const [semWebgl, setSemWebgl] = useState(false);
+  const { geracao, semWebgl, perdeu, semSuporte } = useContextoWebgl();
   const redesenharRef = useRef<() => void>(() => {});
   estadoRef.current = estado;
 
@@ -61,14 +61,16 @@ export function EdenNucleo({ tamanho, estado }: { tamanho: number; estado: Estad
       powerPreference: 'low-power',
     });
     if (!gl) {
-      canvas.remove();
-      setSemWebgl(true);
+      liberarCanvas(null, canvas);
+      semSuporte();
       return;
     }
     const programa = criarPrograma(gl, NUCLEO_VERTICE, NUCLEO_FRAGMENTO);
     if (!programa) {
-      canvas.remove();
-      setSemWebgl(true);
+      const perdido = gl.isContextLost();
+      liberarCanvas(gl, canvas);
+      if (perdido) perdeu();
+      else semSuporte();
       return;
     }
     const { prog } = programa;
@@ -97,9 +99,6 @@ export function EdenNucleo({ tamanho, estado }: { tamanho: number; estado: Estad
     let giro = VISUAL[estadoRef.current].giro;
     let voltas = 0;
     let anterior = performance.now();
-    let quadro = 0;
-    let ultimo = 0;
-    let visivel = true;
     const inicio = performance.now();
 
     const desenhar = (agora: number) => {
@@ -123,46 +122,42 @@ export function EdenNucleo({ tamanho, estado }: { tamanho: number; estado: Estad
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
 
-    const laco = (agora: number) => {
-      quadro = requestAnimationFrame(laco);
-      if (!visivel || document.hidden) return;
-      if (agora - ultimo < 33) return; // ~30 quadros por segundo
-      ultimo = agora;
-      desenhar(agora);
-    };
-
+    // ~30 quadros por segundo; dorme fora da tela e em segundo plano.
+    const laco = parado ? null : lacoDeDesenho(desenhar, () => 30);
     if (parado) {
       desenhar(performance.now());
       redesenharRef.current = () => desenhar(performance.now());
     } else {
-      quadro = requestAnimationFrame(laco);
+      laco?.ligar();
     }
 
     const observador =
       typeof IntersectionObserver !== 'undefined'
         ? new IntersectionObserver((entradas) => {
-            visivel = entradas.some((e) => e.isIntersecting);
+            laco?.visibilidade(entradas.some((e) => e.isIntersecting));
           })
         : null;
     observador?.observe(canvas);
 
-    const perdeu = (e: Event) => {
+    const aoPerder = (e: Event) => {
       e.preventDefault();
-      setSemWebgl(true);
+      laco?.parar();
+      perdeu();
     };
-    canvas.addEventListener('webglcontextlost', perdeu);
+    canvas.addEventListener('webglcontextlost', aoPerder);
 
     return () => {
-      cancelAnimationFrame(quadro);
+      laco?.parar();
       redesenharRef.current = () => {};
       observador?.disconnect();
-      canvas.removeEventListener('webglcontextlost', perdeu);
-      gl.deleteBuffer(buf);
-      programa.apagar();
-      gl.getExtension('WEBGL_lose_context')?.loseContext();
-      canvas.remove();
+      canvas.removeEventListener('webglcontextlost', aoPerder);
+      if (!gl.isContextLost()) {
+        gl.deleteBuffer(buf);
+        programa.apagar();
+      }
+      liberarCanvas(gl, canvas);
     };
-  }, [tamanho, semWebgl]);
+  }, [tamanho, semWebgl, geracao, perdeu, semSuporte]);
 
   return (
     <div

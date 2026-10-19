@@ -8,10 +8,17 @@
 // - para quando o app vai para segundo plano;
 // - "reduzir movimento" do aparelho → um quadro parado (muda só a cor);
 // - sem WebGL (ou se o navegador perder o contexto) → o fundo antigo, em CSS.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { corCss, gradeDoHorizonte, quadrosPorSegundo, resolucaoDoFundo, VISUAL } from '../../lib/eden-nucleo';
 import { useEstadoEden } from '../../lib/eden-estado';
-import { criarPrograma, reduzirMovimento, useTemaEscuro } from '../../lib/eden-webgl';
+import {
+  criarPrograma,
+  lacoDeDesenho,
+  liberarCanvas,
+  reduzirMovimento,
+  useContextoWebgl,
+  useTemaEscuro,
+} from '../../lib/eden-webgl';
 import { HORIZONTE_FRAGMENTO, HORIZONTE_VERTICE } from './eden-shaders';
 
 const PARTICULAS = 140;
@@ -23,7 +30,7 @@ export function EdenEspaco() {
   const estadoRef = useRef(estado);
   const escuroRef = useRef(escuro);
   const redesenharRef = useRef<() => void>(() => {});
-  const [semWebgl, setSemWebgl] = useState(false);
+  const { geracao, semWebgl, perdeu, semSuporte } = useContextoWebgl();
   estadoRef.current = estado;
   escuroRef.current = escuro;
 
@@ -49,14 +56,16 @@ export function EdenEspaco() {
       powerPreference: 'low-power',
     });
     if (!gl) {
-      canvas.remove();
-      setSemWebgl(true);
+      liberarCanvas(null, canvas);
+      semSuporte();
       return;
     }
     const programa = criarPrograma(gl, HORIZONTE_VERTICE, HORIZONTE_FRAGMENTO);
     if (!programa) {
-      canvas.remove();
-      setSemWebgl(true);
+      const perdido = gl.isContextLost();
+      liberarCanvas(gl, canvas);
+      if (perdido) perdeu();
+      else semSuporte();
       return;
     }
     const { prog } = programa;
@@ -154,8 +163,6 @@ export function EdenEspaco() {
     const olharAlvo = [0, 0];
     const inicio = performance.now();
     let anterior = inicio;
-    let quadro = 0;
-    let ultimo = 0;
 
     const desenhar = (agora: number) => {
       const alvo = VISUAL[estadoRef.current];
@@ -197,19 +204,13 @@ export function EdenEspaco() {
       gl.drawArrays(gl.POINTS, 0, PARTICULAS);
     };
 
-    const laco = (agora: number) => {
-      quadro = requestAnimationFrame(laco);
-      if (document.hidden) return;
-      if (agora - ultimo < 1000 / quadrosPorSegundo(estadoRef.current) - 2) return;
-      ultimo = agora;
-      desenhar(agora);
-    };
-
+    // 20 quadros/s em repouso e 30 com o Éden ativo; dorme em segundo plano.
+    const laco = parado ? null : lacoDeDesenho(desenhar, () => quadrosPorSegundo(estadoRef.current));
     if (parado) {
       desenhar(performance.now());
       redesenharRef.current = () => desenhar(performance.now());
     } else {
-      quadro = requestAnimationFrame(laco);
+      laco?.ligar();
     }
 
     // No notebook, o campo acompanha um pouco o mouse (dá a sensação de
@@ -234,26 +235,28 @@ export function EdenEspaco() {
     };
     window.addEventListener('resize', aoRedimensionar);
 
-    const perdeu = (e: Event) => {
+    const aoPerder = (e: Event) => {
       e.preventDefault();
-      setSemWebgl(true);
+      laco?.parar();
+      perdeu();
     };
-    canvas.addEventListener('webglcontextlost', perdeu);
+    canvas.addEventListener('webglcontextlost', aoPerder);
 
     return () => {
-      cancelAnimationFrame(quadro);
+      laco?.parar();
       redesenharRef.current = () => {};
       window.removeEventListener('pointermove', aoMover);
       window.removeEventListener('resize', aoRedimensionar);
-      canvas.removeEventListener('webglcontextlost', perdeu);
-      gl.deleteBuffer(bufChao);
-      gl.deleteBuffer(bufAr);
-      gl.deleteBuffer(bufMalha);
-      programa.apagar();
-      gl.getExtension('WEBGL_lose_context')?.loseContext();
-      canvas.remove();
+      canvas.removeEventListener('webglcontextlost', aoPerder);
+      if (!gl.isContextLost()) {
+        gl.deleteBuffer(bufChao);
+        gl.deleteBuffer(bufAr);
+        gl.deleteBuffer(bufMalha);
+        programa.apagar();
+      }
+      liberarCanvas(gl, canvas);
     };
-  }, [semWebgl]);
+  }, [semWebgl, geracao, perdeu, semSuporte]);
 
   return (
     <div className="eden-espaco" aria-hidden="true">
