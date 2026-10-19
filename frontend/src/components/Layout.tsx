@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router';
-import { ApprovalBell } from './ApprovalBell';
+import { EdenAtalhosTopo } from './Eden/EdenAtalhosTopo';
 import { Sidebar } from './Sidebar/Sidebar';
 import { SystemPulse } from './SystemPulse';
 import { useAppStore } from '../lib/store';
@@ -33,7 +33,8 @@ export function Layout() {
     <div className="flex flex-col h-full w-full overflow-hidden relative" style={{ paddingTop: '3px' }}>
       {visual3d ? <EdenEspaco /> : <div className="hud-backdrop" aria-hidden="true" />}
       <SystemPulse apiReachable={apiReachable} />
-      <ApprovalBell />
+      {/* Éden: Perfil e memória, Configurações e o sino, no canto de cima. */}
+      <EdenAtalhosTopo />
       {/* Éden: avisos de lembrete com o app aberto. */}
       <EdenReminders />
 

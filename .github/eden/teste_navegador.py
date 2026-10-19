@@ -313,6 +313,25 @@ def main() -> int:
             esperar_pedidos(pg, caminho)
             passo(f"página {caminho} abriu (e os pedidos ao servidor terminaram)")
 
+        # Menu em grupos (19/10): Conversa + grupos que abrem e fecham;
+        # Perfil e memória e Configurações no canto de cima, ao lado do sino.
+        pg.goto(BASE + "/")
+        menu = pg.get_by_role("navigation", name="Menu")
+        grupo = menu.get_by_role("button", name="Organização")
+        expect(grupo).to_be_visible(timeout=30_000)
+        if grupo.get_attribute("aria-expanded") != "true":
+            grupo.click()
+        menu.get_by_role("button", name="Tarefas", exact=True).click()
+        expect(pg).to_have_url(BASE + "/tarefas")
+        expect(grupo).to_have_attribute("aria-expanded", "true")
+        grupo.click()  # fecha
+        expect(menu.get_by_role("button", name="Tarefas", exact=True)).to_have_count(0)
+        pg.get_by_role("button", name="Perfil e memória", exact=True).click()
+        expect(pg).to_have_url(BASE + "/memoria")
+        pg.get_by_role("button", name="Configurações", exact=True).click()
+        expect(pg).to_have_url(BASE + "/settings")
+        passo("menu em grupos e atalhos do canto de cima")
+
         # Clima (Parte 4): começa desligado; ligar não chama o Open-Meteo
         # (só busca e previsão chamam, e aqui nenhum lugar é cadastrado).
         pg.goto(BASE + "/clima")
