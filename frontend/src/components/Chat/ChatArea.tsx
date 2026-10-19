@@ -6,7 +6,7 @@ import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
 import { useEdenVozStore } from '../../lib/eden-voz';
-import { estadoNucleo, useNucleoStore } from '../../lib/eden-nucleo';
+import { corCss, estadoNucleo, useNucleoStore } from '../../lib/eden-nucleo';
 import { EdenNucleo } from '../Eden/EdenNucleo';
 import { isEdenModel } from '../../lib/eden-ai';
 import { stripThinkTags } from '../../lib/message-text';
@@ -43,6 +43,8 @@ export function ChatArea() {
   const ouvindo = useNucleoStore((s) => s.ouvindo);
   const estadoVoz = useEdenVozStore((s) => s.state);
   const nucleo = estadoNucleo({ ouvindo, voz: estadoVoz, respondendo: isCurrentChatStreaming });
+  // Maior no notebook; no celular cabe sem empurrar a caixa de mensagem.
+  const nucleoGrande = typeof window !== 'undefined' && window.innerWidth >= 640 ? 248 : 204;
 
   // Autoplay: speak a reply once it is finished, never while it streams -- a
   // partial sentence would be synthesized and then cut off by the next chunk.
@@ -155,8 +157,8 @@ export function ChatArea() {
       {/* Toggle bar */}
       <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
         {nucleoAtivo && !isEmpty && (
-          <div className="mr-auto">
-            <EdenNucleo tamanho={44} estado={nucleo} />
+          <div className="mr-auto pl-10 md:pl-0">
+            <EdenNucleo tamanho={48} estado={nucleo} />
           </div>
         )}
         {SHOW_SYSTEM_PANEL_TOGGLE && (
@@ -208,10 +210,11 @@ export function ChatArea() {
         className="flex-1 overflow-y-auto"
       >
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full px-4">
+          <div className="eden-surgir flex flex-col items-center justify-center h-full px-4">
             {nucleoAtivo ? (
-              <div className="mb-2">
-                <EdenNucleo tamanho={176} estado={nucleo} />
+              <div className="mb-5 flex flex-col items-center" style={{ color: corCss(nucleo) }}>
+                <EdenNucleo tamanho={nucleoGrande} estado={nucleo} />
+                <div className="eden-reflexo" aria-hidden="true" style={{ width: nucleoGrande * 0.5 }} />
               </div>
             ) : (
               <div
@@ -221,10 +224,10 @@ export function ChatArea() {
                 <Sparkles size={24} />
               </div>
             )}
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
+            <h2 className="eden-saudacao mb-3 text-center" style={{ color: 'var(--color-text)' }}>
               {getGreeting()}
             </h2>
-            <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
+            <p className="text-[15px] text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
               Pergunte, peça ou anote o que precisar.
             </p>
 

@@ -1,6 +1,9 @@
 // Éden: peças de tela compartilhadas pelas páginas da organização pessoal
-// (Hoje, Tarefas, Notas, Memória). Mesmo visual das Configurações do Éden.
+// (Hoje, Tarefas, Notas, Memória). Mesmo visual das Configurações do Éden:
+// o núcleo pequeno no título, caixas de vidro sobre o fundo 3D e a página
+// entrando vinda do fundo.
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { EdenNucleoMini } from './EdenNucleo';
 
 export const inputStyle = {
   background: 'var(--color-bg-secondary)',
@@ -11,11 +14,14 @@ export const inputStyle = {
 export function EdenPage({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-4 py-6 flex flex-col gap-4">
+      <div className="eden-surgir max-w-2xl mx-auto px-4 py-6 flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2 pl-10 md:pl-0">
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
-            {title}
-          </h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <EdenNucleoMini />
+            <h1 className="eden-titulo" style={{ color: 'var(--color-text)' }}>
+              {title}
+            </h1>
+          </div>
           {actions}
         </div>
         {children}
@@ -26,10 +32,7 @@ export function EdenPage({ title, actions, children }: { title: string; actions?
 
 export function EdenSection({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section
-      className="rounded-xl p-4 md:p-5"
-      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-    >
+    <section className="eden-vidro rounded-2xl p-4 md:p-5">
       <div className="flex items-center justify-between gap-2 mb-3">
         <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
           {title}

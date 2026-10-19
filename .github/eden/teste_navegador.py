@@ -173,6 +173,8 @@ def main() -> int:
             0, timeout=30_000
         )
         passo("tela da chave aceitou a chave")
+        expect(pg.locator(".eden-espaco")).to_have_count(1)
+        passo("visual 3D: o fundo (campo de luz) aparece")
 
         conversa = pg.get_by_text("Teste da página").first
         expect(conversa).to_be_visible(timeout=60_000)
@@ -378,6 +380,8 @@ def main() -> int:
         expect(pg.get_by_role("switch", name="Modo conversa")).to_be_visible()
         expect(pg.get_by_label("Voz", exact=True)).to_be_visible()
         passo("Configurações: voz (modo conversa e escolha da voz)")
+        expect(pg.get_by_role("switch", name="Visual 3D animado")).to_be_visible()
+        passo("Configurações: liga/desliga do visual 3D")
         ctx.close()
 
         # ── aparelho novo: código curto ────────────────────────────────────

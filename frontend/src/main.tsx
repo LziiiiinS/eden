@@ -8,6 +8,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import App from './App';
 import { initApiBase } from './lib/api';
 import { initAnalytics } from './lib/analytics';
+// Éden: fonte dos títulos (vem junto do app; nenhum site de fora).
+import '@fontsource-variable/geist';
 import './index.css';
 
 function applyTheme() {
