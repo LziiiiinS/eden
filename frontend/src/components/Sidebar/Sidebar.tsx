@@ -1,23 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import {
   MessageSquare,
   Plus,
-  BarChart3,
-  Settings,
   Search,
   PanelLeftClose,
   PanelLeft,
   Cpu,
-  Rocket,
-  Bot,
   Sun,
   Moon,
   Monitor,
   Loader2,
-  ScrollText,
-  Database,
-  Brain,
   ListTodo,
   CalendarCheck,
   StickyNote,
@@ -27,6 +20,9 @@ import {
   Wallet,
   Users,
   House,
+  ChevronRight,
+  LayoutList,
+  Compass,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { EdenSyncStatus } from './EdenSyncStatus';
@@ -35,8 +31,64 @@ import { friendlyModelName, isEdenModel } from '../../lib/eden-ai';
 import { useAppStore } from '../../lib/store';
 import { useNucleoStore } from '../../lib/eden-nucleo';
 
-// Éden: páginas que aparecem no menu durante o piloto.
-const EDEN_PILOT_PAGES = ['/', '/hoje', '/tarefas', '/notas', '/reuniao', '/casa', '/contas', '/email', '/clima', '/rotas', '/memoria', '/settings'];
+// Éden: o menu em grupos que abrem e fecham (pedido do Levi, 19/10: a lista
+// estava comprida demais). Perfil e Configurações ficam no canto de cima,
+// ao lado do sino (EdenAtalhosTopo).
+type ItemMenu = { path: string; icon: typeof MessageSquare; label: string };
+type GrupoMenu = { id: string; icon: typeof MessageSquare; label: string; itens: ItemMenu[] };
+
+export const EDEN_GRUPOS: GrupoMenu[] = [
+  {
+    id: 'organizacao',
+    icon: LayoutList,
+    label: 'Organização',
+    itens: [
+      { path: '/hoje', icon: CalendarCheck, label: 'Hoje' },
+      { path: '/tarefas', icon: ListTodo, label: 'Tarefas' },
+      { path: '/notas', icon: StickyNote, label: 'Notas e ideias' },
+      { path: '/reuniao', icon: Users, label: 'Modo reunião' },
+    ],
+  },
+  {
+    id: 'casa',
+    icon: House,
+    label: 'Casa e contas',
+    itens: [
+      { path: '/casa', icon: House, label: 'Casa' },
+      { path: '/contas', icon: Wallet, label: 'Contas e impostos' },
+    ],
+  },
+  {
+    id: 'servicos',
+    icon: Compass,
+    label: 'Serviços',
+    itens: [
+      { path: '/email', icon: Mail, label: 'E-mail' },
+      { path: '/clima', icon: CloudSun, label: 'Clima e ondas' },
+      { path: '/rotas', icon: Car, label: 'Rotas e trânsito' },
+    ],
+  },
+];
+
+const CHAVE_GRUPOS = 'eden-menu-grupos';
+
+function lerGruposAbertos(): Record<string, boolean> {
+  try {
+    const bruto = localStorage.getItem(CHAVE_GRUPOS);
+    const dados = bruto ? JSON.parse(bruto) : {};
+    return dados && typeof dados === 'object' ? dados : {};
+  } catch {
+    return {};
+  }
+}
+
+function guardarGruposAbertos(abertos: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(CHAVE_GRUPOS, JSON.stringify(abertos));
+  } catch {
+    // Sem armazenamento (janela anônima): só não lembra.
+  }
+}
 
 // Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
 const THEME_LABEL: Record<string, string> = {
@@ -49,6 +101,25 @@ export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
+  const [abertos, setAbertos] = useState<Record<string, boolean>>(lerGruposAbertos);
+  // O grupo da página aberta abre sozinho (ex.: chegar em /tarefas por um link).
+  useEffect(() => {
+    const grupo = EDEN_GRUPOS.find((g) => g.itens.some((i) => i.path === location.pathname));
+    if (grupo && !abertos[grupo.id]) {
+      setAbertos((a) => {
+        const novo = { ...a, [grupo.id]: true };
+        guardarGruposAbertos(novo);
+        return novo;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+  const alternarGrupo = (id: string) =>
+    setAbertos((a) => {
+      const novo = { ...a, [id]: !a[id] };
+      guardarGruposAbertos(novo);
+      return novo;
+    });
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const visual3d = useNucleoStore((s) => s.ativo);
@@ -81,28 +152,15 @@ export function Sidebar() {
     navigate('/');
   };
 
-  const allNavItems = [
-    { path: '/', icon: MessageSquare, label: 'Conversa' },
-    { path: '/hoje', icon: CalendarCheck, label: 'Hoje' },
-    { path: '/tarefas', icon: ListTodo, label: 'Tarefas' },
-    { path: '/notas', icon: StickyNote, label: 'Notas e ideias' },
-    { path: '/reuniao', icon: Users, label: 'Modo reunião' },
-    { path: '/casa', icon: House, label: 'Casa' },
-    { path: '/contas', icon: Wallet, label: 'Contas e impostos' },
-    { path: '/email', icon: Mail, label: 'E-mail' },
-    { path: '/clima', icon: CloudSun, label: 'Clima e ondas' },
-    { path: '/rotas', icon: Car, label: 'Rotas e trânsito' },
-    { path: '/memoria', icon: Brain, label: 'Perfil e memória' },
-    { path: '/dashboard', icon: BarChart3, label: 'Painel' },
-    { path: '/data-sources', icon: Database, label: 'Fontes de dados' },
-    { path: '/agents', icon: Bot, label: 'Agentes' },
-    { path: '/logs', icon: ScrollText, label: 'Registros' },
-    { path: '/settings', icon: Settings, label: 'Configurações' },
-    { path: '/get-started', icon: Rocket, label: 'Primeiros passos' },
-  ];
-  // Éden: no piloto o menu mostra só o que o Éden usa. As outras páginas do
-  // OpenJarvis (em inglês, para uso local) continuam no código, escondidas.
-  const navItems = allNavItems.filter((item) => EDEN_PILOT_PAGES.includes(item.path));
+  // Éden: as outras páginas do OpenJarvis (em inglês, para uso local)
+  // continuam no código, fora do menu.
+  const abrir = (path: string) => {
+    navigate(path);
+    // Éden: no celular, o menu fecha ao abrir uma página.
+    if (window.matchMedia?.('(max-width: 767px)').matches) {
+      useAppStore.getState().setSidebarOpen(false);
+    }
+  };
 
   return (
     <>
@@ -248,51 +306,103 @@ export function Sidebar() {
           <EdenSyncStatus />
           <EdenSpending />
 
-          {/* Bottom nav */}
-          <nav className="px-2 pb-3 pt-2 flex flex-col gap-0.5" style={{ borderTop: '1px solid var(--color-border)' }}>
-            {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
+          {/* Bottom nav — Éden: Conversa + grupos que abrem e fecham. */}
+          <nav
+            className="px-2 pb-3 pt-2 flex flex-col gap-0.5 overflow-y-auto max-h-[55%]"
+            style={{ borderTop: '1px solid var(--color-border)' }}
+            aria-label="Menu"
+          >
+            <ItemDoMenu item={{ path: '/', icon: MessageSquare, label: 'Conversa' }} ativo={location.pathname === '/'} aoAbrir={abrir} />
+            {EDEN_GRUPOS.map((g) => {
+              const aberto = !!abertos[g.id];
+              const temAtivo = g.itens.some((i) => i.path === location.pathname);
               return (
-                <button
-                  key={item.path}
-                  onClick={() => {
-                    navigate(item.path);
-                    // Éden: no celular, o menu fecha ao abrir uma página.
-                    if (window.matchMedia?.('(max-width: 767px)').matches) {
-                      useAppStore.getState().setSidebarOpen(false);
-                    }
-                  }}
-                  className="relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left cursor-pointer"
-                  style={{
-                    background: isActive ? 'var(--color-accent-subtle)' : 'transparent',
-                    color: isActive ? 'var(--color-text)' : 'var(--color-text-secondary)',
-                    fontWeight: isActive ? 500 : 400,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) e.currentTarget.style.background = 'var(--color-bg-secondary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  {isActive && (
-                    <span
+                <div key={g.id} className="flex flex-col">
+                  <button
+                    type="button"
+                    onClick={() => alternarGrupo(g.id)}
+                    aria-expanded={aberto}
+                    aria-controls={`menu-grupo-${g.id}`}
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left cursor-pointer"
+                    style={{
+                      color: temAtivo && !aberto ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                      background: temAtivo && !aberto ? 'var(--color-accent-subtle)' : 'transparent',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!(temAtivo && !aberto)) e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!(temAtivo && !aberto)) e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <g.icon size={16} style={temAtivo ? { color: 'var(--color-accent)' } : undefined} />
+                    <span className="flex-1">{g.label}</span>
+                    <ChevronRight
+                      size={14}
                       aria-hidden="true"
-                      className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full"
-                      style={{
-                        background: 'var(--color-accent)',
-                        boxShadow: '0 0 8px var(--color-accent-glow)',
-                      }}
+                      className="transition-transform duration-200"
+                      style={{ transform: aberto ? 'rotate(90deg)' : 'none', color: 'var(--color-text-tertiary)' }}
                     />
+                  </button>
+                  {aberto && (
+                    <div
+                      id={`menu-grupo-${g.id}`}
+                      className="ml-[1.35rem] pl-2 flex flex-col gap-0.5 eden-menu-grupo"
+                      style={{ borderLeft: '1px solid var(--color-border)' }}
+                    >
+                      {g.itens.map((item) => (
+                        <ItemDoMenu key={item.path} item={item} ativo={location.pathname === item.path} aoAbrir={abrir} compacto />
+                      ))}
+                    </div>
                   )}
-                  <item.icon size={16} style={isActive ? { color: 'var(--color-accent)' } : undefined} />
-                  {item.label}
-                </button>
+                </div>
               );
             })}
           </nav>
         </div>
       </aside>
     </>
+  );
+}
+
+function ItemDoMenu({
+  item,
+  ativo,
+  aoAbrir,
+  compacto = false,
+}: {
+  item: ItemMenu;
+  ativo: boolean;
+  aoAbrir: (path: string) => void;
+  compacto?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => aoAbrir(item.path)}
+      aria-current={ativo ? 'page' : undefined}
+      className={`relative flex items-center gap-3 px-3 rounded-lg text-sm transition-colors w-full text-left cursor-pointer ${compacto ? 'py-1.5' : 'py-2'}`}
+      style={{
+        background: ativo ? 'var(--color-accent-subtle)' : 'transparent',
+        color: ativo ? 'var(--color-text)' : 'var(--color-text-secondary)',
+        fontWeight: ativo ? 500 : 400,
+      }}
+      onMouseEnter={(e) => {
+        if (!ativo) e.currentTarget.style.background = 'var(--color-bg-secondary)';
+      }}
+      onMouseLeave={(e) => {
+        if (!ativo) e.currentTarget.style.background = 'transparent';
+      }}
+    >
+      {ativo && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full"
+          style={{ background: 'var(--color-accent)', boxShadow: '0 0 8px var(--color-accent-glow)' }}
+        />
+      )}
+      <item.icon size={compacto ? 15 : 16} style={ativo ? { color: 'var(--color-accent)' } : undefined} />
+      {item.label}
+    </button>
   );
 }

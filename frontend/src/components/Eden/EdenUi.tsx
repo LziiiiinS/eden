@@ -15,7 +15,7 @@ export function EdenPage({ title, actions, children }: { title: string; actions?
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="eden-surgir max-w-2xl mx-auto px-4 py-6 flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 pl-10 md:pl-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 pl-10 md:pl-0 pr-28 xl:pr-0">
           <div className="flex items-center gap-2 min-w-0">
             <EdenNucleoMini />
             <h1 className="eden-titulo" style={{ color: 'var(--color-text)' }}>
