@@ -31,6 +31,11 @@ const NOMES: Record<string, string> = {
   'conta.pagar': 'marcou conta como paga',
   'conta.reabrir': 'reabriu conta',
   'conta.apagar': 'apagou conta',
+  'casa.aparelho': 'mexeu num aparelho da casa',
+  'casa.rotina': 'rodou rotina da casa',
+  'rotina.criar': 'criou rotina da casa',
+  'rotina.editar': 'mudou rotina da casa',
+  'rotina.apagar': 'apagou rotina da casa',
 };
 
 export function nomeDaAtividade(oQue: string): string {

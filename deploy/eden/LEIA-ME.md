@@ -196,6 +196,48 @@ datas). As tarefas viram cartões para confirmar.
 - O que alguém falar na reunião ("Éden, apaga…") nunca vira ordem: o resumo só
   sugere tarefas, e cada uma precisa do seu toque.
 
+## Casa (luzes, tomadas, ar-condicionado)
+
+O Éden mexe na casa pelo **Home Assistant** (grátis). Ele nunca fala direto
+com a nuvem de cada marca: o Home Assistant junta tudo e o Éden só pede a ele.
+
+**Testar sem nada em casa:** no `.env` do servidor, `EDEN_CASA_DEMO=1` e
+reinicie. Aparecem três aparelhos de mentira (luz, computador e ar) em
+**Casa**, no menu.
+
+**Com aparelhos de verdade** (depois da compra, que precisa da sua aprovação):
+
+1. Instale o Home Assistant (num computador sempre ligado em casa) e adicione
+   os aparelhos nele (lâmpada e tomada Wi-Fi Tuya/Smart Life, o ar pelo app
+   da marca ou um controle infravermelho Wi-Fi).
+2. No Home Assistant, crie um **usuário só para o Éden, sem ser
+   administrador** (Configurações → Pessoas → Adicionar pessoa; deixe
+   "Administrador" desligado). Entre com esse usuário: perfil →
+   **Segurança** → **Tokens de acesso de longa duração** → criar. Copie o
+   token direto para o `.env` do servidor (nunca na conversa, no app ou no
+   GitHub). Assim, se o servidor do Éden for invadido, ninguém ganha o
+   Home Assistant inteiro.
+3. No `.env` do servidor:
+   ```
+   EDEN_CASA_URL=http://ENDERECO-DO-HOME-ASSISTANT:8123
+   EDEN_CASA_TOKEN=(o token)
+   EDEN_CASA_APARELHOS=light.quarto=Luz do quarto,switch.pc=Computador,climate.sala=Ar
+   ```
+   A lista é **fechada**: o Éden só mexe no que estiver nela (luz, tomada,
+   ar, cena e botão). Fechaduras, alarmes e câmeras não entram.
+   **Atenção:** a lista confere o *tipo* do aparelho, não o que ele faz.
+   Não ponha nela uma tomada, botão ou cena que abra portão, destrave porta
+   ou desligue alarme.
+   O endereço precisa ser `https://`; `http://` só vale dentro de casa
+   (`.local`, 192.168…, 10…) ou pelo Tailscale (`.ts.net`, 100.x).
+4. Reinicie o Éden (`docker compose restart`).
+
+Como funciona: pela tela, o toque no botão já vale. Na conversa ("estou
+chegando em 5 minutos"), o Éden sugere a rotina num **cartão** e ela roda
+quando você confirma — ele não agenda para depois. Teto de 60 comandos por
+hora (`EDEN_TETO_CASA_HORA`). Ligar o computador sozinho precisa de algo
+sempre ligado em casa (o Home Assistant manda o sinal de "acordar").
+
 ## Documentos na conversa
 
 No campo de mensagem, toque em **Documentos** → **Enviar arquivo** e escolha um

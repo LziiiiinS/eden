@@ -408,6 +408,7 @@ ESQUEMA_PERMITIDO = {
         "contas",
         "reunioes",
         "reuniao_pedacos",
+        "rotinas",
     },
 }
 

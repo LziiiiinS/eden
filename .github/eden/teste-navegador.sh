@@ -16,6 +16,7 @@ docker run -d --name eden-navegador -p 127.0.0.1:8000:8000 \
   -e OPENJARVIS_HOME=/dados \
   -e OPENJARVIS_API_KEY="$KEY" \
   -e OPENAI_API_KEY=sk-teste-falsa \
+  -e EDEN_CASA_DEMO=1 \
   -v eden-navegador:/dados \
   --entrypoint sh "$IMAGEM" /app/deploy/eden/iniciar-no-conteiner.sh >/dev/null
 

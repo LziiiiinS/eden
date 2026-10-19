@@ -240,6 +240,15 @@ CREATE TABLE IF NOT EXISTS reuniao_pedacos (
     criado_em  INTEGER NOT NULL,
     PRIMARY KEY (reuniao_id, n)
 );
+-- Casa (casa.py): rotinas como "Chegando em casa" (passos em JSON, já
+-- conferidos contra a lista de aparelhos do .env).
+CREATE TABLE IF NOT EXISTS rotinas (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome          TEXT    NOT NULL,
+    passos        TEXT    NOT NULL,
+    criado_em     INTEGER NOT NULL,
+    atualizado_em INTEGER NOT NULL
+);
 """
 
 

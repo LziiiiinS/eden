@@ -339,6 +339,14 @@ def montar(
     if contas_txt:
         partes.append(contas_txt)
 
+    # Casa (aparelhos e rotinas): só com a casa ligada e se a pergunta falar
+    # da casa.
+    from openjarvis.eden.casa import secao_contexto as secao_casa
+
+    casa_txt = secao_casa(store, pergunta)
+    if casa_txt:
+        partes.append(casa_txt)
+
     # Documentos que a pessoa anexou a esta conversa (só deste espaço).
     secao_docs = ""
     if conversa_id:
@@ -360,6 +368,10 @@ def montar(
     partes.append(REGRAS_ACOES)
     if contas_txt:
         partes.append(REGRAS_CONTAS)
+    if casa_txt:
+        from openjarvis.eden.casa import REGRAS_CASA
+
+        partes.append(REGRAS_CASA)
     if agenda and agenda.get("conectado"):
         partes.append(REGRAS_AGENDA)
     if secao_docs:

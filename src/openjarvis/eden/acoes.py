@@ -82,9 +82,12 @@ TIPOS = (
     "conta.criar",
     "conta.pagar",
     "conta.apagar",
+    "casa.rotina",
+    "casa.aparelho",
 )
-# Ações que mexem fora do Éden (Google): executadas fora da transação do banco.
-TIPOS_EXTERNOS = ("agenda.criar", "agenda.editar")
+# Ações que mexem fora do Éden (Google, casa): executadas fora da transação
+# do banco.
+TIPOS_EXTERNOS = ("agenda.criar", "agenda.editar", "casa.rotina", "casa.aparelho")
 MAX_LOCAL_AGENDA = 200
 
 _BLOCO = re.compile(r"```[ \t]*eden-acao[ \t]*\r?\n(.*?)```", re.DOTALL)
@@ -391,6 +394,12 @@ def validar(
 
     if tipo.startswith("conta."):
         return _validar_conta(tipo, bruto, store, espaco_ativo, hoje)
+
+    if tipo.startswith("casa."):
+        from openjarvis.eden import casa
+
+        params, resumo = casa.validar_acao(tipo, bruto, store)
+        return Proposta(tipo, params, resumo)
 
     # nota.criar
     _so_campos(bruto, ("texto", "titulo", "tipo_nota", "espaco"))
@@ -1027,6 +1036,7 @@ def _executar_fora(
             )
         )
 
+    casa = tipo.startswith("casa.")
     try:
         if externo is None:
             raise ErroOrganizacao("a Google Agenda não está conectada")
@@ -1040,10 +1050,15 @@ def _executar_fora(
             f"não deu para fazer: {mensagem}", 409, "eden_acao_falhou"
         ) from exc
     except Exception as exc:  # noqa: BLE001 - o cartão nunca fica preso
-        logger.exception("Éden: falha inesperada ao falar com o Google")
+        logger.exception(
+            "Éden: falha inesperada ao falar com %s", "a casa" if casa else "o Google"
+        )
         mensagem = (
-            "algo deu errado ao falar com o Google; confira na agenda antes de "
+            "algo deu errado ao falar com a casa; confira os aparelhos antes de "
             "pedir de novo"
+            if casa
+            else "algo deu errado ao falar com o Google; confira na agenda antes "
+            "de pedir de novo"
         )
         falhou(mensagem)
         raise ErroAcao(
@@ -1056,6 +1071,14 @@ def _executar_fora(
             "WHERE id = ? AND estado = 'executando'",
             (json.dumps(resultado), acao_id),
         )
+        if casa:
+            alvo = (
+                f"rotina:{params.get('rotina')}"
+                if tipo == "casa.rotina"
+                else f"casa:{params['passo']['entidade']}"
+            )
+            Organizacao._registrar(conn, "eden", tipo, alvo, acao_id)
+            return
         o_que = "criou evento" if tipo == "agenda.criar" else "mudou evento"
         Organizacao._registrar(
             conn, "eden", o_que, f"agenda:{resultado.get('evento')}", acao_id
@@ -1078,6 +1101,10 @@ def confirmar(
     def externo(tipo: str, params: Dict[str, Any]) -> Dict[str, Any]:
         from openjarvis.eden.google import id_para_criar
 
+        if tipo.startswith("casa."):
+            from openjarvis.eden import casa
+
+            return casa.executar_acao(store, tipo, params)
         if google is None:
             raise ErroOrganizacao("a Google Agenda não está conectada")
         if tipo == "agenda.criar":
