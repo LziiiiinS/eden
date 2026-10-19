@@ -23,6 +23,7 @@ from typing import Any, AsyncIterator, Optional, Tuple
 
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
+from openjarvis.eden import tetos
 from openjarvis.eden.budget import BudgetExceeded, estimate_tokens, get_ledger
 from openjarvis.eden.routing import (
     AUTO_IN_MISSION,
@@ -310,6 +311,16 @@ def prepare_chat(
         refusal = _eden_gate(request_body, settings)
         if refusal is not None:
             return None, refusal
+        # Teto por hora (além do limite do mês): uma chave vazada ou um pedido
+        # repetido sem parar não gasta muito numa hora.
+        if not tetos.usar("conversa"):
+            return None, JSONResponse(
+                status_code=429,
+                content={
+                    "detail": tetos.mensagem("conversa"),
+                    "code": "eden_teto_hora",
+                },
+            )
     last_user = _last_user(request_body)
     if settings.enabled and request is not None:
         _definir_pedido(request, last_user.content if last_user else None)

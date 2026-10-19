@@ -247,8 +247,16 @@ async def apagar_nota(nota_id: int, request: Request):
 
 
 @router.get("/acoes")
-async def listar_acoes(request: Request, estado: Optional[str] = None):
-    return {"acoes": await _rodar(_store(request).listar_acoes, estado)}
+async def listar_acoes(
+    request: Request,
+    estado: Optional[str] = None,
+    conversa: Optional[str] = None,
+    espaco: Optional[str] = None,
+):
+    store = _store(request)
+    if espaco is not None:
+        espaco = await _rodar(store.espaco_valido, espaco)
+    return {"acoes": await _rodar(store.listar_acoes, estado, 50, conversa, espaco)}
 
 
 @router.get("/acoes/{acao_id}")

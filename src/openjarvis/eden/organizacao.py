@@ -398,10 +398,13 @@ class Organizacao:
         alvo: str,
         acao_id: Optional[str] = None,
     ) -> None:
+        # Éden: com o aparelho do pedido (ex.: "pessoa (iPhone #2)").
+        from openjarvis.eden.quem import com_aparelho
+
         conn.execute(
             "INSERT INTO registro (quando, quem, o_que, alvo, acao_id) "
             "VALUES (?, ?, ?, ?, ?)",
-            (agora_ms(), quem, o_que, alvo, acao_id),
+            (agora_ms(), com_aparelho(quem)[:120], o_que, alvo, acao_id),
         )
 
     # ── espaços ──────────────────────────────────────────────────────────
@@ -1222,16 +1225,36 @@ class Organizacao:
         return int(self._ler(sql, params)[0][0])
 
     def listar_acoes(
-        self, estado: Optional[str] = None, limite: int = 50
+        self,
+        estado: Optional[str] = None,
+        limite: int = 50,
+        conversa: Optional[str] = None,
+        espaco: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """Sugestões mais recentes. ``conversa`` e ``espaco`` filtram: a
+        lista de um espaço não mostra as sugestões dos outros."""
         agora = agora_ms()
-        rows = self._ler(
-            "SELECT * FROM acoes ORDER BY criado_em DESC LIMIT ?",
-            (max(1, min(limite, 500)),),
-        )
+        limite = max(1, min(limite, 500))
+        if conversa is not None:
+            rows = self._ler(
+                "SELECT * FROM acoes WHERE conversa_id = ? "
+                "ORDER BY criado_em DESC LIMIT ?",
+                (str(conversa)[:200], limite),
+            )
+        else:
+            rows = self._ler(
+                "SELECT * FROM acoes ORDER BY criado_em DESC LIMIT ?", (limite,)
+            )
         itens = [self.acao_publica(r, agora) for r in rows]
         if estado:
             itens = [a for a in itens if a["estado"] == estado]
+        if espaco is not None:
+            itens = [
+                a
+                for a in itens
+                if isinstance(a["parametros"], dict)
+                and a["parametros"].get("espaco") == espaco
+            ]
         return itens
 
     def inscricoes_push(self) -> List[Dict[str, Any]]:

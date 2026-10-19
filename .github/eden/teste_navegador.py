@@ -25,6 +25,7 @@ import pathlib
 import re
 import sys
 import time
+from collections import Counter, deque
 import urllib.error
 import urllib.request
 
@@ -66,6 +67,22 @@ def api(metodo: str, caminho: str, corpo=None, chave: bool = True):
 
 
 ULTIMO_PASSO = ["(nenhum)"]
+# Pedidos em andamento e os últimos feitos (para explicar quando a página
+# não para de buscar coisas no servidor).
+EM_ANDAMENTO: dict = {}
+RECENTES: deque = deque(maxlen=400)
+
+
+def esperar_rede(pg) -> None:
+    try:
+        pg.wait_for_load_state("networkidle", timeout=25_000)
+    except Exception:
+        agora = time.time()
+        abertos = [u for _, u in list(EM_ANDAMENTO.values())][:8]
+        ultimos = Counter(u for t, u in RECENTES if agora - t < 6).most_common(8)
+        print(f"error: pedidos em andamento: {abertos}", flush=True)
+        print(f"error: pedidos nos últimos 6 s: {ultimos}", flush=True)
+        raise
 
 
 def passo(texto: str) -> None:
@@ -114,8 +131,19 @@ def main() -> int:
             elif msg.type == "error":
                 avisos.append(f"[{nome}] {texto}")
 
+        def pedido(req) -> None:
+            caminho = req.url.split("?")[0].replace(BASE, "")
+            EM_ANDAMENTO[id(req)] = (time.time(), caminho)
+            RECENTES.append((time.time(), caminho))
+
+        def terminou(req) -> None:
+            EM_ANDAMENTO.pop(id(req), None)
+
         pagina.on("console", no_console)
         pagina.on("pageerror", lambda e: problemas.append(f"[{nome}] erro: {e}"))
+        pagina.on("request", pedido)
+        pagina.on("requestfinished", terminou)
+        pagina.on("requestfailed", terminou)
 
     with sync_playwright() as pw:
         navegador = pw.chromium.launch()
@@ -265,7 +293,7 @@ def main() -> int:
             if texto:
                 expect(pg.get_by_text(texto).first).to_be_visible(timeout=30_000)
             else:
-                pg.wait_for_load_state("networkidle")
+                esperar_rede(pg)
             passo(f"página {caminho} abriu")
 
         # Clima (Parte 4): começa desligado; ligar não chama o Open-Meteo

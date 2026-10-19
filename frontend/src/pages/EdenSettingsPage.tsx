@@ -11,6 +11,7 @@ import { EdenEmailSettings } from '../components/Eden/EdenEmailSettings';
 import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
 import { useNucleoStore } from '../lib/eden-nucleo';
 import { EdenAparelhosSettings } from '../components/Eden/EdenAparelhosSettings';
+import { EdenAtividade } from '../components/Eden/EdenAtividade';
 import { criarAparelho } from '../lib/eden-aparelhos';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { apiFetch, checkHealth, fetchSpeechHealth } from '../lib/api';
@@ -491,6 +492,12 @@ export function EdenSettingsPage() {
         {settings.apiKey && (
           <Section title="Aparelhos ligados">
             <EdenAparelhosSettings />
+          </Section>
+        )}
+
+        {settings.apiKey && (
+          <Section title="Atividade recente">
+            <EdenAtividade />
           </Section>
         )}
 
