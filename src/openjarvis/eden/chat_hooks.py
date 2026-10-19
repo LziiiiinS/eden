@@ -288,9 +288,14 @@ async def _emails_para_pergunta(request: Any, pergunta: Optional[str]) -> None:
     except asyncio.TimeoutError:
         request.state.eden_emails = {"erro": "o Gmail demorou demais"}
     except Exception as exc:  # noqa: BLE001
+        from openjarvis.eden.google import ErroGoogle
+
         codigo = getattr(exc, "codigo", "")
         logger.warning("Éden: não li os e-mails (%s)", codigo or type(exc).__name__)
-        request.state.eden_emails = {"erro": "o Gmail não respondeu agora"}
+        # A mensagem do ErroGoogle é escrita pelo Éden (sem dados de fora):
+        # a IA diz o motivo de verdade em vez de "não respondeu".
+        motivo = str(exc) if isinstance(exc, ErroGoogle) else ""
+        request.state.eden_emails = {"erro": motivo or "o Gmail não respondeu agora"}
 
 
 def _emails_do_pedido(request: Any) -> Optional[dict]:

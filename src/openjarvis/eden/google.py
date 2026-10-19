@@ -673,6 +673,16 @@ class ClienteGoogle:
                     "O evento mudou no Google depois da sugestão. Peça de novo.",
                     "eden_google_412",
                 )
+            if resposta.status_code == 403 and url.startswith(
+                "https://gmail.googleapis.com/"
+            ):
+                # Quase sempre: a Gmail API não foi ativada no projeto (19/10).
+                raise ErroGoogle(
+                    "O Google recusou a leitura dos e-mails (403). Confira se a "
+                    "Gmail API está ativada no projeto do Google Cloud (LEIA-ME, "
+                    "seção E-mail).",
+                    "eden_google_403",
+                )
             if resposta.status_code >= 400:
                 raise ErroGoogle(f"O Google recusou o pedido ({resposta.status_code}).")
             return self._json(resposta)
