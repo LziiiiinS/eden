@@ -9,6 +9,7 @@ import { EdenGoogleSettings } from '../components/Eden/EdenGoogleSettings';
 import { EdenNotionSettings } from '../components/Eden/EdenNotionSettings';
 import { EdenEmailSettings } from '../components/Eden/EdenEmailSettings';
 import { EdenVozSettings } from '../components/Eden/EdenVozSettings';
+import { useNucleoStore } from '../lib/eden-nucleo';
 import { EdenAparelhosSettings } from '../components/Eden/EdenAparelhosSettings';
 import { criarAparelho } from '../lib/eden-aparelhos';
 import { useAppStore, type ThemeMode } from '../lib/store';
@@ -338,6 +339,8 @@ const inputStyle = {
 };
 
 export function EdenSettingsPage() {
+  const nucleoAtivo = useNucleoStore((s) => s.ativo);
+  const setNucleoAtivo = useNucleoStore((s) => s.setAtivo);
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [online, setOnline] = useState<boolean | null>(null);
@@ -411,6 +414,12 @@ export function EdenSettingsPage() {
               <option value="default">Normal</option>
               <option value="large">Grande</option>
             </select>
+          </Row>
+          <Row
+            label="Núcleo 3D animado"
+            description="A esfera do Éden que mostra quando ele está ouvindo, pensando ou falando. Desligue se o celular esquentar ou gastar bateria."
+          >
+            <Toggle on={nucleoAtivo} onChange={() => setNucleoAtivo(!nucleoAtivo)} label="Núcleo 3D animado" />
           </Row>
         </Section>
 

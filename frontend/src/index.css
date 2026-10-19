@@ -754,3 +754,14 @@
   background: var(--color-accent);
   text-decoration: none;
 }
+/* Éden: esfera simples (sem WebGL) do núcleo 3D. */
+.eden-nucleo-css {
+  animation: eden-nucleo-pulso 3.2s ease-in-out infinite;
+}
+@keyframes eden-nucleo-pulso {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.05); filter: brightness(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eden-nucleo-css { animation: none; }
+}
