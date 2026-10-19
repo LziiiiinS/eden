@@ -1,7 +1,7 @@
 // Éden (Parte 2): cartões das ações que o Éden sugeriu na resposta.
 // Nada acontece sem a pessoa tocar em "Confirmar". O app manda só o id e a
 // assinatura do cartão; o servidor executa o que ele mesmo guardou.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Check, X, ListTodo, Brain, StickyNote, Clock, AlertTriangle, Loader2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '../../lib/store';
@@ -28,8 +28,16 @@ const ROTULO: Record<string, string> = {
   executando: 'Enviando…',
 };
 
-function Cartao({ messageId, acao }: { messageId: string; acao: EdenActionRef }) {
-  const updateEdenAction = useAppStore((s) => s.updateEdenAction);
+type AoMudar = (acaoId: string, mudanca: Partial<EdenActionRef>) => void;
+
+function Cartao({ messageId, acao, aoMudar }: { messageId: string; acao: EdenActionRef; aoMudar?: AoMudar }) {
+  const atualizarNaConversa = useAppStore((s) => s.updateEdenAction);
+  // Fora da conversa (ex.: modo reunião), quem mostra o cartão guarda o estado.
+  const updateEdenAction = useCallback(
+    (mid: string, id: string, mudanca: Partial<EdenActionRef>) =>
+      aoMudar ? aoMudar(id, mudanca) : atualizarNaConversa(mid, id, mudanca),
+    [aoMudar, atualizarNaConversa],
+  );
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
@@ -192,12 +200,20 @@ function Cartao({ messageId, acao }: { messageId: string; acao: EdenActionRef })
   );
 }
 
-export function EdenActionCards({ messageId, actions }: { messageId: string; actions?: EdenActionRef[] }) {
+export function EdenActionCards({
+  messageId,
+  actions,
+  aoMudar,
+}: {
+  messageId: string;
+  actions?: EdenActionRef[];
+  aoMudar?: AoMudar;
+}) {
   if (!actions || actions.length === 0) return null;
   return (
     <div className="mt-2 mb-1 flex flex-col gap-2" aria-label="Sugestões do Éden para confirmar">
       {actions.map((a) => (
-        <Cartao key={a.id} messageId={messageId} acao={a} />
+        <Cartao key={a.id} messageId={messageId} acao={a} aoMudar={aoMudar} />
       ))}
     </div>
   );

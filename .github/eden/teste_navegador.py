@@ -349,6 +349,22 @@ def main() -> int:
         assert any(c["vencimento"] == "2030-02-10" for c in abertas["contas"]), abertas
         passo("Contas: anota, marca como paga e cria a do mês seguinte")
 
+        # Modo reunião: o botão só liga depois de marcar que avisou as
+        # pessoas. (Sem gravar de verdade: aqui não há microfone nem IA.)
+        pg.goto(BASE + "/reuniao")
+        comecar = pg.get_by_role("button", name="Começar a gravar")
+        expect(comecar).to_be_disabled(timeout=30_000)
+        pg.get_by_label("Avisei as pessoas da reunião", exact=False).check()
+        expect(comecar).to_be_enabled()
+        expect(pg.get_by_text("Nenhuma reunião ainda.")).to_be_visible()
+        status, criada = api(
+            "POST", "/v1/eden/reunioes", {"titulo": "Reunião do teste (fictícia)"}
+        )
+        assert status == 200 and criada["reuniao"]["estado"] == "gravando", criada
+        status, _ = api("DELETE", f"/v1/eden/reunioes/{criada['reuniao']['id']}")
+        assert status == 200
+        passo("Modo reunião: só grava depois de avisar as pessoas; cria e apaga")
+
         # E-mail (Parte 5): sem o Google configurado, a página só explica.
         pg.goto(BASE + "/email")
         expect(pg.get_by_text("E-mail ainda não conectado")).to_be_visible(

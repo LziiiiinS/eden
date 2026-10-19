@@ -216,6 +216,27 @@ CREATE TABLE IF NOT EXISTS contas (
 CREATE INDEX IF NOT EXISTS contas_geradas ON contas (gerada_de);
 CREATE INDEX IF NOT EXISTS contas_abertas ON contas (vencimento)
     WHERE pago_em IS NULL AND apagado_em IS NULL;
+-- Modo reunião (reuniao.py): só o texto; o áudio não fica guardado.
+CREATE TABLE IF NOT EXISTS reunioes (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    titulo        TEXT    NOT NULL,
+    espaco        TEXT    NOT NULL,
+    estado        TEXT    NOT NULL,
+    criado_em     INTEGER NOT NULL,
+    atualizado_em INTEGER NOT NULL,
+    terminado_em  INTEGER,
+    resumo        TEXT,
+    tarefas       TEXT,
+    erro          TEXT
+);
+CREATE TABLE IF NOT EXISTS reuniao_pedacos (
+    reuniao_id INTEGER NOT NULL,
+    n          INTEGER NOT NULL,
+    texto      TEXT    NOT NULL,
+    segundos   REAL    NOT NULL,
+    criado_em  INTEGER NOT NULL,
+    PRIMARY KEY (reuniao_id, n)
+);
 """
 
 

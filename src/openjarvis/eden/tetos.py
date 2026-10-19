@@ -9,7 +9,9 @@ roubado que gaste o teto não tranca o notebook. A contagem fica só na
 memória do servidor (reiniciar zera). Dá para mudar no ``.env``:
 
 - ``EDEN_TETO_CONVERSA_HORA`` (padrão 150 mensagens por hora);
-- ``EDEN_TETO_TRANSCRICAO_HORA`` (padrão 120 áudios por hora).
+- ``EDEN_TETO_TRANSCRICAO_HORA`` (padrão 120 áudios por hora);
+- ``EDEN_TETO_REUNIAO_HORA`` (padrão 150 pedaços de reunião por hora; uma
+  reunião manda ~60 por hora).
 
 ``0`` desliga o teto daquele tipo (não recomendado).
 """
@@ -22,7 +24,7 @@ import time
 from collections import deque
 from typing import Any, Callable, Deque, Dict, Optional, Tuple
 
-PADROES: Dict[str, int] = {"conversa": 150, "transcricao": 120}
+PADROES: Dict[str, int] = {"conversa": 150, "transcricao": 120, "reuniao": 150}
 MAXIMO = 10_000
 
 MENSAGENS: Dict[str, str] = {
@@ -31,6 +33,10 @@ MENSAGENS: Dict[str, str] = {
     ),
     "transcricao": (
         "Muitos áudios na última hora. Espere alguns minutos ou digite a mensagem."
+    ),
+    "reuniao": (
+        "A reunião mandou pedaços demais na última hora; o app tenta de novo "
+        "daqui a pouco."
     ),
 }
 
