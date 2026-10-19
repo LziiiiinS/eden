@@ -301,6 +301,20 @@ def _emails_do_pedido(request: Any) -> Optional[dict]:
     return valor if isinstance(valor, dict) else None
 
 
+def teto_da_conversa(request: Any = None) -> Optional[Response]:
+    """Teto por hora (além do limite do mês), conferido antes de tudo — antes
+    até de ler e-mails ou consultar o trânsito para a pergunta. Uma chave
+    vazada ou um pedido repetido sem parar não gasta muito numa hora."""
+    if not get_settings().enabled:
+        return None
+    if tetos.usar("conversa", tetos.aparelho_do_pedido(request)):
+        return None
+    return JSONResponse(
+        status_code=429,
+        content={"detail": tetos.mensagem("conversa"), "code": "eden_teto_hora"},
+    )
+
+
 def prepare_chat(
     request_body: Any,
     request: Any = None,
@@ -311,16 +325,6 @@ def prepare_chat(
         refusal = _eden_gate(request_body, settings)
         if refusal is not None:
             return None, refusal
-        # Teto por hora (além do limite do mês): uma chave vazada ou um pedido
-        # repetido sem parar não gasta muito numa hora.
-        if not tetos.usar("conversa"):
-            return None, JSONResponse(
-                status_code=429,
-                content={
-                    "detail": tetos.mensagem("conversa"),
-                    "code": "eden_teto_hora",
-                },
-            )
     last_user = _last_user(request_body)
     if settings.enabled and request is not None:
         _definir_pedido(request, last_user.content if last_user else None)

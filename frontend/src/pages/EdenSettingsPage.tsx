@@ -469,7 +469,7 @@ export function EdenSettingsPage() {
           </Row>
           <Row
             label="Endereço do servidor"
-            description="Deixe em branco quando o Éden abre pelo próprio endereço do servidor (o normal)."
+            description="Deixe em branco (o normal). Por segurança, o app só fala com o servidor do próprio endereço: outro endereço aqui faz tudo parar de funcionar."
           >
             <input
               type="url"

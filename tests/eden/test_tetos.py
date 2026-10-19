@@ -1,11 +1,12 @@
 """Éden: tetos por hora de conversa e transcrição (dados fictícios)."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from openjarvis.eden import budget, settings, tetos
-from openjarvis.eden.chat_hooks import prepare_chat
+from openjarvis.eden.chat_hooks import prepare_chat, teto_da_conversa
 from openjarvis.server.models import ChatCompletionRequest
 
 
@@ -57,22 +58,28 @@ def eden(tmp_path, monkeypatch):
     tetos.zerar()
 
 
-def _pedido():
-    return ChatCompletionRequest(
-        model="eden-auto",
-        messages=[{"role": "user", "content": "bom dia"}],
-        stream=True,
-    )
+def _pedido(aparelho=None):
+    return SimpleNamespace(state=SimpleNamespace(eden_aparelho=aparelho))
 
 
 def test_chat_over_the_hourly_cap_is_refused(eden):
-    assert prepare_chat(_pedido())[1] is None
-    assert prepare_chat(_pedido())[1] is None
-    _, recusa = prepare_chat(_pedido())
+    assert teto_da_conversa(_pedido()) is None
+    assert teto_da_conversa(_pedido()) is None
+    recusa = teto_da_conversa(_pedido())
     assert recusa is not None and recusa.status_code == 429
     corpo = json.loads(recusa.body)
     assert corpo["code"] == "eden_teto_hora"
     assert "última hora" in corpo["detail"]
+
+
+def test_each_device_has_its_own_count(eden):
+    # Um celular (roubado, por exemplo) gasta o teto dele…
+    assert teto_da_conversa(_pedido(3)) is None
+    assert teto_da_conversa(_pedido(3)) is None
+    assert teto_da_conversa(_pedido(3)) is not None
+    # …e o notebook (chave principal) e os outros aparelhos continuam.
+    assert teto_da_conversa(_pedido()) is None
+    assert teto_da_conversa(_pedido(4)) is None
 
 
 def test_outside_eden_there_is_no_cap(monkeypatch):
@@ -81,9 +88,17 @@ def test_outside_eden_there_is_no_cap(monkeypatch):
     settings.set_settings(settings.EdenSettings(enabled=False))
     try:
         for _ in range(3):
+            assert teto_da_conversa(_pedido()) is None
             pedido = ChatCompletionRequest(
                 model="qwen3:8b", messages=[{"role": "user", "content": "oi"}]
             )
             assert prepare_chat(pedido)[1] is None
     finally:
         settings.set_settings(None)
+
+
+def test_device_of_the_request():
+    assert tetos.aparelho_do_pedido(None) is None
+    assert tetos.aparelho_do_pedido(_pedido()) is None
+    assert tetos.aparelho_do_pedido(_pedido(7)) == 7
+    assert tetos.aparelho_do_pedido(_pedido(True)) is None

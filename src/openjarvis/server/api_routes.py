@@ -1051,7 +1051,7 @@ async def transcribe_speech(request: Request):
         # Éden: teto por hora de áudios (além do limite do mês).
         from openjarvis.eden import tetos
 
-        if not tetos.usar("transcricao"):
+        if not tetos.usar("transcricao", tetos.aparelho_do_pedido(request)):
             raise HTTPException(status_code=429, detail=tetos.mensagem("transcricao"))
         try:
             reservation = speech_budget.check(

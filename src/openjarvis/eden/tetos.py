@@ -4,8 +4,9 @@ Além do limite de gastos do mês, cada tipo de pedido que gasta com a IA tem
 um teto por hora. Se uma chave vazar, ou se um texto de fora tentar fazer o
 app repetir pedidos sem parar, o estrago numa hora fica pequeno.
 
-Os tetos valem para todos os aparelhos juntos e ficam só na memória do
-servidor (reiniciar zera a contagem). Dá para mudar no ``.env``:
+Cada aparelho tem a sua conta (e a chave principal, a dela): um celular
+roubado que gaste o teto não tranca o notebook. A contagem fica só na
+memória do servidor (reiniciar zera). Dá para mudar no ``.env``:
 
 - ``EDEN_TETO_CONVERSA_HORA`` (padrão 150 mensagens por hora);
 - ``EDEN_TETO_TRANSCRICAO_HORA`` (padrão 120 áudios por hora).
@@ -19,7 +20,7 @@ import os
 import threading
 import time
 from collections import deque
-from typing import Callable, Deque, Dict
+from typing import Any, Callable, Deque, Dict, Optional, Tuple
 
 PADROES: Dict[str, int] = {"conversa": 150, "transcricao": 120}
 MAXIMO = 10_000
@@ -73,21 +74,33 @@ class Teto:
             return True
 
 
-_tetos: Dict[str, Teto] = {}
+_tetos: Dict[Tuple[str, str], Teto] = {}
 _lock = threading.Lock()
 
 
-def teto(nome: str) -> Teto:
+def _quem(aparelho: Optional[int]) -> str:
+    return "principal" if aparelho is None else f"aparelho:{int(aparelho)}"
+
+
+def teto(nome: str, aparelho: Optional[int] = None) -> Teto:
+    chave = (nome, _quem(aparelho))
     with _lock:
-        atual = _tetos.get(nome)
+        atual = _tetos.get(chave)
         if atual is None:
-            atual = _tetos[nome] = Teto(limite_configurado(nome))
+            atual = _tetos[chave] = Teto(limite_configurado(nome))
         return atual
 
 
-def usar(nome: str) -> bool:
-    """True se ainda cabe nesta hora (e já conta este pedido)."""
-    return teto(nome).usar()
+def usar(nome: str, aparelho: Optional[int] = None) -> bool:
+    """True se ainda cabe nesta hora para este aparelho (``None`` = chave
+    principal) — e já conta este pedido."""
+    return teto(nome, aparelho).usar()
+
+
+def aparelho_do_pedido(request: Any) -> Optional[int]:
+    """O aparelho que o AuthMiddleware reconheceu (None = chave principal)."""
+    valor = getattr(getattr(request, "state", None), "eden_aparelho", None)
+    return valor if isinstance(valor, int) and not isinstance(valor, bool) else None
 
 
 def mensagem(nome: str) -> str:

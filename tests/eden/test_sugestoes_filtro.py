@@ -40,3 +40,17 @@ def test_filters(tmp_path):
         assert store.listar_acoes(conversa="nenhuma") == []
     finally:
         store.close()
+
+
+def test_filter_happens_before_the_limit(tmp_path):
+    store = Organizacao(tmp_path / "organizacao.db")
+    _sugestao(store, "acao-antiga-pessoal", "c0", "pessoal")
+    for i in range(60):
+        _sugestao(store, f"acao-trabalho-{i:03d}", "c1", "ls-visuals")
+    try:
+        assert [a["id"] for a in store.listar_acoes(espaco="pessoal")] == [
+            "acao-antiga-pessoal"
+        ]
+        assert len(store.listar_acoes(estado="pendente")) == 50
+    finally:
+        store.close()
