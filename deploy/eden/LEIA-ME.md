@@ -176,6 +176,26 @@ conta e quando vence, sem o valor (ele aparece na tela de bloqueio).
   confirma no cartão, como nas tarefas.
 - Valor zero = "sem valor" (bom para prazos, como a declaração).
 
+## Modo reunião
+
+Menu **Modo reunião**: o Éden escuta **só enquanto você deixar gravando** e,
+no fim, entrega o resumo (tópicos, decisões, quem ficou de fazer o quê,
+datas). As tarefas viram cartões para confirmar.
+
+- Antes de começar, avise as pessoas da reunião (o botão só liga depois de
+  marcar isso). Durante o piloto, use só com dados de teste: confira antes as
+  regras do trabalho e dos clientes.
+- O áudio sobe em pedaços de ~1 minuto. Se a internet cair, o pedaço espera e
+  vai de novo (sem cobrar duas vezes). Deixe a **tela ligada** e o Éden aberto
+  nesta página: no iPhone, a gravação para com a tela travada.
+- Custo aproximado: US$ 0,30 a 0,40 por hora (transcrição da OpenAI + resumo),
+  dentro do limite do mês. O resumo usa o Claude; se ele não puder (limite,
+  chave), usa a IA do dia a dia.
+- O áudio **não fica guardado**, só o texto. **Apagar reunião** apaga o texto
+  e o resumo.
+- O que alguém falar na reunião ("Éden, apaga…") nunca vira ordem: o resumo só
+  sugere tarefas, e cada uma precisa do seu toque.
+
 ## Documentos na conversa
 
 No campo de mensagem, toque em **Documentos** → **Enviar arquivo** e escolha um
@@ -325,6 +345,12 @@ Depois:
   em **Configurações → Aparelhos ligados**.
 - Se a chave de uma IA vazar: apague a chave no site da empresa, crie outra e
   troque no `.env`.
+- Tetos por hora, além do limite do mês (cada aparelho tem a sua conta; a
+  chave principal, a dela): 150 mensagens, 120 áudios e 150 pedaços de
+  reunião. Para mudar, no `.env`: `EDEN_TETO_CONVERSA_HORA`,
+  `EDEN_TETO_TRANSCRICAO_HORA`, `EDEN_TETO_REUNIAO_HORA`.
+- **Configurações → Atividade recente** mostra o que foi gravado, mudado ou
+  apagado e de qual aparelho veio.
 
 ## Onde ficam os dados
 

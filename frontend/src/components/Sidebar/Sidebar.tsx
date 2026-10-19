@@ -25,6 +25,7 @@ import {
   Car,
   Mail,
   Wallet,
+  Users,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { EdenSyncStatus } from './EdenSyncStatus';
@@ -34,7 +35,7 @@ import { useAppStore } from '../../lib/store';
 import { useNucleoStore } from '../../lib/eden-nucleo';
 
 // Éden: páginas que aparecem no menu durante o piloto.
-const EDEN_PILOT_PAGES = ['/', '/hoje', '/tarefas', '/notas', '/contas', '/email', '/clima', '/rotas', '/memoria', '/settings'];
+const EDEN_PILOT_PAGES = ['/', '/hoje', '/tarefas', '/notas', '/reuniao', '/contas', '/email', '/clima', '/rotas', '/memoria', '/settings'];
 
 // Éden: menu lateral em português. Nomes dos temas mostrados ao usuário.
 const THEME_LABEL: Record<string, string> = {
@@ -84,6 +85,7 @@ export function Sidebar() {
     { path: '/hoje', icon: CalendarCheck, label: 'Hoje' },
     { path: '/tarefas', icon: ListTodo, label: 'Tarefas' },
     { path: '/notas', icon: StickyNote, label: 'Notas e ideias' },
+    { path: '/reuniao', icon: Users, label: 'Modo reunião' },
     { path: '/contas', icon: Wallet, label: 'Contas e impostos' },
     { path: '/email', icon: Mail, label: 'E-mail' },
     { path: '/clima', icon: CloudSun, label: 'Clima e ondas' },

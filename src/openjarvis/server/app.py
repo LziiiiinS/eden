@@ -590,6 +590,13 @@ def create_app(
         app.include_router(eden_contas_router)
     except Exception as exc:
         logger.warning("Éden: contas não ligadas: %s", exc)
+    # Éden: modo reunião (grava só quando a pessoa liga; resumo com cartões).
+    try:
+        from openjarvis.eden.routes_reuniao import router as eden_reuniao_router
+
+        app.include_router(eden_reuniao_router)
+    except Exception as exc:
+        logger.warning("Éden: modo reunião não ligado: %s", exc)
     # Éden (Parte 4): Notion (precisa da NOTION_API_KEY no .env).
     try:
         from openjarvis.eden.routes_notion import router as eden_notion_router

@@ -406,6 +406,8 @@ ESQUEMA_PERMITIDO = {
         "lugares",
         "trajetos",
         "contas",
+        "reunioes",
+        "reuniao_pedacos",
     },
 }
 

@@ -113,6 +113,8 @@ LIMITES_POR_CAMINHO: Tuple[Tuple[str, int], ...] = (
     ("/v1/speech/transcribe", 26 * 1024 * 1024),  # áudio até 25 MB
     ("/v1/eden/conversations/", 9 * 1024 * 1024),  # conversa inteira até 8 MB
     ("/v1/eden/documentos", 10 * 1024 * 1024 + 64 * 1024),  # arquivo até 10 MB
+    # Pedaço do modo reunião até 8 MB (reuniao.MAX_BYTES_PEDACO).
+    ("/v1/eden/reunioes/", 8 * 1024 * 1024 + 64 * 1024),
 )
 
 
