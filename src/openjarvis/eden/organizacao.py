@@ -20,6 +20,7 @@ igual na tela e nas propostas do Éden.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 import threading
@@ -30,6 +31,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from openjarvis.core.paths import get_config_dir
+
+logger = logging.getLogger(__name__)
 
 # ── limites ──────────────────────────────────────────────────────────────
 
@@ -369,6 +372,9 @@ class Organizacao:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
+            # Apagar zera o espaço no arquivo (o texto apagado não fica nas
+            # páginas livres, que o backup copiaria).
+            self._conn.execute("PRAGMA secure_delete=ON")
             self._conn.executescript(_SCHEMA)
             if not self._conn.execute("SELECT 1 FROM espacos LIMIT 1").fetchone():
                 agora = agora_ms()
@@ -406,6 +412,15 @@ class Organizacao:
         if conn is not None:
             return funcao(conn)
         return self.transacao(funcao)
+
+    def compactar_wal(self) -> None:
+        """Passa o WAL para o banco e o esvazia (depois de apagar algo
+        sensível). Falhar aqui não desfaz o que foi apagado."""
+        try:
+            with self._lock:
+                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error:
+            logger.warning("Éden: não consegui esvaziar o WAL da organização")
 
     def _ler(self, sql: str, params: Tuple = ()) -> List[sqlite3.Row]:
         with self._lock:

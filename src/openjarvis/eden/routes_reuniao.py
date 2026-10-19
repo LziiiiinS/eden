@@ -45,7 +45,12 @@ def _erro(exc: ErroOrganizacao) -> HTTPException:
 
 
 def _cartoes(store: Organizacao, rid: int) -> List[Dict[str, Any]]:
-    return store.listar_acoes(conversa=reuniao.conversa_da_reuniao(rid))
+    # Só tarefas: a tela da reunião nunca mostra outro tipo de cartão.
+    return [
+        a
+        for a in store.listar_acoes(conversa=reuniao.conversa_da_reuniao(rid))
+        if a.get("tipo") == "tarefa.criar"
+    ]
 
 
 @router.get("")
@@ -216,8 +221,8 @@ async def _chamar_ia(mensagens: List[Message]) -> str:
 def _criar_cartoes(
     store: Organizacao, rid: int, espaco: str, tarefas: List[Dict[str, Any]]
 ) -> List[str]:
-    if not tarefas:
-        return []
+    if not tarefas or not reuniao.existe(store, rid):
+        return []  # apagada enquanto o resumo era feito
     _, recusadas = acoes_mod.propor(
         reuniao.blocos_de_tarefas(tarefas, espaco),
         store,
@@ -225,6 +230,9 @@ def _criar_cartoes(
         _tz(),
         conversa_id=reuniao.conversa_da_reuniao(rid),
     )
+    if not reuniao.existe(store, rid):
+        reuniao.descartar_cartoes(store, rid)  # apagada bem no meio
+        return []
     return recusadas
 
 

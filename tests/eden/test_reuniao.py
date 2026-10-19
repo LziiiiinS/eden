@@ -137,3 +137,63 @@ def test_only_task_cards_come_out_of_the_summary(store):
     assert all(c["estado"] == "pendente" for c in criadas)  # só com o toque
     lista = store.listar_acoes(conversa=reuniao.conversa_da_reuniao(rid))
     assert len(lista) == 2
+
+
+def test_deleting_the_meeting_takes_its_pending_cards(store, tmp_path):
+    from openjarvis.eden.conversations import is_valid_id
+
+    rid = reuniao.criar(store, {})["id"]
+    conversa = reuniao.conversa_da_reuniao(rid)
+    # Uma conversa do chat não consegue usar o mesmo nome (não põe cartões
+    # na tela da reunião).
+    assert not is_valid_id(conversa)
+    criadas, _ = acoes.propor(
+        reuniao.blocos_de_tarefas(
+            [
+                {"tipo": "tarefa.criar", "titulo": "Confirmada"},
+                {"tipo": "tarefa.criar", "titulo": "Pendente"},
+            ],
+            "pessoal",
+        ),
+        store,
+        "pessoal",
+        timezone.utc,
+        conversa_id=conversa,
+    )
+    feita = acoes.confirmar(
+        store, criadas[0]["id"], criadas[0]["assinatura"], timezone.utc
+    )
+    assert feita["estado"] == "feita"
+    reuniao.apagar(store, rid)
+    assert not reuniao.existe(store, rid)
+    restantes = store.listar_acoes(conversa=conversa)
+    assert [a["id"] for a in restantes] == [criadas[0]["id"]]  # a confirmada fica
+    assert [t["titulo"] for t in store.listar_tarefas()] == ["Confirmada"]
+    # O texto apagado não fica no arquivo (secure_delete + WAL esvaziado).
+    bruto = (tmp_path / "organizacao.db").read_bytes()
+    assert b"Pendente" not in bruto
+    wal = tmp_path / "organizacao.db-wal"
+    assert not wal.exists() or b"Pendente" not in wal.read_bytes()
+
+
+def test_cards_born_after_the_meeting_was_deleted_are_dropped(store):
+    rid = reuniao.criar(store, {})["id"]
+    reuniao.apagar(store, rid)
+    acoes.propor(
+        reuniao.blocos_de_tarefas(
+            [{"tipo": "tarefa.criar", "titulo": "Tarde"}], "pessoal"
+        ),
+        store,
+        "pessoal",
+        timezone.utc,
+        conversa_id=reuniao.conversa_da_reuniao(rid),
+    )
+    reuniao.descartar_cartoes(store, rid)
+    assert store.listar_acoes(conversa=reuniao.conversa_da_reuniao(rid)) == []
+
+
+def test_body_limit_fits_a_whole_piece():
+    from openjarvis.eden.hardening import LIMITES_POR_CAMINHO
+
+    limite = dict(LIMITES_POR_CAMINHO)["/v1/eden/reunioes/"]
+    assert limite > reuniao.MAX_BYTES_PEDACO

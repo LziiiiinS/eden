@@ -294,9 +294,32 @@ def apagar(store: Organizacao, valor: Any, quem: str = "voce") -> None:
         _linha(c, rid)
         c.execute("DELETE FROM reuniao_pedacos WHERE reuniao_id = ?", (rid,))
         c.execute("DELETE FROM reunioes WHERE id = ?", (rid,))
+        # Os cartões ainda não confirmados saem junto (o texto deles vem da
+        # reunião). Os confirmados já viraram tarefas, que ficam.
+        c.execute(
+            "DELETE FROM acoes WHERE conversa_id = ? AND estado <> 'feita'",
+            (conversa_da_reuniao(rid),),
+        )
         Organizacao._registrar(c, quem, "reuniao.apagar", f"reuniao:{rid}")
 
     store.transacao(fazer)
+    # Tira as cópias antigas do arquivo de apoio do banco (WAL).
+    store.compactar_wal()
+
+
+def existe(store: Organizacao, rid: int) -> bool:
+    return bool(store._ler("SELECT 1 FROM reunioes WHERE id = ?", (int(rid),)))
+
+
+def descartar_cartoes(store: Organizacao, rid: int) -> None:
+    """A reunião foi apagada enquanto o resumo era feito: os cartões que
+    nasceram depois saem também."""
+    store.transacao(
+        lambda c: c.execute(
+            "DELETE FROM acoes WHERE conversa_id = ? AND estado = 'pendente'",
+            (conversa_da_reuniao(rid),),
+        )
+    )
 
 
 # ── resumo pela IA ───────────────────────────────────────────────────────
@@ -381,5 +404,7 @@ def blocos_de_tarefas(tarefas: List[Dict[str, Any]], espaco: str) -> str:
 
 
 def conversa_da_reuniao(rid: int) -> str:
-    """Os cartões da reunião ficam ligados a esta "conversa"."""
-    return f"reuniao-{rid}"
+    """Os cartões da reunião ficam ligados a esta "conversa". O ":" não
+    existe em id de conversa do chat (conversations.is_valid_id): uma
+    conversa não consegue pôr cartões na tela da reunião."""
+    return f"reuniao:{int(rid)}"

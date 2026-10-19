@@ -119,7 +119,12 @@ export function EdenReuniaoPage() {
       const { reuniao } = await comecarReuniao(titulo.trim() || 'Reunião', espacoAtivo);
       criada = reuniao.id;
       const g = new GravadorDeReuniao(reuniao.id, setSituacao);
-      await g.comecar();
+      try {
+        await g.comecar();
+      } catch (e) {
+        g.parar(); // microfone e tela não ficam presos
+        throw e;
+      }
       gravadorRef.current = g;
       setGravando({ id: reuniao.id, inicio: Date.now() });
       setAgora(Date.now());
@@ -188,7 +193,7 @@ export function EdenReuniaoPage() {
   };
 
   const apagar = async (id: number) => {
-    if (!window.confirm('Apagar esta reunião? O resumo e a transcrição somem de vez.')) return;
+    if (!window.confirm('Apagar esta reunião? O resumo, a transcrição e os cartões ainda não confirmados somem (backups antigos ainda guardam uma cópia).')) return;
     try {
       await apagarReuniao(id);
       setAberta(null);

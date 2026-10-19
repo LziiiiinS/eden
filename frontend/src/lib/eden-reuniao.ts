@@ -157,9 +157,15 @@ export class GravadorDeReuniao {
       const wl = (navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<WakeLockSentinel> } })
         .wakeLock;
       if (wl && !this.trava) {
-        this.trava = await wl.request('screen');
-        this.trava.addEventListener('release', () => {
-          this.trava = null;
+        const trava = await wl.request('screen');
+        if (!this.continuar) {
+          // A gravação parou enquanto o pedido esperava: solta na hora.
+          void trava.release().catch(() => {});
+          return;
+        }
+        this.trava = trava;
+        trava.addEventListener('release', () => {
+          if (this.trava === trava) this.trava = null;
         });
       }
     } catch {
