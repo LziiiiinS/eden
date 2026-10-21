@@ -152,6 +152,10 @@ def test_authorization_url_asks_only_to_read_email():
         CFG, "s" * 30, "v" * 50, escopos=[gmail.ESCOPO_GMAIL]
     )
     assert "gmail.readonly" in url and "calendar" not in url
+    # O Google sempre pergunta a conta (não entra com a aberta no navegador).
+    from urllib.parse import parse_qs
+
+    assert parse_qs(urlparse(url).query)["prompt"] == ["select_account consent"]
 
 
 def test_list_reads_metadata_only_and_cleans(cliente, falso):
