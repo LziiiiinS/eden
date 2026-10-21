@@ -268,7 +268,9 @@ def url_de_autorizacao(
                 "response_type": "code",
                 "scope": " ".join(escopos),
                 "access_type": "offline",
-                "prompt": "consent",
+                # Sempre pergunta qual conta usar (o e-mail do Éden é uma
+                # conta separada da que fica aberta no navegador; 21/10).
+                "prompt": "select_account consent",
                 "include_granted_scopes": "false",
                 "state": state,
                 "code_challenge": desafio_pkce(verificador),
