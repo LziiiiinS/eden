@@ -21,6 +21,7 @@ import { CAMINHO_PESQUISA, ULTIMAS_NA_PESQUISA, mensagensParaIa } from '../../li
 import { localDoAparelho, pareceRota, usarLocalNaConversa } from '../../lib/eden-rotas';
 import { desbloquearAudio, useEdenVozStore } from '../../lib/eden-voz';
 import { useEdenOrg } from '../../lib/eden-org';
+import { MAX_IMAGENS, imagensDe, marcaDeImagens, reduzirImagem } from '../../lib/eden-imagens';
 import { useSpeech } from '../../hooks/useSpeech';
 import { useNucleoStore } from '../../lib/eden-nucleo';
 import {
@@ -127,6 +128,28 @@ export function InputArea() {
   // Éden (Parte 4): pesquisa na internet só na próxima mensagem (desliga
   // sozinha depois de enviar).
   const [pesquisaWeb, setPesquisaWeb] = useState(false);
+  // Éden: imagens da próxima mensagem (colar um print ou escolher uma foto).
+  const [imagens, setImagens] = useState<string[]>([]);
+  const escolherImagemRef = useRef<HTMLInputElement | null>(null);
+  const imagensRef = useRef<string[]>([]);
+  imagensRef.current = imagens;
+  const adicionarImagens = useCallback(async (arquivos: File[]) => {
+    if (arquivos.length === 0) return;
+    const vagas = MAX_IMAGENS - imagensRef.current.length;
+    if (vagas <= 0) {
+      toast.error(`No máximo ${MAX_IMAGENS} imagens por mensagem.`);
+      return;
+    }
+    if (arquivos.length > vagas) toast.error(`No máximo ${MAX_IMAGENS} imagens por mensagem.`);
+    for (const arquivo of arquivos.slice(0, vagas)) {
+      try {
+        const url = await reduzirImagem(arquivo);
+        setImagens((lista) => (lista.length >= MAX_IMAGENS ? lista : [...lista, url]));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não consegui abrir essa imagem.');
+      }
+    }
+  }, []);
   // Éden (Parte 4): modo conversa — o Éden fala as respostas (mais curtas) e,
   // pelo microfone, já envia o que a pessoa falou.
   const voiceOutputEnabled = useAppStore((s) => s.settings.voiceOutputEnabled);
@@ -238,7 +261,9 @@ export function InputArea() {
   }, [resetStream]);
 
   const sendMessage = useCallback(async (texto?: string): Promise<boolean> => {
-    const content = (texto ?? input).trim();
+    const imagensAgora = texto === undefined ? imagensRef.current : [];
+    const digitado = (texto ?? input).trim();
+    const content = digitado || (imagensAgora.length ? 'O que você vê nesta imagem?' : '');
     if (modoVoz) desbloquearAudio();
     if (!content || streamState.isStreaming) return false;
     if (!selectedModel) {
@@ -247,18 +272,24 @@ export function InputArea() {
     }
 
     setInput('');
+    setImagens([]);
     const pesquisar = edenServer && pesquisaWeb && !deepResearch;
     setPesquisaWeb(false);
+    if (imagensAgora.length && pesquisar) {
+      toast('A pesquisa na internet não usa imagens: a imagem não foi junto.', { duration: 6000 });
+    }
 
     let convId = activeId;
     if (!convId) {
       convId = createConversation(selectedModel);
     }
 
+    const marca = marcaDeImagens(imagensAgora.length);
     const userMsg: ChatMessage = {
       id: generateId(),
       role: 'user',
-      content,
+      // A imagem não fica guardada na conversa: fica só a marca.
+      content: marca ? `${content}\n\n${marca}` : content,
       timestamp: Date.now(),
     };
     addMessage(convId, userMsg);
@@ -267,7 +298,13 @@ export function InputArea() {
     const currentMessages = useAppStore.getState().messages;
     // Éden: blocos de ação antigos não voltam para a IA, e respostas de
     // pesquisa vão marcadas como conteúdo de fora (informação, nunca ordem).
-    const apiMessages = mensagensParaIa(currentMessages);
+    const apiMessages: Array<{ role: string; content: string; images?: string[] }> =
+      mensagensParaIa(currentMessages);
+    // Éden: as imagens vão só nesta mensagem (as antigas não voltam para a IA).
+    if (imagensAgora.length && !pesquisar && !deepResearch && apiMessages.length) {
+      const ultima = apiMessages[apiMessages.length - 1];
+      apiMessages[apiMessages.length - 1] = { ...ultima, images: imagensAgora };
+    }
     // Éden: no automático, uma conversa em missão continua com o Claude.
     const requestModel = requestModelFor(selectedModel, currentMessages);
 
@@ -796,6 +833,29 @@ export function InputArea() {
           </div>
         )}
       </div>
+      {imagens.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2" aria-label="Imagens desta mensagem">
+          {imagens.map((url, i) => (
+            <div key={i} className="relative">
+              <img
+                src={url}
+                alt={`Imagem ${i + 1}`}
+                className="h-16 w-16 object-cover rounded-xl"
+                style={{ border: '1px solid var(--color-border)' }}
+              />
+              <button
+                type="button"
+                onClick={() => setImagens((lista) => lista.filter((_, j) => j !== i))}
+                aria-label={`Tirar a imagem ${i + 1}`}
+                className="absolute -top-1.5 -right-1.5 rounded-full p-0.5 cursor-pointer"
+                style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)' }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div
         className="eden-doca flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
         style={{ border: '1px solid var(--color-input-border)' }}
@@ -806,6 +866,22 @@ export function InputArea() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={(e) => {
+            if (!edenServer) return;
+            const arquivos = imagensDe(e.clipboardData?.items ?? null);
+            if (arquivos.length) {
+              e.preventDefault();
+              void adicionarImagens(arquivos);
+            }
+          }}
+          onDrop={(e) => {
+            if (!edenServer) return;
+            const arquivos = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'));
+            if (arquivos.length) {
+              e.preventDefault();
+              void adicionarImagens(arquivos);
+            }
+          }}
           placeholder={selectedModel ? 'Mensagem para o Éden…' : 'Escolha um modelo primeiro (⌘K)…'}
           rows={1}
           className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
@@ -824,6 +900,33 @@ export function InputArea() {
           </button>
         ) : (
           <div className="flex items-center gap-1">
+            {edenServer && (
+              <>
+                <input
+                  ref={escolherImagemRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    const arquivos = Array.from(e.target.files ?? []);
+                    e.target.value = '';
+                    void adicionarImagens(arquivos);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => escolherImagemRef.current?.click()}
+                  disabled={streamState.isStreaming || imagens.length >= MAX_IMAGENS}
+                  className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                  title="Adicionar imagem (ou cole um print com Ctrl+V)"
+                  aria-label="Adicionar imagem"
+                >
+                  <ImagePlus size={16} />
+                </button>
+              </>
+            )}
             <MicButton
               state={speechState}
               onClick={handleMicClick}
@@ -832,7 +935,7 @@ export function InputArea() {
             />
             <button
               onClick={() => void sendMessage()}
-              disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
+              disabled={streamState.isStreaming || (!input.trim() && imagens.length === 0) || modelLoading || !selectedModel}
               title={selectedModel ? 'Enviar mensagem' : 'Escolha um modelo primeiro (⌘K)'}
               aria-label="Enviar mensagem"
               className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"

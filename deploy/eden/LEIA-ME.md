@@ -238,6 +238,21 @@ quando você confirma — ele não agenda para depois. Teto de 60 comandos por
 hora (`EDEN_TETO_CASA_HORA`). Ligar o computador sozinho precisa de algo
 sempre ligado em casa (o Home Assistant manda o sinal de "acordar").
 
+## Imagens na conversa (print, foto)
+
+- **Colar:** copie um print (no notebook, **Win+Shift+S**) e cole no campo de
+  mensagem com **Ctrl+V**. Também dá para arrastar a imagem para o campo.
+- **Escolher:** toque no ícone de imagem ao lado do microfone (no celular,
+  abre as fotos, os prints e a câmera).
+- Até **3 imagens** por mensagem. O app reduz cada uma (até 1600 px) antes de
+  mandar. Sem texto, o Éden pergunta "O que você vê nesta imagem?".
+- A imagem vai para a IA (ChatGPT ou Claude) **só nessa mensagem** e não fica
+  guardada: na conversa fica escrito "[📷 1 imagem enviada]". Nas mensagens
+  seguintes, a IA lembra do que respondeu, mas não vê a imagem de novo.
+- O que estiver escrito dentro da imagem é tratado como dado, não como ordem.
+- Custo: uma imagem conta como ~1.000 a 1.800 palavras de texto (alguns
+  centavos de real), dentro do limite do mês.
+
 ## Documentos na conversa
 
 No campo de mensagem, toque em **Documentos** → **Enviar arquivo** e escolha um

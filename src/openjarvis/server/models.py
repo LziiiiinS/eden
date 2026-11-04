@@ -19,6 +19,9 @@ class ChatMessage(BaseModel):
     name: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
+    # Éden: imagens da mensagem (``data:image/...;base64,...``), conferidas em
+    # eden/imagens.py antes de ir para a IA.
+    images: Optional[List[str]] = None
 
 
 class ChatCompletionRequest(BaseModel):

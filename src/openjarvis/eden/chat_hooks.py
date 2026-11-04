@@ -330,6 +330,14 @@ def prepare_chat(
         refusal = _eden_gate(request_body, settings)
         if refusal is not None:
             return None, refusal
+    # Imagens: conferidas aqui (tipo, tamanho, quantas); só a última fala da
+    # pessoa leva imagem para a IA.
+    from openjarvis.eden.imagens import ErroImagem, conferir_pedido
+
+    try:
+        conferir_pedido(request_body.messages or [])
+    except ErroImagem as exc:
+        return None, _refuse("eden_imagem", f"Imagem recusada: {exc}.")
     last_user = _last_user(request_body)
     if settings.enabled and request is not None:
         _definir_pedido(request, last_user.content if last_user else None)
@@ -366,8 +374,14 @@ def prepare_chat(
         if settings.enabled:
             # Os documentos anexados entram no contexto: contam na reserva.
             chars += _caracteres_documentos()
+        from openjarvis.eden.imagens import TOKENS_POR_IMAGEM, contar
+
+        tokens_imagens = contar(request_body.messages or []) * TOKENS_POR_IMAGEM
         reserve = settings.token_cost(
-            provider, model, estimate_tokens(chars), settings.max_output_tokens
+            provider,
+            model,
+            estimate_tokens(chars) + tokens_imagens,
+            settings.max_output_tokens,
         )
         try:
             get_ledger().check(provider, settings, reserve)
