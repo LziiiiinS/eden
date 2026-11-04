@@ -341,6 +341,20 @@ e no Samsung.
   alto-falante embaixo da resposta (o iPhone às vezes exige um toque).
 - Respostas longas: a voz lê o começo e diz "O resto está na tela".
 
+**Mãos livres (conversa sem tocar no microfone).** Toque em **Mãos livres**,
+acima do campo de mensagem. Daí em diante é só falar: o Éden percebe quando
+você parou, envia, responde em voz e volta a ouvir sozinho.
+- Só funciona com o app **aberto na tela** (a tela fica ligada enquanto o modo
+  está ligado). Desliga sozinho depois de **1 minuto em silêncio**, se você
+  sair do app ou travar a tela, ou ao tocar de novo no botão.
+- Quem decide se tem alguém falando é o próprio celular (pelo volume do som):
+  silêncio não sai do aparelho. Mas **tudo o que for falado perto do celular**
+  enquanto ele ouve vai para a transcrição — desligue perto de outras pessoas.
+- Enquanto o Éden responde, o microfone fica desligado (ele não ouve a si
+  mesmo e, no iPhone, o som sai pelo alto-falante).
+- Custo: só a transcrição do que é falado (~US$ 0,0045 por minuto), dentro do
+  limite do mês e do teto de 120 áudios por hora.
+
 ## Notion
 
 Com o Notion ligado, dá para **trazer uma página do Notion** para a conversa

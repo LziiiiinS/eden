@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Send, Square, Paperclip, Search, Globe, Volume2 } from 'lucide-react';
+import { Send, Square, Paperclip, Search, Globe, Volume2, AudioLines } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
@@ -21,7 +21,14 @@ import { CAMINHO_PESQUISA, ULTIMAS_NA_PESQUISA, mensagensParaIa } from '../../li
 import { localDoAparelho, pareceRota, usarLocalNaConversa } from '../../lib/eden-rotas';
 import { desbloquearAudio, useEdenVozStore } from '../../lib/eden-voz';
 import { useEdenOrg } from '../../lib/eden-org';
-import { useSpeech } from '../../hooks/useSpeech';
+import { audioFilenameFor, enviarComNovaTentativa, pickRecordingMimeType, useSpeech } from '../../hooks/useSpeech';
+import {
+  MaosLivres,
+  dependenciasDoNavegador,
+  prepararAudio,
+  valeEnviar,
+  type EstadoMaosLivres,
+} from '../../lib/eden-maos-livres';
 import { useNucleoStore } from '../../lib/eden-nucleo';
 import {
   isEdenModel,
@@ -96,6 +103,13 @@ function useResearchCorpusSync(enabled: boolean): {
   return state;
 }
 
+const TEXTO_MAOS_LIVRES: Record<EstadoMaosLivres, string> = {
+  desligado: 'Mãos livres',
+  ouvindo: 'Ouvindo… (toque para parar)',
+  gravando: 'Ouvindo você…',
+  pensando: 'Respondendo…',
+};
+
 export function InputArea() {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -158,12 +172,28 @@ export function InputArea() {
     startRecording,
     stopRecording,
   } = useSpeech();
+  // Éden: "mãos livres" (modo conversa contínuo): fala, o Éden responde em
+  // voz e volta a ouvir. Só com o app aberto e só depois de a pessoa ligar.
+  const [maosLivres, setMaosLivres] = useState<EstadoMaosLivres>('desligado');
+  const maosLivresRef = useRef<MaosLivres | null>(null);
+  useEffect(() => () => maosLivresRef.current?.desligar(), []);
+  useEffect(() => {
+    if (maosLivres === 'desligado') return;
+    const aoSair = () => {
+      if (document.visibilityState === 'hidden') {
+        maosLivresRef.current?.desligar('Mãos livres desligado: o Éden saiu da tela.');
+      }
+    };
+    document.addEventListener('visibilitychange', aoSair);
+    return () => document.removeEventListener('visibilitychange', aoSair);
+  }, [maosLivres]);
+
   // Éden: o núcleo 3D mostra "ouvindo" enquanto grava.
   const setOuvindo = useNucleoStore((s) => s.setOuvindo);
   useEffect(() => {
-    setOuvindo(speechState === 'recording');
+    setOuvindo(speechState === 'recording' || maosLivres === 'ouvindo' || maosLivres === 'gravando');
     return () => setOuvindo(false);
-  }, [speechState, setOuvindo]);
+  }, [speechState, maosLivres, setOuvindo]);
 
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.
@@ -181,7 +211,8 @@ export function InputArea() {
     prevModelRef.current = selectedModel;
   }, [selectedModel, streamState.isStreaming, resetStream]);
 
-  const micDisabled = !speechEnabled || !speechAvailable || streamState.isStreaming;
+  const micDisabled =
+    !speechEnabled || !speechAvailable || streamState.isStreaming || maosLivres !== 'desligado';
   const micReason: 'not-enabled' | 'no-backend' | 'streaming' | undefined =
     !speechEnabled ? 'not-enabled'
     : !speechAvailable ? 'no-backend'
@@ -220,6 +251,55 @@ export function InputArea() {
       await startRecording();
     }
   }, [speechState, startRecording, stopRecording, modoVoz, edenServer]);
+
+  const alternarMaosLivres = useCallback(async () => {
+    const atual = maosLivresRef.current;
+    if (atual && atual.situacao !== 'desligado') {
+      atual.desligar();
+      maosLivresRef.current = null;
+      return;
+    }
+    if (speechState !== 'idle') return;
+    // No iPhone, o som da resposta e o processamento do microfone precisam
+    // ser liberados neste toque.
+    desbloquearAudio();
+    prepararAudio();
+    updateSettings({ voiceAutoplay: true, voiceOutputEnabled: true });
+    const ml = new MaosLivres(
+      {
+        aoFalar: async (audio, duracaoMs) => {
+          const r = await enviarComNovaTentativa(audio, audioFilenameFor(audio.type), duracaoMs);
+          const texto = (r.text ?? '').trim();
+          if (!valeEnviar(texto)) return;
+          // Texto digitado na caixa não se perde: a fala vai junto, sem enviar.
+          if ((textareaRef.current?.value.trim() ?? '') !== '') {
+            setInput((prev) => prev + ' ' + texto);
+            return;
+          }
+          if (enviarRef.current) await enviarRef.current(texto);
+        },
+        aoMudar: (estado, aviso) => {
+          setMaosLivres(estado);
+          if (aviso) toast(aviso, { duration: 6000 });
+          if (estado === 'desligado') maosLivresRef.current = null;
+        },
+        podeOuvir: () =>
+          !useAppStore.getState().streamState.isStreaming && useEdenVozStore.getState().state === 'idle',
+      },
+      dependenciasDoNavegador((stream) => {
+        const tipo = pickRecordingMimeType();
+        const opcoes: MediaRecorderOptions = { audioBitsPerSecond: 32_000 };
+        if (tipo) opcoes.mimeType = tipo;
+        try {
+          return new MediaRecorder(stream, opcoes);
+        } catch {
+          return tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream);
+        }
+      }),
+    );
+    maosLivresRef.current = ml;
+    await ml.ligar();
+  }, [speechState, updateSettings]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -726,6 +806,25 @@ export function InputArea() {
                 <Globe size={12} />
                 Pesquisar na internet
               </button>
+              {speechEnabled && speechAvailable && (
+                <button
+                  type="button"
+                  onClick={() => void alternarMaosLivres()}
+                  aria-pressed={maosLivres !== 'desligado'}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors cursor-pointer ${
+                    maosLivres === 'ouvindo' || maosLivres === 'gravando' ? 'eden-mic-vivo' : ''
+                  }`}
+                  style={{
+                    background: maosLivres !== 'desligado' ? 'var(--color-accent-subtle)' : 'transparent',
+                    border: `1px solid ${maosLivres !== 'desligado' ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                    color: maosLivres !== 'desligado' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                  }}
+                  title="Mãos livres: fale sem tocar no microfone"
+                >
+                  <AudioLines size={12} />
+                  {TEXTO_MAOS_LIVRES[maosLivres]}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -755,7 +854,14 @@ export function InputArea() {
                   conversa (não usa suas tarefas, notas, memórias, agenda nem documentos)
                 </span>
               )}
-              {modoVoz && !pesquisaWeb && (
+              {maosLivres !== 'desligado' && !pesquisaWeb && (
+                <span className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Mãos livres: fale quando quiser; o Éden responde em voz e volta a ouvir · desliga com 1 minuto em
+                  silêncio ou se você sair do app · o silêncio fica no celular, mas o que for falado perto dele vai
+                  para a transcrição (~US$ 0,0045 por minuto falado)
+                </span>
+              )}
+              {modoVoz && !pesquisaWeb && maosLivres === 'desligado' && (
                 <span className="text-[11px] leading-snug" style={{ color: 'var(--color-text-tertiary)' }}>
                   O Éden fala as respostas (mais curtas) · pelo microfone, já envia o que você falou · voz da OpenAI,
                   ~US$ 0,02 por 1.000 caracteres
