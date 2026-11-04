@@ -54,6 +54,7 @@ def _to_messages(chat_messages) -> list[Message]:
                 ]
                 or None,
                 tool_call_id=m.tool_call_id,
+                images=list(getattr(m, "images", None) or []) or None,
             )
         )
     return messages

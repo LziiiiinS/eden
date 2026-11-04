@@ -15,7 +15,8 @@ async function errorDetail(response: Response): Promise<string | undefined> {
 
 export interface ChatRequest {
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  // Éden: ``images`` (data:image/...) só na última mensagem da pessoa.
+  messages: Array<{ role: string; content: string; images?: string[] }>;
   stream: true;
   temperature?: number;
   max_tokens?: number;

@@ -47,10 +47,12 @@ def _role(m: Message) -> str:
     return m.role.value if hasattr(m.role, "value") else str(m.role)
 
 
-def split_system(messages: Sequence[Message]) -> Tuple[str, List[Dict[str, str]]]:
-    """Separa as instruções (system) das falas (user/assistant)."""
+def split_system(messages: Sequence[Message]) -> Tuple[str, List[Dict[str, Any]]]:
+    """Separa as instruções (system) das falas (user/assistant). Uma fala da
+    pessoa com imagens leva também ``"imagens"`` (já conferidas em
+    eden/imagens.py); cada empresa monta do seu jeito."""
     system_parts: List[str] = []
-    chat: List[Dict[str, str]] = []
+    chat: List[Dict[str, Any]] = []
     for m in messages:
         role = _role(m)
         content = m.content or ""
@@ -58,10 +60,46 @@ def split_system(messages: Sequence[Message]) -> Tuple[str, List[Dict[str, str]]
             if content:
                 system_parts.append(content)
             continue
-        chat.append(
-            {"role": "assistant" if role == "assistant" else "user", "content": content}
-        )
+        item: Dict[str, Any] = {
+            "role": "assistant" if role == "assistant" else "user",
+            "content": content,
+        }
+        imagens = getattr(m, "images", None)
+        if imagens and item["role"] == "user":
+            item["imagens"] = list(imagens)
+        chat.append(item)
     return "\n\n".join(system_parts), chat
+
+
+def _openai_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    imagens = item.pop("imagens", None)
+    if not imagens:
+        return item
+    partes: List[Dict[str, Any]] = [{"type": "input_text", "text": item["content"]}]
+    partes += [
+        {"type": "input_image", "image_url": url, "detail": "auto"} for url in imagens
+    ]
+    return {"role": item["role"], "content": partes}
+
+
+def _anthropic_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    imagens = item.pop("imagens", None)
+    if not imagens:
+        return item
+    from openjarvis.eden.imagens import separar
+
+    blocos: List[Dict[str, Any]] = []
+    for url in imagens:
+        tipo, dados = separar(url)
+        blocos.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": tipo, "data": dados},
+            }
+        )
+    if item["content"]:
+        blocos.append({"type": "text", "text": item["content"]})
+    return {"role": item["role"], "content": blocos}
 
 
 def model_note(model: str, provider: str) -> str:
@@ -79,7 +117,7 @@ def build_openai_payload(
     note = model_note(model, "openai")
     payload: Dict[str, Any] = {
         "model": model,
-        "input": chat,
+        "input": [_openai_item(item) for item in chat],
         "instructions": f"{instructions}\n\n{note}" if instructions else note,
         "stream": True,
         "store": False,
@@ -104,7 +142,7 @@ def build_anthropic_payload(
     note = model_note(model, "anthropic")
     payload: Dict[str, Any] = {
         "model": model,
-        "messages": chat,
+        "messages": [_anthropic_item(item) for item in chat],
         "max_tokens": max_tokens,
         "stream": True,
         "system": f"{system}\n\n{note}" if system else note,
@@ -282,6 +320,9 @@ async def stream_eden(
     input_chars = len(texto_entrada)
     ascii_chars = sum(1 for ch in texto_entrada if ord(ch) < 128)
     tokens_entrada = estimate_tokens(ascii_chars) + (input_chars - ascii_chars)
+    from openjarvis.eden.imagens import TOKENS_POR_IMAGEM, contar
+
+    tokens_entrada += contar(messages) * TOKENS_POR_IMAGEM
     reserve = settings.token_cost(provider, model, tokens_entrada, max_out)
     # Separa o valor máximo deste pedido (conferir + separar juntos, para
     # pedidos simultâneos de vários aparelhos não passarem do limite).
