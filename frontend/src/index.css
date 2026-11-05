@@ -911,3 +911,22 @@
 .eden-cor[data-cor='roxa'] { background: #a855f7; }
 .eden-cor[data-cor='laranja'] { background: #f97316; }
 .eden-cor[data-cor='rosa'] { background: #ec4899; }
+
+/* Éden: "mãos livres" ouvindo — o botão pulsa devagar. */
+.eden-mic-vivo {
+  animation: eden-mic-vivo 1.6s ease-in-out infinite;
+}
+@keyframes eden-mic-vivo {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eden-mic-vivo {
+    animation: none;
+  }
+}
