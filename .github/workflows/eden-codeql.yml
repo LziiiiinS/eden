@@ -2,9 +2,8 @@
 # Gratuita em repositório público. Os achados ficam em Security → Code scanning.
 name: Éden — CodeQL
 
+# Uma vez por semana (e quando pedido); não a cada merge.
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: "41 9 * * 1"
   workflow_dispatch:

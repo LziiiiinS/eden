@@ -6,11 +6,20 @@
 # página do PR, para revisar e corrigir o que for real.
 name: Éden — segurança
 
+# Nos PRs, só quando mexe no servidor, nas bibliotecas ou na imagem; e uma
+# vez por semana. (Menos rodadas: o GitHub pausou o Actions do fork em 11/2026.)
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - "deploy/**"
+      - "Dockerfile*"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - ".github/workflows/eden-seguranca.yml"
   schedule:
     - cron: "17 9 * * 1"
   workflow_dispatch:
